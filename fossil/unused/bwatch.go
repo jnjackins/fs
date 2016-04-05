@@ -1,0 +1,401 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"sync"
+)
+
+/*
+ * Lock watcher.  Check that locking of blocks is always down.
+ *
+ * This is REALLY slow, and it won't work when the blocks aren't
+ * arranged in a tree (e.g., after the first snapshot).  But it's great
+ * for debugging.
+ */
+const (
+	MaxLock  = 16
+	HashSize = 1009
+)
+
+/*
+ * Thread-specific watch state.
+ */
+type WThread struct {
+	b   [MaxLock]*Block // blocks currently held
+	nb  uint
+	pid uint
+}
+
+type WMap struct {
+	lk *sync.Mutex
+
+	hchild  [HashSize]*WEntry
+	hparent [HashSize]*WEntry
+}
+
+type WEntry struct {
+	c   VtScore
+	p   VtScore
+	off int
+
+	cprev *WEntry
+	cnext *WEntry
+	pprev *WEntry
+	pnext *WEntry
+}
+
+var (
+	wmap           WMap
+	wp             *WThread
+	blockSize      uint
+	bwatchDisabled uint
+)
+
+func hash(score VtScore) uint {
+	var i uint
+	var h uint
+
+	h = 0
+	for i = 0; i < VtScoreSize; i++ {
+		h = h*37 + uint(score[i])
+	}
+	return h % HashSize
+}
+
+/*
+ * remove all dependencies with score as a parent
+ */
+func _bwatchResetParent(score VtScore) {
+
+	var w *WEntry
+	var next *WEntry
+	var h uint
+
+	h = hash(score)
+	for w = wmap.hparent[h]; w != nil; w = next {
+		next = w.pnext
+		if bytes.Compare(w.p[:], score[:]) == 0 {
+			if w.pnext != nil {
+				w.pnext.pprev = w.pprev
+			}
+			if w.pprev != nil {
+				w.pprev.pnext = w.pnext
+			} else {
+				wmap.hparent[h] = w.pnext
+			}
+			if w.cnext != nil {
+				w.cnext.cprev = w.cprev
+			}
+			if w.cprev != nil {
+				w.cprev.cnext = w.cnext
+			} else {
+				wmap.hchild[hash(w.c)] = w.cnext
+			}
+		}
+	}
+}
+
+/*
+ * and child
+ */
+func _bwatchResetChild(score VtScore) {
+
+	var w *WEntry
+	var next *WEntry
+	var h uint
+
+	h = hash(score)
+	for w = wmap.hchild[h]; w != nil; w = next {
+		next = w.cnext
+		if bytes.Compare(w.c[:], score[:]) == 0 {
+			if w.pnext != nil {
+				w.pnext.pprev = w.pprev
+			}
+			if w.pprev != nil {
+				w.pprev.pnext = w.pnext
+			} else {
+
+				wmap.hparent[hash(w.p)] = w.pnext
+			}
+			if w.cnext != nil {
+				w.cnext.cprev = w.cprev
+			}
+			if w.cprev != nil {
+				w.cprev.cnext = w.cnext
+			} else {
+
+				wmap.hchild[h] = w.cnext
+			}
+		}
+	}
+}
+
+func parent(c VtScore, off *int) []byte {
+	var w *WEntry
+	var h uint
+
+	h = hash(c)
+	for w = wmap.hchild[h]; w != nil; w = w.cnext {
+		if bytes.Compare(w.c[:], c[:]) == 0 {
+			*off = w.off
+			return w.p[:]
+		}
+	}
+
+	return nil
+}
+
+func addChild(p [VtEntrySize]uint8, c [VtEntrySize]uint8, off int) {
+	var h uint
+
+	w := new(WEntry)
+	copy(w.p[:], p[:VtScoreSize])
+	copy(w.c[:], c[:VtScoreSize])
+	w.off = off
+
+	h = hash(w.p)
+	w.pnext = wmap.hparent[h]
+	if w.pnext != nil {
+		w.pnext.pprev = w
+	}
+	wmap.hparent[h] = w
+
+	h = hash(w.c)
+	w.cnext = wmap.hchild[h]
+	if w.cnext != nil {
+		w.cnext.cprev = w
+	}
+	wmap.hchild[h] = w
+}
+
+func bwatchReset(score VtScore) {
+	wmap.lk.Lock()
+	_bwatchResetParent(score)
+	_bwatchResetChild(score)
+	wmap.lk.Unlock()
+}
+
+func bwatchInit() {
+	wmap.lk = new(sync.Mutex)
+}
+
+func bwatchSetBlockSize(bs uint) {
+	blockSize = bs
+}
+
+func getWThread() *WThread {
+	pid := uint(os.Getpid())
+	if wp == nil || wp.pid != pid {
+		wp = new(WThread)
+		wp.pid = pid
+	}
+
+	return wp
+}
+
+/*
+ * Derive dependencies from the contents of b.
+ */
+func bwatchDependency(b *Block) {
+	var i int
+	var epb int
+	var ppb int
+	var e Entry
+
+	if bwatchDisabled != 0 {
+		return
+	}
+
+	wmap.lk.Lock()
+	_bwatchResetParent(b.score)
+
+	switch b.l.typ {
+	case BtData:
+		break
+
+	case BtDir:
+		epb = int(blockSize / VtEntrySize)
+		for i = 0; i < epb; i++ {
+			entryUnpack(&e, b.data, i)
+			if e.flags&VtEntryActive == 0 {
+				continue
+			}
+			addChild(b.score, e.score, i)
+		}
+
+	default:
+		ppb = int(blockSize / VtScoreSize)
+		for i = 0; i < ppb; i++ {
+			addChild(b.score, [VtEntrySize]uint8(b.data[i*VtScoreSize:]), i)
+		}
+	}
+
+	wmap.lk.Unlock()
+}
+
+func depth(s []byte) int {
+	var d int
+	var x int
+
+	d = -1
+	for s != nil {
+		d++
+		s = parent(VtScore(s), &x)
+	}
+
+	return d
+}
+
+func lockConflicts(xhave VtScore, xwant VtScore) bool {
+	var have []byte
+	var want []byte
+	var havedepth int
+	var wantdepth int
+	var havepos int
+	var wantpos int
+
+	have = xhave[:]
+	want = xwant[:]
+
+	havedepth = depth(have)
+	wantdepth = depth(want)
+
+	/*
+	 * walk one or the other up until they're both
+	 * at the same level.
+	 */
+	havepos = -1
+
+	wantpos = -1
+	have = xhave[:]
+	want = xwant[:]
+	for wantdepth > havedepth {
+		wantdepth--
+		want = parent(VtScore(want), &wantpos)
+	}
+
+	for havedepth > wantdepth {
+		havedepth--
+		have = parent(VtScore(have), &havepos)
+	}
+
+	/*
+	 * walk them up simultaneously until we reach
+	 * a common ancestor.
+	 */
+	for have != nil && want != nil && bytes.Compare(have, want) != 0 {
+		have = parent(VtScore(have), &havepos)
+		want = parent(VtScore(want), &wantpos)
+	}
+
+	/*
+	 * not part of same tree.  happens mainly with
+	 * newly allocated blocks.
+	 */
+	if have == nil || want == nil {
+		return false
+	}
+
+	/*
+	 * never walked want: means we want to lock
+	 * an ancestor of have.  no no.
+	 */
+	if wantpos == -1 {
+		return true
+	}
+
+	/*
+	 * never walked have: means we want to lock a
+	 * child of have.  that's okay.
+	 */
+	if havepos == -1 {
+		return false
+	}
+
+	/*
+	 * walked both: they're from different places in the tree.
+	 * require that the left one be locked before the right one.
+	 * (this is questionable, but it puts a total order on the block tree).
+	 */
+	return havepos < wantpos
+}
+
+func stop() {
+	var fd int
+	var buf string
+
+	buf = fmt.Sprintf("#p/%d/ctl", os.Getpid())
+	fd = open(buf, 1)
+	write(fd, "stop", 4)
+	close(fd)
+}
+
+/*
+ * Check whether the calling thread can validly lock b.
+ * That is, check that the calling thread doesn't hold
+ * locks for any of b's children.
+ */
+func bwatchLock(b *Block) {
+
+	var i int
+	var w *WThread
+
+	if bwatchDisabled != 0 {
+		return
+	}
+
+	if b.part != PartData {
+		return
+	}
+
+	wmap.lk.Lock()
+	w = getWThread()
+	for i = 0; uint(i) < w.nb; i++ {
+		if lockConflicts(w.b[i].score, b.score) != 0 {
+			fmt.Fprintf(os.Stderr, "%d: have block %v; shouldn't lock %v\n", w.pid, w.b[i].score, b.score)
+			stop()
+		}
+	}
+
+	wmap.lk.Unlock()
+	if w.nb >= MaxLock {
+		fmt.Fprintf(os.Stderr, "%d: too many blocks held\n", w.pid)
+		stop()
+	} else {
+		w.b[w.nb] = b
+		w.nb++
+	}
+}
+
+/*
+ * Note that the calling thread is about to unlock b.
+ */
+func bwatchUnlock(b *Block) {
+
+	var i int
+	var w *WThread
+
+	if bwatchDisabled != 0 {
+		return
+	}
+
+	if b.part != PartData {
+		return
+	}
+
+	w = getWThread()
+	for i = 0; uint(i) < w.nb; i++ {
+		if w.b[i] == b {
+			break
+		}
+	}
+	if uint(i) >= w.nb {
+		fmt.Fprintf(os.Stderr, "%d: unlock of unlocked block %v\n", w.pid, b.score)
+		stop()
+	} else {
+		w.nb--
+		w.b[i] = w.b[w.nb]
+	}
+}
