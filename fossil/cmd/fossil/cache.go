@@ -10,140 +10,30 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"sigint.ca/fs/venti"
 )
-
-const BadHeap = ^uint32(0)
-
-/* Lump Types */
-// from oventi.h
-const (
-	VtErrType = iota /* illegal */
-
-	VtRootType
-	VtDirType
-	VtPointerType0
-	VtPointerType1
-	VtPointerType2
-	VtPointerType3
-	VtPointerType4
-	VtPointerType5
-	VtPointerType6
-	VtPointerType7 /* not used */
-	VtPointerType8 /* not used */
-	VtPointerType9 /* not used */
-	VtDataType
-
-	VtMaxType
-)
-
-/*
- * Store data to the memory cache in c->size blocks
- * with the block zero extended to fill it out.  When writing to
- * Venti, the block will be zero truncated.  The walker will also check
- * that the block fits within psize or dsize as the case may be.
- */
-
-type Cache struct {
-	lk   *sync.Mutex
-	ref  int
-	mode int
-
-	disk    *Disk
-	size    int /* block size */
-	ndmap   int /* size of per-block dirty pointer map used in blockWrite */
-	z       net.Conn
-	now     uint32   /* ticks for usage timestamps */
-	heads   []*Block /* hash table for finding address */
-	nheap   int      /* number of available victims */
-	heap    []*Block /* heap for locating victims */
-	nblocks int      /* number of blocks allocated */
-	blocks  []*Block /* array of block descriptors */
-
-	blfree *BList
-	blrend *sync.Cond
-
-	ndirty   int /* number of dirty blocks in the cache */
-	maxdirty int /* max number of dirty blocks */
-	vers     uint32
-
-	hashSize int
-
-	fl *FreeList
-
-	die *sync.Cond /* daemon threads should die when != nil */
-
-	flush      *sync.Cond
-	flushwait  *sync.Cond
-	heapwait   *sync.Cond
-	baddr      []BAddr
-	bw, br, be int
-	nflush     int
-
-	syncTicker *time.Ticker
-
-	// unlink daemon
-	uhead  *BList
-	utail  *BList
-	unlink *sync.Cond
-
-	// block counts
-	nused int
-	ndisk int
-}
-
-type BList struct {
-	part  int
-	addr  uint32
-	typ   uint8
-	tag   uint32
-	epoch uint32
-	vers  uint32
-
-	recurse bool // for block unlink
-
-	// for roll back
-	index int // -1 indicates not valid
-	old   struct {
-		score VtScore
-		entry [VtEntrySize]uint8
-	}
-	next *BList
-}
-
-type BAddr struct {
-	part int
-	addr uint32
-	vers uint32
-}
-
-type FreeList struct {
-	lk       *sync.Mutex
-	last     uint32 /* last block allocated */
-	end      uint32 /* end of data partition */
-	nused    uint32 /* number of used blocks */
-	epochLow uint32 /* low epoch when last updated nused */
-}
 
 /*
  * Mapping from local block type to Venti type
  */
 var vtType = [BtMax]int{
-	VtDataType,     /* BtData | 0  */
-	VtPointerType0, /* BtData | 1  */
-	VtPointerType1, /* BtData | 2  */
-	VtPointerType2, /* BtData | 3  */
-	VtPointerType3, /* BtData | 4  */
-	VtPointerType4, /* BtData | 5  */
-	VtPointerType5, /* BtData | 6  */
-	VtPointerType6, /* BtData | 7  */
-	VtDirType,      /* BtDir | 0  */
-	VtPointerType0, /* BtDir | 1  */
-	VtPointerType1, /* BtDir | 2  */
-	VtPointerType2, /* BtDir | 3  */
-	VtPointerType3, /* BtDir | 4  */
-	VtPointerType4, /* BtDir | 5  */
-	VtPointerType5, /* BtDir | 6  */
-	VtPointerType6, /* BtDir | 7  */
+	venti.DataType,     /* BtData | 0  */
+	venti.PointerType0, /* BtData | 1  */
+	venti.PointerType1, /* BtData | 2  */
+	venti.PointerType2, /* BtData | 3  */
+	venti.PointerType3, /* BtData | 4  */
+	venti.PointerType4, /* BtData | 5  */
+	venti.PointerType5, /* BtData | 6  */
+	venti.PointerType6, /* BtData | 7  */
+	venti.DirType,      /* BtDir | 0  */
+	venti.PointerType0, /* BtDir | 1  */
+	venti.PointerType1, /* BtDir | 2  */
+	venti.PointerType2, /* BtDir | 3  */
+	venti.PointerType3, /* BtDir | 4  */
+	venti.PointerType4, /* BtDir | 5  */
+	venti.PointerType5, /* BtDir | 6  */
+	venti.PointerType6, /* BtDir | 7  */
 }
 
 /*
@@ -282,7 +172,7 @@ func cacheDump(c *Cache) {
 	}
 }
 
-var cacheCheck_zero VtScore
+var cacheCheck_zero venti.Score
 
 func cacheCheck(c *Cache) {
 	var refed int
@@ -627,8 +517,8 @@ func cacheLocalData(c *Cache, addr uint32, typ int, tag uint32, mode int, epoch 
  * if it's not there, load it, bumping some other block.
  * check tag and type if it's really a local block in disguise.
  */
-func cacheGlobal(c *Cache, score VtScore, typ int, tag uint32, mode int) (*Block, error) {
-	addr := globalToLocal(score)
+func cacheGlobal(c *Cache, score venti.Score, typ int, tag uint32, mode int) (*Block, error) {
+	addr := venti.GlobalToLocal(score)
 	if addr != NilBlock {
 		b, err := cacheLocalData(c, addr, typ, tag, mode, 0)
 		//if b != nil {
@@ -664,7 +554,7 @@ func cacheGlobal(c *Cache, score VtScore, typ int, tag uint32, mode int) (*Block
 		b.part = PartVenti
 		b.addr = NilBlock
 		b.l.typ = uint8(typ)
-		copy(b.score[:], score[:VtScoreSize])
+		copy(b.score[:], score[:venti.ScoreSize])
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
@@ -998,7 +888,7 @@ func _blockSetLabel(b *Block, l *Label) (*Block, error) {
 	}
 
 	b.l = *l
-	labelPack(l, bb.data, int(b.addr%lpb))
+	LabelPack(l, bb.data, int(b.addr%lpb))
 	blockDirty(bb)
 	return bb, nil
 }
@@ -1089,7 +979,7 @@ func blockDependency(b *Block, bb *Block, index int, score []byte, e *Entry) {
 		 */
 		if b.l.typ == BtDir && b.part == PartData {
 
-			entryPack(e, p.old.entry[:], 0)
+			EntryPack(e, p.old.entry[:], 0)
 		} else {
 
 			copy(p.old.score[:], score[:])
@@ -1154,22 +1044,22 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
 		if b.part == PartSuper {
 			assert(p.index == 0)
 			superUnpack(&super, buf)
-			addr := globalToLocal(p.old.score)
+			addr := venti.GlobalToLocal(p.old.score)
 			if addr == NilBlock {
 				fmt.Fprintf(os.Stderr, "%s: rolling back super block: "+"bad replacement addr %v\n", argv0, p.old.score)
 				panic("abort")
 			}
 
 			super.active = addr
-			superPack(&super, buf)
+			SuperPack(&super, buf)
 			continue
 		}
 
 		if b.l.typ == BtDir {
-			copy(buf[p.index*VtEntrySize:], p.old.entry[:VtEntrySize])
+			copy(buf[p.index*venti.EntrySize:], p.old.entry[:venti.EntrySize])
 		} else {
 
-			copy(buf[p.index*VtScoreSize:], p.old.score[:VtScoreSize])
+			copy(buf[p.index*venti.ScoreSize:], p.old.score[:venti.ScoreSize])
 		}
 	}
 
@@ -1594,11 +1484,11 @@ func doRemoveLink(c *Cache, p *BList) {
 	}
 
 	if recurse {
-		n = c.size / VtScoreSize
+		n = c.size / venti.ScoreSize
 		for i = 0; i < n; i++ {
-			var score VtScore
-			copy(score[:], b.data[i*VtScoreSize:])
-			a := globalToLocal(score)
+			var score venti.Score
+			copy(score[:], b.data[i*venti.ScoreSize:])
+			a := venti.GlobalToLocal(score)
 			if a == NilBlock || readLabel(c, &l, a) != nil {
 				continue
 			}

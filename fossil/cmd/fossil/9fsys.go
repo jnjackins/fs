@@ -325,7 +325,7 @@ func fsysClose(fsys *Fsys, argv []string) error {
 
 func fsysVac(fsys *Fsys, argv []string) error {
 
-	var score VtScore
+	var score venti.Score
 	var usage string = "usage: [fsys name] vac path"
 
 	flags := flag.NewFlagSet("vac", flag.ContinueOnError)
@@ -828,8 +828,8 @@ func fsysClrep(fsys *Fsys, argv []string, ch int) error {
 		return fmt.Errorf("cacheLocal %#x: %v", addr, err)
 	}
 
-	sz := VtScoreSize
-	var zero [VtEntrySize]uint8
+	sz := venti.ScoreSize
+	var zero [venti.EntrySize]uint8
 	switch ch {
 	default:
 		return fmt.Errorf("clrep")
@@ -838,12 +838,12 @@ func fsysClrep(fsys *Fsys, argv []string, ch int) error {
 			return fmt.Errorf("wrong block type")
 		}
 		var e Entry
-		entryPack(&e, zero[:], 0)
+		EntryPack(&e, zero[:], 0)
 	case 'p':
 		if b.l.typ == BtDir || b.l.typ == BtData {
 			return fmt.Errorf("wrong block type")
 		}
-		copy(zero[:], vtZeroScore[:VtScoreSize])
+		copy(zero[:], vtZeroScore[:venti.ScoreSize])
 	}
 	max := fs.blockSize / sz
 	for i := 1; i < argc; i++ {
@@ -1292,13 +1292,13 @@ func fsckClre(fsck *Fsck, b *Block, offset int) {
 	if fsck.flags&DoClre == 0 {
 		return
 	}
-	if offset < 0 || offset*VtEntrySize >= fsck.bsize {
+	if offset < 0 || offset*venti.EntrySize >= fsck.bsize {
 		consPrintf("bad clre\n")
 		return
 	}
 
 	e = Entry{}
-	entryPack(&e, b.data, offset)
+	EntryPack(&e, b.data, offset)
 	blockDirty(b)
 }
 
@@ -1306,12 +1306,12 @@ func fsckClrp(fsck *Fsck, b *Block, offset int) {
 	if fsck.flags&DoClrp == 0 {
 		return
 	}
-	if offset < 0 || offset*VtScoreSize >= fsck.bsize {
+	if offset < 0 || offset*venti.ScoreSize >= fsck.bsize {
 		consPrintf("bad clre\n")
 		return
 	}
 
-	copy(b.data[offset*VtScoreSize:], vtZeroScore[:VtScoreSize])
+	copy(b.data[offset*venti.ScoreSize:], vtZeroScore[:venti.ScoreSize])
 	blockDirty(b)
 }
 

@@ -1,4 +1,4 @@
-package main
+package fossil
 
 import (
 	"errors"
@@ -10,6 +10,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"sigint.ca/fs/venti"
 )
 
 const (
@@ -32,7 +34,7 @@ type Snap struct {
 }
 
 func fsOpen(file string, z net.Conn, ncache int, mode int) (*Fs, error) {
-	var oscore VtScore
+	var oscore venti.Score
 	var bs *Block
 	var super Super
 	var err error
@@ -125,11 +127,11 @@ func fsOpen(file string, z net.Conn, ncache int, mode int) (*Fs, error) {
 			goto Err
 		}
 
-		superPack(&super, bs.data)
+		SuperPack(&super, bs.data)
 		blockDependency(bs, b, 0, oscore[:], nil)
 		blockPut(b)
 		blockDirty(bs)
-		blockRemoveLink(bs, globalToLocal(oscore), BtDir, RootTag, false)
+		blockRemoveLink(bs, venti.GlobalToLocal(oscore), BtDir, RootTag, false)
 		blockPut(bs)
 		fs.source, err = sourceRoot(fs, super.active, mode)
 		if err != nil {
@@ -232,7 +234,7 @@ func superGet(c *Cache, super *Super) (*Block, error) {
 }
 
 func superWrite(b *Block, super *Super, forceWrite int) {
-	superPack(super, b.data)
+	SuperPack(super, b.data)
 	blockDirty(b)
 	if forceWrite != 0 {
 		for !blockWrite(b, Waitlock) {
@@ -430,7 +432,7 @@ func fsEpochLow(fs *Fs, low uint32) error {
 }
 
 func bumpEpoch(fs *Fs, doarchive bool) error {
-	var oscore VtScore
+	var oscore venti.Score
 	var oldaddr uint32
 	var b *Block
 	var bs *Block
@@ -454,11 +456,11 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	}
 
 	e = Entry{
-		flags: VtEntryActive | VtEntryLocal | VtEntryDir,
+		flags: venti.EntryActive | venti.EntryLocal | venti.EntryDir,
 		tag:   RootTag,
 		snap:  b.l.epoch,
 	}
-	copy(e.score[:], b.score[:VtScoreSize])
+	copy(e.score[:], b.score[:venti.ScoreSize])
 
 	b, err = blockCopy(b, RootTag, fs.ehi+1, fs.elo)
 	if err != nil {
@@ -469,7 +471,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	if false {
 		fmt.Fprintf(os.Stderr, "%s: snapshot root from %d to %d\n", argv0, oldaddr, b.addr)
 	}
-	entryPack(&e, b.data, 1)
+	EntryPack(&e, b.data, 1)
 	blockDirty(b)
 
 	/*
@@ -481,7 +483,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	}
 
 	fs.ehi++
-	copy(r.score[:], b.score[:VtScoreSize])
+	copy(r.score[:], b.score[:venti.ScoreSize])
 	r.epoch = fs.ehi
 
 	super.epochHigh = fs.ehi
@@ -514,7 +516,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 */
 	superWrite(bs, &super, 1)
 
-	blockRemoveLink(bs, globalToLocal(oscore), BtDir, RootTag, false)
+	blockRemoveLink(bs, venti.GlobalToLocal(oscore), BtDir, RootTag, false)
 	blockPut(bs)
 
 	return nil
@@ -667,7 +669,7 @@ Err:
 	return err
 }
 
-func fsVac(fs *Fs, name string, score VtScore) error {
+func fsVac(fs *Fs, name string, score venti.Score) error {
 	fs.elk.RLock()
 	defer fs.elk.RUnlock()
 
@@ -692,14 +694,14 @@ func fsVac(fs *Fs, name string, score VtScore) error {
 	return mkVac(fs.z, uint(fs.blockSize), &e, &ee, &de, score)
 }
 
-func vtWriteBlock(z net.Conn, buf []byte, n uint, typ uint, score VtScore) error {
+func vtWriteBlock(z net.Conn, buf []byte, n uint, typ uint, score venti.Score) error {
 	if err := vtWrite(z, score, int(typ), buf); err != nil {
 		return err
 	}
 	return vtSha1Check(score, buf, int(n))
 }
 
-func mkVac(z net.Conn, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score VtScore) error {
+func mkVac(z net.Conn, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score venti.Score) error {
 	var buf []byte
 	var i, o int
 	var n uint
@@ -709,14 +711,14 @@ func mkVac(z net.Conn, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, sco
 	var eee Entry
 	var mb *MetaBlock
 	var me MetaEntry
-	var root VtRoot
+	var root venti.Root
 	var err error
 
 	e = *pe
 	ee = *pee
 	de = *pde
 
-	if globalToLocal(e.score) != NilBlock || (ee.flags&VtEntryActive != 0 && globalToLocal(ee.score) != NilBlock) {
+	if venti.GlobalToLocal(e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && venti.GlobalToLocal(ee.score) != NilBlock) {
 		return fmt.Errorf("can only vac paths already stored on venti")
 	}
 
@@ -745,37 +747,37 @@ func mkVac(z net.Conn, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, sco
 	mb.Pack()
 
 	eee.size = uint64(n) + MetaHeaderSize + MetaIndexSize
-	if err = vtWriteBlock(z, buf[:], uint(eee.size), VtDataType, eee.score); err != nil {
+	if err = vtWriteBlock(z, buf[:], uint(eee.size), venti.DataType, eee.score); err != nil {
 		return err
 	}
 	eee.psize = 8192
 	eee.dsize = 8192
 	eee.depth = 0
-	eee.flags = VtEntryActive
+	eee.flags = venti.EntryActive
 
 	/*
 	 * Build root source with three entries in it.
 	 */
-	entryPack(&e, buf[:], 0)
-	entryPack(&ee, buf[:], 1)
-	entryPack(&eee, buf[:], 2)
+	EntryPack(&e, buf[:], 0)
+	EntryPack(&ee, buf[:], 1)
+	EntryPack(&eee, buf[:], 2)
 
-	n = VtEntrySize * 3
-	root = VtRoot{}
-	if err = vtWriteBlock(z, buf[:], n, VtDirType, root.score); err != nil {
+	n = venti.EntrySize * 3
+	root = venti.Root{}
+	if err = vtWriteBlock(z, buf[:], n, venti.DirType, root.score); err != nil {
 		return err
 	}
 
 	/*
 	 * Save root.
 	 */
-	root.version = VtRootVersion
+	root.version = venti.RootVersion
 
 	root.typ = "vac"
 	root.name = de.elem
 	root.blockSize = uint16(blockSize)
 	vtRootPack(&root, buf[:])
-	if err = vtWriteBlock(z, buf[:], VtRootSize, VtRootType, score); err != nil {
+	if err = vtWriteBlock(z, buf[:], venti.RootSize, venti.RootType, score); err != nil {
 		return err
 	}
 

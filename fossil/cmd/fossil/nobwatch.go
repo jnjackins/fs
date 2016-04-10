@@ -1,6 +1,6 @@
 package main
 
-func bwatchReset(score VtScore) {
+func bwatchReset(score venti.Score) {
 }
 
 func bwatchInit() {

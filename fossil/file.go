@@ -1,4 +1,4 @@
-package main
+package fossil
 
 import (
 	"errors"
@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"sigint.ca/fs/venti"
 )
 
 /*
@@ -351,7 +353,7 @@ func _fileOpen(fs *Fs, path string, partial bool) (*File, error) {
 			n++
 		}
 		if n > 0 {
-			if n > VtMaxStringSize {
+			if n > venti.MaxStringSize {
 				return nil, fmt.Errorf("%s: element too long", EBadPath)
 			}
 			elem := path[:n]
@@ -398,10 +400,10 @@ func fileSetTmp(f *File, istmp int) {
 		}
 
 		if istmp != 0 {
-			e.flags |= VtEntryNoArchive
+			e.flags |= venti.EntryNoArchive
 		} else {
 
-			e.flags &^= VtEntryNoArchive
+			e.flags &^= venti.EntryNoArchive
 		}
 		if err = sourceSetEntry(r, &e); err != nil {
 			fmt.Fprintf(os.Stderr, "sourceSetEntry failed (cannot happen): %v\n", err)
@@ -625,7 +627,7 @@ Err1:
  * Changes the file block bn to be the given block score.
  * Very sneaky.  Only used by flfmt.
  */
-func fileMapBlock(f *File, bn uint32, score VtScore, tag uint32) error {
+func fileMapBlock(f *File, bn uint32, score venti.Score, tag uint32) error {
 	var b *Block
 	var e Entry
 	var s *Source
@@ -660,14 +662,14 @@ func fileMapBlock(f *File, bn uint32, score VtScore, tag uint32) error {
 		goto Err
 	}
 	if b.l.typ == BtDir {
-		copy(e.score[:], score[:VtScoreSize])
+		copy(e.score[:], score[:venti.ScoreSize])
 		assert(uint32(e.tag) == tag || e.tag == 0)
 		e.tag = tag
-		e.flags |= VtEntryLocal
-		entryPack(&e, b.data, int(f.source.offset%uint32(f.source.epb)))
+		e.flags |= venti.EntryLocal
+		EntryPack(&e, b.data, int(f.source.offset%uint32(f.source.epb)))
 	} else {
 
-		copy(b.data[(bn%uint32(e.psize/VtScoreSize))*VtScoreSize:], score[:VtScoreSize])
+		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:venti.ScoreSize])
 	}
 	blockDirty(b)
 	blockPut(b)
@@ -1434,7 +1436,7 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	var epb int
 	var err error
 
-	epb = s.dsize / VtEntrySize
+	epb = s.dsize / venti.EntrySize
 	bn = elem / uint32(epb)
 	elem -= bn * uint32(epb)
 
@@ -1442,12 +1444,12 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	if err != nil {
 		goto Err
 	}
-	if err = entryUnpack(&e, b.data, int(elem)); err != nil {
+	if err = EntryUnpack(&e, b.data, int(elem)); err != nil {
 		goto Err
 	}
 
 	/* hanging entries are returned as zero size */
-	if e.flags&VtEntryActive == 0 || uint32(e.gen) != gen {
+	if e.flags&venti.EntryActive == 0 || uint32(e.gen) != gen {
 		*size = 0
 	} else {
 		*size = e.size
@@ -1664,7 +1666,7 @@ func fileMetaAlloc(f *File, dir *DirEntry, start uint32) uint32 {
 	blockPut(bb)
 
 	/* ... and one or two dir entries */
-	epb = s.dsize / VtEntrySize
+	epb = s.dsize / venti.EntrySize
 
 	bb, err = sourceBlock(s, dir.entry/uint32(epb), OReadOnly)
 	blockDependency(b, bb, -1, nil, nil)
@@ -1800,7 +1802,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 	if err != nil {
 		return err
 	}
-	if err = entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	if err = EntryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
 		blockPut(b)
 		return err
 	}
@@ -1833,13 +1835,13 @@ func setEntry(r *Source, e *Entry) error {
 	if err != nil {
 		return err
 	}
-	if err = entryUnpack(&oe, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	if err = EntryUnpack(&oe, b.data, int(r.offset%uint32(r.epb))); err != nil {
 		blockPut(b)
 		return err
 	}
 
 	e.gen = oe.gen
-	entryPack(e, b.data, int(r.offset%uint32(r.epb)))
+	EntryPack(e, b.data, int(r.offset%uint32(r.epb)))
 
 	/* BUG b should depend on the entry pointer */
 	blockDirty(b)

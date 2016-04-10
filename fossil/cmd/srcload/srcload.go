@@ -152,7 +152,7 @@ func new(s *Source, trace int, depth int) {
 		if ss == nil || sourceGetEntry(ss, &e) == 0 {
 			continue
 		}
-		if (e.flags&VtEntryDir != 0) && frand() < float64(1./bush) {
+		if (e.flags&venti.EntryDir != 0) && frand() < float64(1./bush) {
 			if trace != 0 {
 				var j int
 				for j = 0; j < trace; j++ {

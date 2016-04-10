@@ -9,7 +9,7 @@ import (
 	_ "sigint.ca/cmd/fossil/internal"
 )
 
-var z *VtSession
+var z *venti.Session
 
 const twid64 = uint64(^uint64(0))
 
@@ -213,8 +213,8 @@ func partition(fd int, bsize int, h *Header) {
 	if bsize%512 != 0 {
 		log.Fatalf("block size must be a multiple of 512 bytes")
 	}
-	if bsize > VtMaxLumpSize {
-		log.Fatalf("block size must be less than %d", VtMaxLumpSize)
+	if bsize > venti.MaxLumpSize {
+		log.Fatalf("block size must be less than %d", venti.MaxLumpSize)
 	}
 
 	*h = Header{}
@@ -254,11 +254,11 @@ func tagGen() uint {
 func entryInit(e *Entry) {
 	e.gen = 0
 	e.dsize = uint16(bsize)
-	e.psize = uint16(bsize / VtEntrySize * VtEntrySize)
-	e.flags = VtEntryActive
+	e.psize = uint16(bsize / venti.EntrySize * venti.EntrySize)
+	e.flags = venti.EntryActive
 	e.depth = 0
 	e.size = 0
-	copy(e.score[:], vtZeroScore[:VtScoreSize])
+	copy(e.score[:], vtZeroScore[:venti.ScoreSize])
 	e.tag = tagGen()
 	e.snap = 0
 	e.archive = 0
@@ -313,7 +313,7 @@ func rootMetaInit(e *Entry) {
 	/* build up entry for meta block */
 	entryInit(e)
 
-	e.flags |= VtEntryLocal
+	e.flags |= venti.EntryLocal
 	e.size = uint64(bsize)
 	e.tag = tag
 	localToGlobal(addr, e.score)
@@ -331,20 +331,20 @@ func rootInit(e *Entry) uint {
 	}
 
 	/* root meta data is in the third entry */
-	entryPack(e, buf, 2)
+	EntryPack(e, buf, 2)
 
 	entryInit(e)
-	e.flags |= VtEntryDir
-	entryPack(e, buf, 0)
+	e.flags |= venti.EntryDir
+	EntryPack(e, buf, 0)
 
 	entryInit(e)
-	entryPack(e, buf, 1)
+	EntryPack(e, buf, 1)
 
 	_blockWrite(PartData, uint(addr))
 
 	entryInit(e)
-	e.flags |= VtEntryLocal | VtEntryDir
-	e.size = VtEntrySize * 3
+	e.flags |= venti.EntryLocal | venti.EntryDir
+	e.size = venti.EntrySize * 3
 	e.tag = tag
 	localToGlobal(uint(addr), e.score)
 
@@ -352,7 +352,7 @@ func rootInit(e *Entry) uint {
 	for i = 0; i < bsize; i++ {
 		buf[i] = 0
 	}
-	entryPack(e, buf, 0)
+	EntryPack(e, buf, 0)
 
 	_blockWrite(PartData, uint(addr))
 
@@ -379,14 +379,14 @@ func blockAlloc(typ int, tag uint) uint {
 	l.typ = uint8(typ)
 	l.state = BsAlloc
 	l.tag = tag
-	labelPack(&l, buf, int(blockAlloc_addr%uint(lpb)))
+	LabelPack(&l, buf, int(blockAlloc_addr%uint(lpb)))
 	_blockWrite(PartLabel, blockAlloc_addr/uint(lpb))
 	tmp1 := blockAlloc_addr
 	blockAlloc_addr++
 	return tmp1
 }
 
-func superInit(label string, root uint, score VtScore) {
+func superInit(label string, root uint, score venti.Score) {
 	var s Super
 
 	for i = 0; i < bsize; i++ {
@@ -401,9 +401,9 @@ func superInit(label string, root uint, score VtScore) {
 	s.next = NilBlock
 	s.current = NilBlock
 	strecpy(s.name, s.name[sizeof(s.name):], label)
-	copy(s.last, score[:VtScoreSize])
+	copy(s.last, score[:venti.ScoreSize])
 
-	superPack(&s, buf)
+	SuperPack(&s, buf)
 	_blockWrite(PartSuper, 0)
 }
 
@@ -480,7 +480,7 @@ func topLevel(name string) {
 	fsClose(fs)
 }
 
-func ventiRead(score VtScore, typ int) int {
+func ventiRead(score venti.Score, typ int) int {
 	var n int
 
 	n = vtRead(z, score, typ, buf, bsize)
@@ -494,14 +494,14 @@ func ventiRead(score VtScore, typ int) int {
 func ventiRoot(host string, s string) uint {
 	var i int
 	var n int
-	var score VtScore
+	var score venti.Score
 	var addr uint
 	var tag uint
 	var de DirEntry
 	var mb MetaBlock
 	var me MetaEntry
 	var e Entry
-	var root VtRoot
+	var root venti.Root
 
 	if parseScore(score[:], s) == 0 {
 		log.Fatalf("bad score '%s'", s)
@@ -515,35 +515,35 @@ func ventiRoot(host string, s string) uint {
 	tag = tagGen()
 	addr = blockAlloc(BtDir, tag)
 
-	ventiRead(score, VtRootType)
+	ventiRead(score, venti.RootType)
 	if vtRootUnpack(&root, buf) == 0 {
 		log.Fatalf("corrupted root: vtRootUnpack")
 	}
-	n = ventiRead(root.score, VtDirType)
+	n = ventiRead(root.score, venti.DirType)
 
 	/*
 	 * Fossil's vac archives start with an extra layer of source,
 	 * but vac's don't.
 	 */
-	if n <= 2*VtEntrySize {
+	if n <= 2*venti.EntrySize {
 
-		if entryUnpack(&e, buf, 0) == 0 {
+		if EntryUnpack(&e, buf, 0) == 0 {
 			log.Fatalf("bad root: top entry")
 		}
-		n = ventiRead(e.score, VtDirType)
+		n = ventiRead(e.score, venti.DirType)
 	}
 
 	/*
 	 * There should be three root sources (and nothing else) here.
 	 */
 	for i = 0; i < 3; i++ {
-		if entryUnpack(&e, buf, i) == 0 || e.flags&VtEntryActive == 0 || e.psize < 256 || e.dsize < 256 {
+		if EntryUnpack(&e, buf, i) == 0 || e.flags&venti.EntryActive == 0 || e.psize < 256 || e.dsize < 256 {
 			log.Fatalf("bad root: entry %d", i)
 		}
 		fmt.Fprintf(os.Stderr, "%v\n", e.score)
 	}
 
-	if n > 3*VtEntrySize {
+	if n > 3*venti.EntrySize {
 		log.Fatalf("bad root: entry count")
 	}
 
@@ -552,7 +552,7 @@ func ventiRoot(host string, s string) uint {
 	/*
 	 * Maximum qid is recorded in root's msource, entry #2 (conveniently in e).
 	 */
-	ventiRead(e.score, VtDataType)
+	ventiRead(e.score, venti.DataType)
 
 	if err := mbUnpack(&mb, buf, bsize); err != nil {
 		log.Fatalf("bad root: mbUnpack")
@@ -571,8 +571,8 @@ func ventiRoot(host string, s string) uint {
 	 */
 	entryInit(&e)
 
-	e.flags |= VtEntryLocal | VtEntryDir
-	e.size = VtEntrySize * 3
+	e.flags |= venti.EntryLocal | venti.EntryDir
+	e.size = venti.EntrySize * 3
 	e.tag = tag
 	localToGlobal(addr, e.score)
 
@@ -580,7 +580,7 @@ func ventiRoot(host string, s string) uint {
 	for i = 0; i < bsize; i++ {
 		buf[i] = 0
 	}
-	entryPack(&e, buf, 0)
+	EntryPack(&e, buf, 0)
 	_blockWrite(PartData, addr)
 
 	return addr
@@ -590,14 +590,14 @@ func parseScore(score []byte, buf string) int {
 	var i int
 	var c int
 
-	for i = 0; i < VtScoreSize; i++ {
+	for i = 0; i < venti.ScoreSize; i++ {
 		score[i] = 0
 	}
 
-	if len(buf) < VtScoreSize*2 {
+	if len(buf) < venti.ScoreSize*2 {
 		return err
 	}
-	for i = 0; i < VtScoreSize*2; i++ {
+	for i = 0; i < venti.ScoreSize*2; i++ {
 		if buf[i] >= '0' && buf[i] <= '9' {
 			c = int(buf[i]) - '0'
 		} else if buf[i] >= 'a' && buf[i] <= 'f' {

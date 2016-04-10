@@ -1,4 +1,4 @@
-package main
+package fossil
 
 import (
 	"errors"
@@ -696,7 +696,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 		fmt.Printf("deUnpack: got gen etc\n")
 	}
 
-	/* size is gotten from VtEntry */
+	/* size is gotten from venti.Entry */
 	dir.size = 0
 
 	/* qid */
@@ -713,11 +713,11 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 
 	/* skip replacement */
 	if version == 7 {
-		if n < VtScoreSize {
+		if n < venti.ScoreSize {
 			goto Err
 		}
-		p = p[VtScoreSize:]
-		n -= VtScoreSize
+		p = p[venti.ScoreSize:]
+		n -= venti.ScoreSize
 	}
 
 	/* uid */

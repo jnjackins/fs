@@ -1,19 +1,15 @@
-package main
+package fossil
 
 import (
-	"fmt"
 	"net"
 	"sync"
 	"time"
+
+	"sigint.ca/fs/venti"
 )
 
 /* tunable parameters - probably should not be constants */
 const (
-	/*
-	 * estimate of bytes per dir entries - determines number
-	 * of index entries in the block
-	 */
-	BytesPerEntry = 100
 	/* don't allocate in block if more than this percentage full */
 	FullPercentage  = 80
 	FlushSize       = 200 /* number of blocks to flush */
@@ -23,21 +19,14 @@ const (
 const (
 	Nowaitlock = iota
 	Waitlock
+)
 
+const (
 	NilBlock = ^uint32(0)
 	MaxBlock = uint32(1 << 31)
 )
 
-const (
-	HeaderMagic   = 0x3776ae89
-	HeaderVersion = 1
-	HeaderOffset  = 128 * 1024
-	HeaderSize    = 512
-	SuperMagic    = 0x2340a3b1
-	SuperSize     = 512
-	SuperVersion  = 1
-	LabelSize     = 14
-)
+const LabelSize = 14
 
 /* well known tags */
 const (
@@ -46,18 +35,6 @@ const (
 	EnumTag        /* root of a dir listing */
 	UserTag = 32   /* all other tags should be >= UserTag */
 )
-
-type Super struct {
-	version   uint16
-	epochLow  uint32
-	epochHigh uint32
-	qid       uint64    /* next qid */
-	active    uint32    /* root of active file system */
-	next      uint32    /* root of next snapshot to archive */
-	current   uint32    /* root of snapshot currently archiving */
-	last      VtScore   /* last snapshot successfully archived */
-	name      [128]byte /* label */
-}
 
 type Fs struct {
 	arch       *Arch    /* immutable */
@@ -85,32 +62,6 @@ type Fs struct {
 	halted bool          /* epoch lock is held to halt (console initiated) */
 	source *Source       /* immutable: root of sources */
 	file   *File         /* immutable: root of files */
-}
-
-/*
- * variant on VtEntry
- * there are extra fields when stored locally
- */
-type Entry struct {
-	gen     uint32 /* generation number */
-	psize   uint16 /* pointer block size */
-	dsize   uint16 /* data block size */
-	depth   uint8  /* unpacked from flags */
-	flags   uint8
-	size    uint64
-	score   VtScore
-	tag     uint32 /* tag for local blocks: zero if stored on Venti */
-	snap    uint32 /* non-zero -> entering snapshot of given epoch */
-	archive bool   /* archive this snapshot: only valid for snap != 0 */
-}
-
-type Header struct {
-	version   uint16
-	blockSize uint16
-	super     uint32 /* super blocks */
-	label     uint32 /* start of labels */
-	data      uint32 /* end of labels - start of data blocks */
-	end       uint32 /* end of data blocks */
 }
 
 /*
@@ -164,18 +115,6 @@ const (
 	BioMax
 )
 
-type Label struct {
-	typ        uint8
-	state      uint8
-	tag        uint32
-	epoch      uint32
-	epochClose uint32
-}
-
-func (l *Label) String() string {
-	return fmt.Sprintf("%s,%s,e=%d,%d,tag=%#x", btStr(int(l.typ)), bsStr(int(l.state)), l.epoch, int(l.epochClose), l.tag)
-}
-
 type Block struct {
 	c     *Cache
 	ref   int
@@ -186,7 +125,7 @@ type Block struct {
 
 	part  int
 	addr  uint32
-	score VtScore /* score */
+	score venti.Score
 	l     Label
 
 	dmap []byte

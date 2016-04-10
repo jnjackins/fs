@@ -72,7 +72,7 @@ func main(argc int, argv *string) {
 	fmt.Printf("epoch %d\n", s.epochLow)
 	if argc == 2 {
 		s.epochLow = uint(strtoul(argv[1], nil, 0))
-		superPack(&s, buf[:])
+		SuperPack(&s, buf[:])
 		if pwrite(fd, buf, int(h.blockSize), int64(h.super)*int64(h.blockSize)) != int(h.blockSize) {
 			log.Fatalf("writing super block: %v", err)
 		}

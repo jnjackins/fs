@@ -401,7 +401,7 @@ func iso9660labels(disk *Disk, buf []byte, write func(int, uint)) {
 		}
 
 		llb = lb
-		labelPack(&l, buf, int(bn%uint32(lpb)))
+		LabelPack(&l, buf, int(bn%uint32(lpb)))
 	}
 
 	if llb != ^0 {
@@ -560,7 +560,7 @@ func iso9660copyfile(fs *Fs, dir *File, c *Cdir) {
 	var d Dir
 	var de DirEntry
 	var sysl int
-	var score VtScore
+	var score venti.Score
 	var off uint32
 	var foff uint32
 	var len uint32

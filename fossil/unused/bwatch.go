@@ -36,8 +36,8 @@ type WMap struct {
 }
 
 type WEntry struct {
-	c   VtScore
-	p   VtScore
+	c   venti.Score
+	p   venti.Score
 	off int
 
 	cprev *WEntry
@@ -53,12 +53,12 @@ var (
 	bwatchDisabled uint
 )
 
-func hash(score VtScore) uint {
+func hash(score venti.Score) uint {
 	var i uint
 	var h uint
 
 	h = 0
-	for i = 0; i < VtScoreSize; i++ {
+	for i = 0; i < venti.ScoreSize; i++ {
 		h = h*37 + uint(score[i])
 	}
 	return h % HashSize
@@ -67,7 +67,7 @@ func hash(score VtScore) uint {
 /*
  * remove all dependencies with score as a parent
  */
-func _bwatchResetParent(score VtScore) {
+func _bwatchResetParent(score venti.Score) {
 
 	var w *WEntry
 	var next *WEntry
@@ -100,7 +100,7 @@ func _bwatchResetParent(score VtScore) {
 /*
  * and child
  */
-func _bwatchResetChild(score VtScore) {
+func _bwatchResetChild(score venti.Score) {
 
 	var w *WEntry
 	var next *WEntry
@@ -132,7 +132,7 @@ func _bwatchResetChild(score VtScore) {
 	}
 }
 
-func parent(c VtScore, off *int) []byte {
+func parent(c venti.Score, off *int) []byte {
 	var w *WEntry
 	var h uint
 
@@ -147,12 +147,12 @@ func parent(c VtScore, off *int) []byte {
 	return nil
 }
 
-func addChild(p [VtEntrySize]uint8, c [VtEntrySize]uint8, off int) {
+func addChild(p [venti.EntrySize]uint8, c [venti.EntrySize]uint8, off int) {
 	var h uint
 
 	w := new(WEntry)
-	copy(w.p[:], p[:VtScoreSize])
-	copy(w.c[:], c[:VtScoreSize])
+	copy(w.p[:], p[:venti.ScoreSize])
+	copy(w.c[:], c[:venti.ScoreSize])
 	w.off = off
 
 	h = hash(w.p)
@@ -170,7 +170,7 @@ func addChild(p [VtEntrySize]uint8, c [VtEntrySize]uint8, off int) {
 	wmap.hchild[h] = w
 }
 
-func bwatchReset(score VtScore) {
+func bwatchReset(score venti.Score) {
 	wmap.lk.Lock()
 	_bwatchResetParent(score)
 	_bwatchResetChild(score)
@@ -216,19 +216,19 @@ func bwatchDependency(b *Block) {
 		break
 
 	case BtDir:
-		epb = int(blockSize / VtEntrySize)
+		epb = int(blockSize / venti.EntrySize)
 		for i = 0; i < epb; i++ {
-			entryUnpack(&e, b.data, i)
-			if e.flags&VtEntryActive == 0 {
+			EntryUnpack(&e, b.data, i)
+			if e.flags&venti.EntryActive == 0 {
 				continue
 			}
 			addChild(b.score, e.score, i)
 		}
 
 	default:
-		ppb = int(blockSize / VtScoreSize)
+		ppb = int(blockSize / venti.ScoreSize)
 		for i = 0; i < ppb; i++ {
-			addChild(b.score, [VtEntrySize]uint8(b.data[i*VtScoreSize:]), i)
+			addChild(b.score, [venti.EntrySize]uint8(b.data[i*venti.ScoreSize:]), i)
 		}
 	}
 
@@ -242,13 +242,13 @@ func depth(s []byte) int {
 	d = -1
 	for s != nil {
 		d++
-		s = parent(VtScore(s), &x)
+		s = parent(venti.Score(s), &x)
 	}
 
 	return d
 }
 
-func lockConflicts(xhave VtScore, xwant VtScore) bool {
+func lockConflicts(xhave venti.Score, xwant venti.Score) bool {
 	var have []byte
 	var want []byte
 	var havedepth int
@@ -273,12 +273,12 @@ func lockConflicts(xhave VtScore, xwant VtScore) bool {
 	want = xwant[:]
 	for wantdepth > havedepth {
 		wantdepth--
-		want = parent(VtScore(want), &wantpos)
+		want = parent(venti.Score(want), &wantpos)
 	}
 
 	for havedepth > wantdepth {
 		havedepth--
-		have = parent(VtScore(have), &havepos)
+		have = parent(venti.Score(have), &havepos)
 	}
 
 	/*
@@ -286,8 +286,8 @@ func lockConflicts(xhave VtScore, xwant VtScore) bool {
 	 * a common ancestor.
 	 */
 	for have != nil && want != nil && bytes.Compare(have, want) != 0 {
-		have = parent(VtScore(have), &havepos)
-		want = parent(VtScore(want), &wantpos)
+		have = parent(venti.Score(have), &havepos)
+		want = parent(venti.Score(want), &wantpos)
 	}
 
 	/*

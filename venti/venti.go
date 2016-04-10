@@ -1,80 +1,121 @@
-package main
+package venti
 
 import (
 	"bytes"
 	"fmt"
 	"net"
+
+	"sigint.ca/fs/internal/pack"
+)
+
+/* Lump Types */
+const (
+	ErrType = iota /* illegal */
+
+	RootType
+	DirType
+	PointerType0
+	PointerType1
+	PointerType2
+	PointerType3
+	PointerType4
+	PointerType5
+	PointerType6
+	PointerType7 /* not used */
+	PointerType8 /* not used */
+	PointerType9 /* not used */
+	DataType
+
+	MaxType
 )
 
 /* Dir Entry flags */
 const (
-	VtEntryActive     = (1 << 0)   /* entry is in use */
-	VtEntryDir        = (1 << 1)   /* a directory */
-	VtEntryDepthShift = 2          /* shift for pointer depth */
-	VtEntryDepthMask  = (0x7 << 2) /* mask for pointer depth */
-	VtEntryLocal      = (1 << 5)   /* used for local storage: should not be set for Venti blocks */
-	VtEntryNoArchive  = (1 << 6)   /* used for local storage: should not be set for Venti blocks */
+	EntryActive     = (1 << 0)   /* entry is in use */
+	EntryDir        = (1 << 1)   /* a directory */
+	EntryDepthShift = 2          /* shift for pointer depth */
+	EntryDepthMask  = (0x7 << 2) /* mask for pointer depth */
+	EntryLocal      = (1 << 5)   /* used for local storage: should not be set for Venti blocks */
+	EntryNoArchive  = (1 << 6)   /* used for local storage: should not be set for Venti blocks */
 )
 
-// from oventi.h
 const (
-	VtScoreSize     = 20 /* Venti */
-	VtMaxLumpSize   = 56 * 1024
-	VtPointerDepth  = 7
-	VtEntrySize     = 40
-	VtRootSize      = 300
-	VtMaxStringSize = 1000
-	VtAuthSize      = 1024 /* size of auth group - in bits - must be multiple of 8 */
-	MaxFragSize     = 9 * 1024
-	VtMaxFileSize   = uint64(1<<48) - 1
-	VtRootVersion   = 2
+	ScoreSize     = 20 /* Venti */
+	MaxLumpSize   = 56 * 1024
+	PointerDepth  = 7
+	EntrySize     = 40
+	RootSize      = 300
+	MaxStringSize = 1000
+	AuthSize      = 1024 /* size of auth group - in bits - must be multiple of 8 */
+	MaxFragSize   = 9 * 1024
+	MaxFileSize   = uint64(1<<48) - 1
+	RootVersion   = 2
 )
 
-type VtRoot struct {
-	version   uint16
-	name      string
-	typ       string
-	score     VtScore /* to a Dir block */
-	blockSize uint16  /* maximum block size */
-	prev      VtScore /* last root block */
+const NilBlock = ^uint32(0)
+
+type Root struct {
+	Version   uint16
+	Name      string
+	Type      string
+	Score     Score  /* to a Dir block */
+	BlockSize uint16 /* maximum block size */
+	Prev      Score  /* last root block */
 }
 
-type VtScore [VtScoreSize]uint8
+type Score [ScoreSize]uint8
 
-func (sc VtScore) String() string {
+/* score of a zero length block */
+var ZeroScore = Score{
+	0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55,
+	0xbf, 0xef, 0x95, 0x60, 0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09,
+}
+
+func (sc Score) String() string {
 	var s string
 	//if sc == nil {
 	//	s = "*"
 	//} else
-	if addr := globalToLocal(sc); addr != NilBlock {
+	if addr := GlobalToLocal(sc); addr != NilBlock {
 		s = fmt.Sprintf("%#.8x", addr)
 	} else {
-		for i := 0; i < VtScoreSize; i++ {
+		for i := 0; i < ScoreSize; i++ {
 			s += fmt.Sprintf("%2.2x", sc[i])
 		}
 	}
 	return s
 }
 
-/* score of a zero length block */
-var vtZeroScore = VtScore{
-	0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55,
-	0xbf, 0xef, 0x95, 0x60, 0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09,
+func GlobalToLocal(score Score) uint32 {
+	for i := 0; i < ScoreSize-4; i++ {
+		if score[i] != 0 {
+			return NilBlock
+		}
+	}
+
+	return pack.U32GET(score[ScoreSize-4:])
 }
 
-func vtZeroExtend(typ int, buf []byte, size, newsize int) int {
+func LocalToGlobal(addr uint32, score Score) {
+	for i := 0; i < ScoreSize-4; i++ {
+		score[i] = 0
+	}
+	pack.U32PUT(score[ScoreSize-4:], addr)
+}
+
+func ZeroExtend(typ int, buf []byte, size, newsize int) int {
 	switch typ {
 	default:
 		for i := size; i < newsize; i++ {
 			buf[i] = 0
 		}
-	case VtPointerType0, VtPointerType1, VtPointerType2, VtPointerType3, VtPointerType4,
-		VtPointerType5, VtPointerType6, VtPointerType7, VtPointerType8, VtPointerType9:
-		start := (size / VtScoreSize) * VtScoreSize
-		end := (newsize / VtScoreSize) * VtScoreSize
+	case PointerType0, PointerType1, PointerType2, PointerType3, PointerType4,
+		PointerType5, PointerType6, PointerType7, PointerType8, PointerType9:
+		start := (size / ScoreSize) * ScoreSize
+		end := (newsize / ScoreSize) * ScoreSize
 		i := start
-		for ; i < end; i += VtScoreSize {
-			copy(buf[i:], vtZeroScore[:VtScoreSize])
+		for ; i < end; i += ScoreSize {
+			copy(buf[i:], ZeroScore[:ScoreSize])
 		}
 		for ; i < newsize; i++ {
 			buf[i] = 0
@@ -84,7 +125,7 @@ func vtZeroExtend(typ int, buf []byte, size, newsize int) int {
 	return 1
 }
 
-func vtZeroTruncate(typ int, buf []byte, n int) int {
+func ZeroTruncate(typ int, buf []byte, n int) int {
 	var i int
 	switch typ {
 	default:
@@ -94,64 +135,60 @@ func vtZeroTruncate(typ int, buf []byte, n int) int {
 			}
 		}
 		return i
-	case VtRootType:
-		if n < VtRootSize {
+	case RootType:
+		if n < RootSize {
 			return n
 		}
-		return VtRootSize
-	case VtPointerType0,
-		VtPointerType1,
-		VtPointerType2,
-		VtPointerType3,
-		VtPointerType4,
-		VtPointerType5,
-		VtPointerType6,
-		VtPointerType7,
-		VtPointerType8,
-		VtPointerType9:
+		return RootSize
+	case PointerType0,
+		PointerType1,
+		PointerType2,
+		PointerType3,
+		PointerType4,
+		PointerType5,
+		PointerType6,
+		PointerType7,
+		PointerType8,
+		PointerType9:
 		/* ignore slop at end of block */
-		i := (n / VtScoreSize) * VtScoreSize
+		i := (n / ScoreSize) * ScoreSize
 		for i >= 0 {
-			if bytes.Compare(buf[i:], vtZeroScore[:]) != 0 {
+			if bytes.Compare(buf[i:], ZeroScore[:]) != 0 {
 				break
 			}
-			i -= VtScoreSize
+			i -= ScoreSize
 		}
 		return i
 	}
 }
 
-func vtRootPack(r *VtRoot, buf []byte) {
-	orig := buf
-
-	U16PUT(buf, r.version)
+func RootPack(r *Root, buf []byte) {
+	pack.U16PUT(buf, r.Version)
 	buf = buf[2:]
-	copy(buf, r.name)
-	buf = buf[len(r.name):]
-	copy(buf, r.typ)
-	buf = buf[len(r.typ):]
-	copy(buf, r.score[:VtScoreSize])
-	buf = buf[VtScoreSize:]
-	U16PUT(buf, r.blockSize)
+	copy(buf, r.Name)
+	buf = buf[len(r.Name):]
+	copy(buf, r.Type)
+	buf = buf[len(r.Type):]
+	copy(buf, r.Score[:ScoreSize])
+	buf = buf[ScoreSize:]
+	pack.U16PUT(buf, r.BlockSize)
 	buf = buf[2:]
-	copy(buf, r.prev[:VtScoreSize])
-	buf = buf[VtScoreSize:]
-
-	assert(len(buf)-len(orig) == VtRootSize)
+	copy(buf, r.Prev[:ScoreSize])
+	buf = buf[ScoreSize:]
 }
 
-func vtSha1(sha1 VtScore, buf []byte, n int) {
+func Sha1(sha1 Score, buf []byte, n int) {
 	panic("not implemented")
 }
 
-func vtSha1Check(score VtScore, buf []byte, n int) error {
+func Sha1Check(score Score, buf []byte, n int) error {
 	panic("not implemented")
 	return nil
 }
 
-func vtRead(z net.Conn, score VtScore, typ int, buf []byte) (int, error) {
+func Read(z net.Conn, score Score, typ int, buf []byte) (int, error) {
 	/*
-	   p = vtReadPacket(z, score, type, n);
+	   p = ReadPacket(z, score, type, n);
 	   if(p == nil)
 	           return -1;
 	   n = packetSize(p);
@@ -164,12 +201,12 @@ func vtRead(z net.Conn, score VtScore, typ int, buf []byte) (int, error) {
 	return 0, nil
 }
 
-func vtWrite(z net.Conn, score VtScore, typ int, buf []byte) error {
+func Write(z net.Conn, score Score, typ int, buf []byte) error {
 	panic("not implemented")
 	return nil
 }
 
-func vtSync(z net.Conn) error {
+func Sync(z net.Conn) error {
 	panic("not implemented")
 	return nil
 }

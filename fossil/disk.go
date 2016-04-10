@@ -1,4 +1,4 @@
-package main
+package fossil
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	//"9fans.net/go/plan9"
 )
 
 const (

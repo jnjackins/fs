@@ -1,27 +1,29 @@
-package main
+package fossil
 
 import (
 	"fmt"
 	"os"
 	"sort"
+
+	"sigint.ca/fs/venti"
 )
 
 type Fsck struct {
 	/* filled in by caller */
-	printblocks   bool
-	useventi      bool
-	flags         int
-	printdirs     bool
-	printfiles    bool
-	walksnapshots bool
-	fs            *Fs
-	printf        func(string, ...interface{}) int
-	clre          func(*Fsck, *Block, int)
-	clrp          func(*Fsck, *Block, int)
-	close         func(*Fsck, *Block, uint32)
-	clri          func(*Fsck, string, *MetaBlock, int, *Block)
+	PrintBlocks   bool
+	UseVenti      bool
+	Flags         int
+	PrintDirs     bool
+	PrintFiles    bool
+	WalkSnapshots bool
+	Printf        func(string, ...interface{}) int
+	Clre          func(*Fsck, *Block, int)
+	Clrp          func(*Fsck, *Block, int)
+	Close         func(*Fsck, *Block, uint32)
+	Clri          func(*Fsck, string, *MetaBlock, int, *Block)
 
 	/* used internally */
+	fs        *Fs
 	cache     *Cache
 	amap      []uint8 /* all blocks seen so far */
 	emap      []uint8 /* all blocks seen in this epoch */
@@ -40,29 +42,25 @@ type Fsck struct {
 	nclri     int
 }
 
-func checkInit(chk *Fsck) *Fsck {
-	chk.cache = chk.fs.cache
+func (chk *Fsck) init(fs *Fs) {
+	chk.fs = fs
+	chk.cache = fs.cache
 	chk.nblocks = int(cacheLocalSize(chk.cache, PartData))
-	chk.bsize = chk.fs.blockSize
-	chk.walkdepth = 0
-	chk.hint = 0
+	chk.bsize = fs.blockSize
 	chk.quantum = chk.nblocks / 100
-	if chk.quantum == 0 {
-		chk.quantum = 1
+	chk.quantum = 1
+	if chk.Printf == nil {
+		chk.Printf = printnop
 	}
-	if chk.printf == nil {
-		chk.printf = printnop
+	if chk.Clre == nil {
+		chk.Clre = clrenop
 	}
-	if chk.clre == nil {
-		chk.clre = clrenop
+	if chk.Close == nil {
+		chk.Close = closenop
 	}
-	if chk.close == nil {
-		chk.close = closenop
+	if chk.Clri == nil {
+		chk.Clri = clrinop
 	}
-	if chk.clri == nil {
-		chk.clri = clrinop
-	}
-	return chk
 }
 
 /*
@@ -74,15 +72,15 @@ func checkInit(chk *Fsck) *Fsck {
  * Also should summarize the errors instead of printing for every one
  * (e.g., XXX bad or unreachable blocks in /active/usr/rsc/foo).
  */
-func fsCheck(chk *Fsck) {
+func (chk *Fsck) Check(fs *Fs) {
 	var b *Block
 	var super Super
 	var err error
 
-	checkInit(chk)
+	chk.init(fs)
 	b, err = superGet(chk.cache, &super)
 	if err != nil {
-		chk.printf("could not load super block: %v", err)
+		chk.Printf("could not load super block: %v", err)
 		return
 	}
 
@@ -126,7 +124,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	var e Entry
 	var l Label
 
-	chk.printf("checking epoch %d...\n", epoch)
+	chk.Printf("checking epoch %d...\n", epoch)
 
 	for a = 0; a < uint32(chk.nblocks); a++ {
 		if err := readLabel(chk.cache, &l, (a+chk.hint)%uint32(chk.nblocks)); err != nil {
@@ -140,7 +138,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	}
 
 	if a == uint32(chk.nblocks) {
-		chk.printf("could not find root block for epoch %d", epoch)
+		chk.Printf("could not find root block for epoch %d", epoch)
 		return
 	}
 
@@ -161,15 +159,15 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	 * Second entry is link to previous epoch root,
 	 * just a convenience to help the search.
 	 */
-	if err := entryUnpack(&e, b.data, 0); err != nil {
+	if err := EntryUnpack(&e, b.data, 0); err != nil {
 		errorf(chk, "could not unpack root block %#.8x: %v", a, err)
 		blockPut(b)
 		return
 	}
 
 	walkEpoch(chk, b, e.score, BtDir, e.tag, epoch)
-	if err := entryUnpack(&e, b.data, 1); err == nil {
-		chk.hint = globalToLocal(e.score)
+	if err := EntryUnpack(&e, b.data, 1); err == nil {
+		chk.hint = venti.GlobalToLocal(e.score)
 	}
 	blockPut(b)
 }
@@ -184,17 +182,17 @@ func checkEpoch(chk *Fsck, epoch uint32) {
  * (v) if b is a past life of b' then only one of b and b' is active
  *	(too hard to check)
  */
-func walkEpoch(chk *Fsck, b *Block, score VtScore, typ int, tag, epoch uint32) bool {
+func walkEpoch(chk *Fsck, b *Block, score venti.Score, typ int, tag, epoch uint32) bool {
 	var i int
 	var ep uint32
 	var e Entry
 	var tmp1 int
 
-	if b != nil && chk.walkdepth == 0 && chk.printblocks {
-		chk.printf("%v %d %#.8x %#.8x\n", b.score, b.l.typ, b.l.tag, b.l.epoch)
+	if b != nil && chk.walkdepth == 0 && chk.PrintBlocks {
+		chk.Printf("%v %d %#.8x %#.8x\n", b.score, b.l.typ, b.l.tag, b.l.epoch)
 	}
 
-	if !chk.useventi && globalToLocal(score) == NilBlock {
+	if !chk.UseVenti && venti.GlobalToLocal(score) == NilBlock {
 		return true
 	}
 
@@ -207,12 +205,12 @@ func walkEpoch(chk *Fsck, b *Block, score VtScore, typ int, tag, epoch uint32) b
 		return false
 	}
 
-	if chk.printblocks {
-		chk.printf("%*s%v %d %#.8x %#.8x\n", chk.walkdepth*2, "", score, typ, tag, bb.l.epoch)
+	if chk.PrintBlocks {
+		chk.Printf("%*s%v %d %#.8x %#.8x\n", chk.walkdepth*2, "", score, typ, tag, bb.l.epoch)
 	}
 
 	ret := false
-	addr := globalToLocal(score)
+	addr := venti.GlobalToLocal(score)
 	if addr == NilBlock {
 		ret = true
 		goto Exit
@@ -263,7 +261,7 @@ func walkEpoch(chk *Fsck, b *Block, score VtScore, typ int, tag, epoch uint32) b
 		if bb.l.state&BsClosed == 0 {
 			// errorf(chk, "walk: addr %#ux: block is not in active tree, not closed (%d)",
 			// addr, bb->l.epochClose);
-			chk.close(chk, bb, epoch+1)
+			chk.Close(chk, bb, epoch+1)
 			chk.nclose++
 		}
 	}
@@ -278,7 +276,7 @@ func walkEpoch(chk *Fsck, b *Block, score VtScore, typ int, tag, epoch uint32) b
 	tmp1 = chk.nseen
 	chk.nseen++
 	if tmp1%chk.quantum == 0 {
-		chk.printf("check: visited %d/%d blocks (%.0f%%)\n",
+		chk.Printf("check: visited %d/%d blocks (%.0f%%)\n",
 			chk.nseen, chk.nblocks, float64(chk.nseen)*100/float64(chk.nblocks))
 	}
 
@@ -287,9 +285,9 @@ func walkEpoch(chk *Fsck, b *Block, score VtScore, typ int, tag, epoch uint32) b
 	switch typ {
 	/* pointer block */
 	default:
-		for i = 0; i < chk.bsize/VtScoreSize; i++ {
-			var score VtScore
-			copy(score[:], bb.data[i*VtScoreSize:])
+		for i = 0; i < chk.bsize/venti.ScoreSize; i++ {
+			var score venti.Score
+			copy(score[:], bb.data[i*venti.ScoreSize:])
 			if !walkEpoch(chk, bb, score, typ-1, tag, epoch) {
 				setBit(chk.errmap, bb.addr)
 				chk.clrp(chk, bb, i)
@@ -301,8 +299,8 @@ func walkEpoch(chk *Fsck, b *Block, score VtScore, typ int, tag, epoch uint32) b
 		break
 
 	case BtDir:
-		for i = 0; i < chk.bsize/VtEntrySize; i++ {
-			if err := entryUnpack(&e, bb.data, i); err != nil {
+		for i = 0; i < chk.bsize/venti.EntrySize; i++ {
+			if err := EntryUnpack(&e, bb.data, i); err != nil {
 				//errorf(chk, "walk: could not unpack entry: %ux[%d]: %v", addr, i, err);
 				setBit(chk.errmap, bb.addr)
 
@@ -311,11 +309,11 @@ func walkEpoch(chk *Fsck, b *Block, score VtScore, typ int, tag, epoch uint32) b
 				continue
 			}
 
-			if e.flags&VtEntryActive == 0 {
+			if e.flags&venti.EntryActive == 0 {
 				continue
 			}
 			if false {
-				fmt.Fprintf(os.Stderr, "%x[%d] tag=%x snap=%d score=%v\n", addr, i, e.tag, e.snap, e.score)
+				fmt.FPrintf(os.Stderr, "%x[%d] tag=%x snap=%d score=%v\n", addr, i, e.tag, e.snap, e.score)
 			}
 			ep = epoch
 			if e.snap != 0 {
@@ -332,7 +330,7 @@ func walkEpoch(chk *Fsck, b *Block, score VtScore, typ int, tag, epoch uint32) b
 				continue
 			}
 
-			if e.flags&VtEntryLocal != 0 {
+			if e.flags&venti.EntryLocal != 0 {
 				if e.tag < UserTag {
 					if e.tag != RootTag || tag != RootTag || i != 1 {
 						// errorf(chk, "bad tag in entry: %ux[%d] tag = %ux",
@@ -413,13 +411,13 @@ func checkLeak(chk *Fsck) {
 			continue
 		}
 
-		chk.close(chk, b, 0)
+		chk.Close(chk, b, 0)
 		chk.nclose++
 		setBit(chk.amap, a)
 		blockPut(b)
 	}
 
-	chk.printf("fsys blocks: total=%d used=%d(%.1f%%) free=%d(%.1f%%) lost=%d(%.1f%%)\n",
+	chk.Printf("fsys blocks: total=%d used=%d(%.1f%%) free=%d(%.1f%%) lost=%d(%.1f%%)\n",
 		uint32(chk.nblocks),
 		uint32(chk.nblocks)-nfree-nlost, 100*float64((uint32(chk.nblocks)-nfree-nlost)/uint32(chk.nblocks)),
 		nfree, 100*float64(nfree/uint32(chk.nblocks)),
@@ -519,14 +517,14 @@ func chkMetaBlock(mb *MetaBlock) bool {
 
 Err:
 	if false {
-		fmt.Fprintf(os.Stderr, "metaChunks failed!\n")
+		fmt.FPrintf(os.Stderr, "metaChunks failed!\n")
 		oo = MetaHeaderSize + mb.maxindex*MetaIndexSize
 		for i = 0; i < mb.nindex; i++ {
-			fmt.Fprintf(os.Stderr, "\t%d: %d %d\n", i, mc[i].offset, mc[i].offset+mc[i].size)
+			fmt.FPrintf(os.Stderr, "\t%d: %d %d\n", i, mc[i].offset, mc[i].offset+mc[i].size)
 			oo += int(mc[i].size)
 		}
 
-		fmt.Fprintf(os.Stderr, "\tused=%d size=%d free=%d free2=%d\n", oo, mb.size, mb.free, mb.size-oo)
+		fmt.FPrintf(os.Stderr, "\tused=%d size=%d free=%d free2=%d\n", oo, mb.size, mb.free, mb.size-oo)
 	}
 
 	return false
@@ -538,7 +536,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
 	var o uint32
 	var e Entry
 
-	if !chk.useventi && globalToLocal(r.score) == NilBlock {
+	if !chk.UseVenti && venti.GlobalToLocal(r.score) == NilBlock {
 		return
 	}
 	if err := sourceGetEntry(r, &e); err != nil {
@@ -546,8 +544,8 @@ func scanSource(chk *Fsck, name string, r *Source) {
 		return
 	}
 
-	a = globalToLocal(e.score)
-	if !chk.useventi && a == NilBlock {
+	a = venti.GlobalToLocal(e.score)
+	if !chk.UseVenti && a == NilBlock {
 		return
 	}
 	if getBit(chk.smap, a) != 0 {
@@ -590,7 +588,7 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 	var r, mr *Source
 	var err error
 
-	if !chk.useventi && globalToLocal(source.score) == NilBlock && globalToLocal(meta.score) == NilBlock {
+	if !chk.UseVenti && venti.GlobalToLocal(source.score) == NilBlock && venti.GlobalToLocal(meta.score) == NilBlock {
 		return
 	}
 
@@ -608,9 +606,9 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		return
 	}
 
-	a1 = globalToLocal(e1.score)
-	a2 = globalToLocal(e2.score)
-	if (!chk.useventi && a1 == NilBlock && a2 == NilBlock) || (getBit(chk.smap, a1) != 0 && getBit(chk.smap, a2) != 0) {
+	a1 = venti.GlobalToLocal(e1.score)
+	a2 = venti.GlobalToLocal(e2.score)
+	if (!chk.UseVenti && a1 == NilBlock && a2 == NilBlock) || (getBit(chk.smap, a1) != 0 && getBit(chk.smap, a2) != 0) {
 		sourceUnlock(source)
 		sourceUnlock(meta)
 		return
@@ -629,7 +627,7 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 			continue
 		}
 		if false {
-			fmt.Fprintf(os.Stderr, "source %v:%d block %d addr %d\n", source.score, source.offset, o, b.addr)
+			fmt.FPrintf(os.Stderr, "source %v:%d block %d addr %d\n", source.score, source.offset, o, b.addr)
 		}
 		if b.addr != NilBlock && getBit(chk.errmap, b.addr) != 0 {
 			warnf(chk, "previously reported error in block %ux is in %s", b.addr, name)
@@ -660,7 +658,7 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 				errorf(chk, "dir entry out of order: %s[%d][%d] = %s last = %s", name, o, i, de.elem, s)
 			}
 			s = de.elem
-			nn = fmt.Sprintf("%s/%s", name, de.elem)
+			nn = fmt.SPrintf("%s/%s", name, de.elem)
 			if nn == "" {
 				errorf(chk, "out of memory")
 				continue
@@ -668,12 +666,12 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 
 			if chk.printdirs {
 				if de.mode&ModeDir != 0 {
-					chk.printf("%s/\n", nn)
+					chk.Printf("%s/\n", nn)
 				}
 			}
-			if chk.printfiles {
+			if chk.Printfiles {
 				if de.mode&ModeDir == 0 {
-					chk.printf("%s\n", nn)
+					chk.Printf("%s\n", nn)
 				}
 			}
 			if de.mode&ModeDir == 0 {
@@ -728,11 +726,11 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 			continue
 		}
 		warnf(chk, "non referenced entry in source %s[%d]", name, o)
-		bb, err = sourceBlock(source, uint32(o)/(uint32(source.dsize)/VtEntrySize), OReadOnly)
+		bb, err = sourceBlock(source, uint32(o)/(uint32(source.dsize)/venti.EntrySize), OReadOnly)
 		if err == nil {
 			if bb.addr != NilBlock {
 				setBit(chk.errmap, bb.addr)
-				chk.clre(chk, bb, int(o%uint32(source.dsize/VtEntrySize)))
+				chk.clre(chk, bb, int(o%uint32(source.dsize/venti.EntrySize)))
 				chk.nclre++
 			}
 			blockPut(bb)
@@ -775,11 +773,11 @@ func getBit(bmap []byte, addr uint32) int {
 }
 
 func errorf(chk *Fsck, fmt_ string, args ...interface{}) {
-	chk.printf("error: %s\n", fmt.Sprintf(fmt_, args...))
+	chk.Printf("error: %s\n", fmt.SPrintf(fmt_, args...))
 }
 
 func warnf(chk *Fsck, fmt_ string, args ...interface{}) {
-	chk.printf("error: %s\n", fmt.Sprintf(fmt_, args...))
+	chk.Printf("error: %s\n", fmt.SPrintf(fmt_, args...))
 }
 
 func clrenop(*Fsck, *Block, int) {}

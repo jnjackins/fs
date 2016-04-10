@@ -2,121 +2,93 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"os"
+
+	"sigint.ca/fs/fossil"
+	"sigint.ca/fs/venti"
 )
 
-var bout bufio.Writer
-var fsck Fsck
+var bout *bufio.Writer
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "usage: %s [-c cachesize] [-h host] file\n", argv0)
-	exits("usage")
+	flag.PrintDefaults()
 }
 
-func flprint(fmt_ string, args ...interface{}) int {
-	n, _ = fmt.Fprintf(bout, fmt_, args...)
+func flprintf(fmt_ string, args ...interface{}) int {
+	n, _ := fmt.Fprintf(bout, fmt_, args...)
 	return n
 }
 
-func flclre(_ *Fsck, b *Block, o int) {
-	fmt.Fprintf(bout, "# clre 0x%ux %d\n", b.addr, o)
+func flclre(_ *Fsck, b *fossil.Block, o int) {
+	fmt.Fprintf(bout, "# clre %#x %d\n", b.addr, o)
 }
 
-func flclrp(_ *Fsck, b *Block, o int) {
-	fmt.Fprintf(bout, "# clrp 0x%ux %d\n", b.addr, o)
+func flclrp(_ *Fsck, b *fossil.Block, o int) {
+	fmt.Fprintf(bout, "# clrp %#x %d\n", b.addr, o)
 }
 
-func flclri(_ *Fsck, name string, _ *MetaBlock, _ int, _ *Block) {
+func flclri(_ *Fsck, name string, _ *fossil.MetaBlock, _ int, _ *fossil.Block) {
 	fmt.Fprintf(bout, "# clri %s\n", name)
 }
 
-func flclose(_ *Fsck, b *Block, epoch uint) {
-	fmt.Fprintf(bout, "# bclose 0x%ux %ud\n", b.addr, epoch)
+func flclose(_ *Fsck, b *Block, epoch uint32) {
+	fmt.Fprintf(bout, "# bclose %#x %d\n", b.addr, epoch)
 }
 
-func main(argc int, argv [XXX]string) {
-	var csize int = 1000
-	var z *VtSession
-	var host string = nil
+var (
+	cflag = flag.Int("c", 1000, "Keep a cache of `ncache`.")
+	fflag = flag.Bool("f", false, "Toggle fast mode.")
+	hflag = flag.String("h", "", "Use `host` as the venti server.")
+	vflag = flag.Bool("v", false, "Toggle verbose mode.")
+)
 
-	fsck.useventi = 1
+func main() {
+	fsck := new(fossil.Fsck)
+	fsck.UseVenti = true
 	bout = bufio.NewWriter(os.Stdout)
-	argv++
-	argc--
-	for (func() { argv0 != "" || argv0 != "" }()); argv[0] != "" && argv[0][0] == '-' && argv[0][1] != 0; (func() { argc--; argv++ })() {
-		var _args string
-		var _argt string
-		var _argc uint
-		_args = string(&argv[0][1])
-		if _args[0] == '-' && _args[1] == 0 {
-			argc--
-			argv++
-			break
-		}
-		_argc = 0
-		for _args[0] != 0 && _args != "" {
-			switch _argc {
-			default:
-				usage()
-				fallthrough
 
-				//csize = atoi(ARGF());
-			case 'c':
-				if csize <= 0 {
+	flag.Usage = usage
+	flag.Parse()
 
-					usage()
-				}
+	csize := *cflag
+	fsck.UseVenti = !*fflag
+	host := *hflag
+	fsck.PrintDirs = *vflag
 
-			case 'f':
-				fsck.useventi = 0
-
-				//host = ARGF();
-			case 'h':
-				break
-
-			case 'v':
-				fsck.printdirs = 1
-			}
-		}
-	}
-
-	if argc != 1 {
+	if flag.NArg() != 1 {
 		usage()
+		os.Exit(1)
 	}
 
-	vtAttach()
+	venti.Attach()
 
-	/*
-	 * Connect to Venti.
-	 */
-	z = vtDial(host, 0)
-
-	if z == nil {
-		if fsck.useventi != 0 {
+	// Connect to Venti.
+	z, err := venti.Dial(host, 0)
+	if err != nil {
+		if fsck.UseVenti {
 			log.Fatalf("could not connect to server: %s", vtGetError())
 		}
-	} else if vtConnect(z, "") == 0 {
-		log.Fatalf("vtConnect: %s", vtGetError())
+	} else if err = venti.Connect(z, ""); err != nil {
+		log.Fatalf("vtConnect: %v", err)
 	}
 
-	/*
-	 * Initialize file system.
-	 */
-	fsck.fs = fsOpen(argv[0], z, csize, OReadOnly)
+	fsck.Printf = flprintf
+	fsck.Clre = flclre
+	fsck.Clrp = flclrp
+	fsck.Close = flclose
+	fsck.Clri = flclri
 
-	if fsck.fs == nil {
-		log.Fatalf("could not open file system: %R")
+	// Initialize file system.
+	fs, err := fsOpen(flag.Arg(0), z, csize, OReadOnly)
+	if err != nil {
+		log.Fatalf("could not open file system: %v", err)
 	}
 
-	fsck.print = flprint
-	fsck.clre = flclre
-	fsck.clrp = flclrp
-	fsck.close = flclose
-	fsck.clri = flclri
+	fsck.Check(fs)
 
-	fsCheck(&fsck)
-
-	exits("")
+	bout.Flush()
 }
