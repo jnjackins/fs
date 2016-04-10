@@ -1,10 +1,13 @@
-package fossil
+package main
 
 import (
 	"errors"
 	"fmt"
 	"os"
 	"sort"
+
+	"sigint.ca/fs/internal/pack"
+	"sigint.ca/fs/venti"
 )
 
 const (
@@ -108,7 +111,7 @@ func stringUnpack(s *string, p *[]byte, n *int) bool {
 		return false
 	}
 
-	nn = int(U16GET(*p))
+	nn = int(pack.U16GET(*p))
 	*p = (*p)[2:]
 	*n -= 2
 	if nn > *n {
@@ -122,7 +125,7 @@ func stringUnpack(s *string, p *[]byte, n *int) bool {
 
 func stringPack(s string, p []byte) int {
 	n := uint16(len(s))
-	U16PUT(p, n)
+	pack.U16PUT(p, n)
 	copy(p[2:], s[:n])
 	return int(n + 2)
 }
@@ -199,14 +202,14 @@ func UnpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 		return &MetaBlock{}, nil
 	}
 
-	magic = U32GET(p)
+	magic = pack.U32GET(p)
 	if magic != MetaMagic && magic != MetaMagic-1 {
 		goto Err
 	}
-	mb.size = int(U16GET(p[4:]))
-	mb.free = int(U16GET(p[6:]))
-	mb.maxindex = int(U16GET(p[8:]))
-	mb.nindex = int(U16GET(p[10:]))
+	mb.size = int(pack.U16GET(p[4:]))
+	mb.free = int(pack.U16GET(p[6:]))
+	mb.maxindex = int(pack.U16GET(p[8:]))
+	mb.nindex = int(pack.U16GET(p[10:]))
 	mb.botch = magic != MetaMagic
 	if mb.size > n {
 		goto Err
@@ -221,13 +224,13 @@ func UnpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 
 	/* check the index table - ensures that meUnpack and meCmp never fail */
 	for i = 0; i < mb.nindex; i++ {
-		eo = int(U16GET(p))
-		en = int(U16GET(p[2:]))
+		eo = int(pack.U16GET(p))
+		en = int(pack.U16GET(p[2:]))
 		if eo < omin || eo+en > mb.size || en < 8 {
 			goto Err
 		}
 		q = mb.buf[eo:]
-		if U32GET(q) != DirMagic {
+		if pack.U32GET(q) != DirMagic {
 			goto Err
 		}
 		p = p[4:]
@@ -246,11 +249,11 @@ func (mb *MetaBlock) Pack() {
 
 	assert(mb.botch == false)
 
-	U32PUT(p, MetaMagic)
-	U16PUT(p[4:], uint16(mb.size))
-	U16PUT(p[6:], uint16(mb.free))
-	U16PUT(p[8:], uint16(mb.maxindex))
-	U16PUT(p[10:], uint16(mb.nindex))
+	pack.U32PUT(p, MetaMagic)
+	pack.U16PUT(p[4:], uint16(mb.size))
+	pack.U16PUT(p[6:], uint16(mb.free))
+	pack.U16PUT(p[8:], uint16(mb.maxindex))
+	pack.U16PUT(p[10:], uint16(mb.nindex))
 }
 
 func (mb *MetaBlock) Delete(i int) {
@@ -297,8 +300,8 @@ func (mb *MetaBlock) Insert(i int, me *MetaEntry) {
 	p = mb.buf[MetaHeaderSize+i*MetaIndexSize:]
 	n = (mb.nindex - i) * MetaIndexSize
 	copy(p[MetaIndexSize:], p[:n])
-	U16PUT(p, uint16(me.offset))
-	U16PUT(p[2:], me.size)
+	pack.U16PUT(p, uint16(me.offset))
+	pack.U16PUT(p[2:], me.size)
 	mb.nindex++
 }
 
@@ -339,8 +342,8 @@ func (mb *MetaBlock) meUnpack(me *MetaEntry, i int) {
 	assert(i >= 0 && i < mb.nindex)
 
 	p = mb.buf[MetaHeaderSize+i*MetaIndexSize:]
-	eo = int(U16GET(p))
-	en = int(U16GET(p[2:]))
+	eo = int(pack.U16GET(p))
+	en = int(pack.U16GET(p[2:]))
 
 	me.offset = eo
 	me.size = uint16(en)
@@ -358,7 +361,7 @@ func (mb *MetaBlock) meCmp(me *MetaEntry, s string) int {
 	/* skip magic & version */
 	p = p[6:]
 
-	n = int(U16GET(p))
+	n = int(pack.U16GET(p))
 	p = p[2:]
 
 	if n > int(me.size-8) {
@@ -399,7 +402,7 @@ func (mb *MetaBlock) meCmpOld(me *MetaEntry, s string) int {
 
 	/* skip magic & version */
 	p = p[6:]
-	n = int(U16GET(p))
+	n = int(pack.U16GET(p))
 	p = p[2:]
 
 	if n > int(me.size-8) {
@@ -434,8 +437,8 @@ func (mb *MetaBlock) metaChunks() ([]MetaChunk, error) {
 	mc := make([]MetaChunk, mb.nindex)
 	p = mb.buf[MetaHeaderSize:]
 	for i = 0; i < mb.nindex; i++ {
-		mc[i].offset = U16GET(p)
-		mc[i].size = U16GET(p[2:])
+		mc[i].offset = pack.U16GET(p)
+		mc[i].size = pack.U16GET(p[2:])
 		mc[i].index = uint16(i)
 		p = p[MetaIndexSize:]
 	}
@@ -490,7 +493,7 @@ func (mb *MetaBlock) Compact(mc []MetaChunk) {
 		n = int(mc[i].size)
 		if o != oo {
 			copy(mb.buf[oo:], mb.buf[o:][:n])
-			U16PUT(mb.buf[MetaHeaderSize+mc[i].index*MetaIndexSize:], uint16(oo))
+			pack.U16PUT(mb.buf[MetaHeaderSize+mc[i].index*MetaIndexSize:], uint16(oo))
 		}
 
 		oo += n
@@ -580,36 +583,36 @@ func deSize(dir *DirEntry) int {
 func (mb *MetaBlock) dePack(dir *DirEntry, me *MetaEntry) {
 	p := mb.buf[me.offset:]
 
-	U32PUT(p, DirMagic)
-	U16PUT(p[4:], 9) /* version */
+	pack.U32PUT(p, DirMagic)
+	pack.U16PUT(p[4:], 9) /* version */
 	p = p[6:]
 
 	p = p[stringPack(dir.elem, p):]
 
-	U32PUT(p, dir.entry)
-	U32PUT(p[4:], dir.gen)
-	U32PUT(p[8:], dir.mentry)
-	U32PUT(p[12:], dir.mgen)
-	U64PUT(p[16:], dir.qid)
+	pack.U32PUT(p, dir.entry)
+	pack.U32PUT(p[4:], dir.gen)
+	pack.U32PUT(p[8:], dir.mentry)
+	pack.U32PUT(p[12:], dir.mgen)
+	pack.U64PUT(p[16:], dir.qid)
 	p = p[24:]
 
 	p = p[stringPack(dir.uid, p):]
 	p = p[stringPack(dir.gid, p):]
 	p = p[stringPack(dir.mid, p):]
 
-	U32PUT(p, dir.mtime)
-	U32PUT(p[4:], dir.mcount)
-	U32PUT(p[8:], dir.ctime)
-	U32PUT(p[12:], dir.atime)
-	U32PUT(p[16:], dir.mode)
+	pack.U32PUT(p, dir.mtime)
+	pack.U32PUT(p[4:], dir.mcount)
+	pack.U32PUT(p[8:], dir.ctime)
+	pack.U32PUT(p[12:], dir.atime)
+	pack.U32PUT(p[16:], dir.mode)
 	p = p[5*4:]
 
 	if dir.qidSpace > 0 {
-		U8PUT(p, DeQidSpace)
-		U16PUT(p[1:], 2*8)
+		pack.U8PUT(p, DeQidSpace)
+		pack.U16PUT(p[1:], 2*8)
 		p = p[3:]
-		U64PUT(p, dir.qidOffset)
-		U64PUT(p[8:], dir.qidMax)
+		pack.U64PUT(p, dir.qidOffset)
+		pack.U64PUT(p[8:], dir.qidMax)
 		p = p[16:]
 	}
 
@@ -631,7 +634,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	}
 
 	/* magic */
-	if n < 4 || U32GET(p) != DirMagic {
+	if n < 4 || pack.U32GET(p) != DirMagic {
 		goto Err
 	}
 	p = p[4:]
@@ -645,7 +648,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	if n < 2 {
 		goto Err
 	}
-	version = int(U16GET(p))
+	version = int(pack.U16GET(p))
 	if version < 7 || version > 9 {
 		goto Err
 	}
@@ -669,7 +672,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	if n < 4 {
 		goto Err
 	}
-	dir.entry = U32GET(p)
+	dir.entry = pack.U32GET(p)
 	p = p[4:]
 	n -= 4
 
@@ -685,9 +688,9 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 		if n < 3*4 {
 			goto Err
 		}
-		dir.gen = U32GET(p)
-		dir.mentry = U32GET(p[4:])
-		dir.mgen = U32GET(p[8:])
+		dir.gen = pack.U32GET(p)
+		dir.mentry = pack.U32GET(p[4:])
+		dir.mgen = pack.U32GET(p[8:])
 		p = p[3*4:]
 		n -= 3 * 4
 	}
@@ -703,7 +706,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	if n < 8 {
 		goto Err
 	}
-	dir.qid = U64GET(p)
+	dir.qid = pack.U64GET(p)
 	p = p[8:]
 	n -= 8
 
@@ -741,11 +744,11 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	if n < 5*4 {
 		goto Err
 	}
-	dir.mtime = U32GET(p)
-	dir.mcount = U32GET(p[4:])
-	dir.ctime = U32GET(p[8:])
-	dir.atime = U32GET(p[12:])
-	dir.mode = U32GET(p[16:])
+	dir.mtime = pack.U32GET(p)
+	dir.mcount = pack.U32GET(p[4:])
+	dir.ctime = pack.U32GET(p[8:])
+	dir.atime = pack.U32GET(p[12:])
+	dir.mode = pack.U32GET(p[16:])
 	p = p[5*4:]
 	n -= 5 * 4
 
@@ -759,7 +762,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 			goto Err
 		}
 		t = int(p[0])
-		nn = int(U16GET(p[1:]))
+		nn = int(pack.U16GET(p[1:]))
 		p = p[3:]
 		n -= 3
 		if n < nn {
@@ -775,8 +778,8 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 				goto Err
 			}
 			dir.plan9 = true
-			dir.p9path = U64GET(p)
-			dir.p9version = U32GET(p[8:])
+			dir.p9path = pack.U64GET(p)
+			dir.p9version = pack.U32GET(p[8:])
 			if dir.mcount == 0 {
 				dir.mcount = dir.p9version
 			}
@@ -792,8 +795,8 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 				goto Err
 			}
 			dir.qidSpace = 1
-			dir.qidOffset = U64GET(p)
-			dir.qidMax = U64GET(p[8:])
+			dir.qidOffset = pack.U64GET(p)
+			dir.qidMax = pack.U64GET(p[8:])
 		}
 
 		p = p[nn:]

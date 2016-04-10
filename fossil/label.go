@@ -1,6 +1,11 @@
-package fossil
+package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"sigint.ca/fs/internal/pack"
+)
 
 type Label struct {
 	typ        uint8
@@ -14,7 +19,7 @@ func (l *Label) String() string {
 	return fmt.Sprintf("%s,%s,e=%d,%d,tag=%#x", btStr(int(l.typ)), bsStr(int(l.state)), l.epoch, int(l.epochClose), l.tag)
 }
 
-func LabelPack(l *Label, p []byte, i int) {
+func labelPack(l *Label, p []byte, i int) {
 	p = p[i*LabelSize:]
 	pack.U8PUT(p, l.state)
 	pack.U8PUT(p[1:], l.typ)
@@ -23,7 +28,7 @@ func LabelPack(l *Label, p []byte, i int) {
 	pack.U32PUT(p[10:], l.tag)
 }
 
-func LabelUnpack(l *Label, p []byte, i int) error {
+func labelUnpack(l *Label, p []byte, i int) error {
 	p = p[i*LabelSize:]
 	l.state = uint8(p[0])
 	l.typ = uint8(p[1])

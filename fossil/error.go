@@ -1,4 +1,4 @@
-package fossil
+package main
 
 import "errors"
 

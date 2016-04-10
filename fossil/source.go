@@ -1,4 +1,4 @@
-package fossil
+package main
 
 import (
 	"errors"
@@ -272,7 +272,7 @@ Found:
 	}
 	e.depth = 0
 	e.size = 0
-	copy(e.score[:], vtZeroScore[:venti.ScoreSize])
+	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
 	e.tag = 0
 	e.snap = 0
 	e.archive = false
@@ -316,7 +316,7 @@ func sourceKill(r *Source, doremove bool) error {
 	/* remember info on link we are removing */
 	addr = venti.GlobalToLocal(e.score)
 
-	typ = entryType(&e)
+	typ = EntryType(&e)
 	tag = e.tag
 
 	if doremove {
@@ -333,7 +333,7 @@ func sourceKill(r *Source, doremove bool) error {
 	e.depth = 0
 	e.size = 0
 	e.tag = 0
-	copy(e.score[:], vtZeroScore[:venti.ScoreSize])
+	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
 	EntryPack(&e, b.data, int(r.offset%uint32(r.epb)))
 	blockDirty(b)
 	if addr != NilBlock {
@@ -382,7 +382,7 @@ func sourceShrinkSize(r *Source, e *Entry, size uint64) error {
 	var b *Block
 	var err error
 
-	typ = entryType(e)
+	typ = EntryType(e)
 	b, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
@@ -412,7 +412,7 @@ func sourceShrinkSize(r *Source, e *Entry, size uint64) error {
 			var score venti.Score
 			copy(score[:], b.data[i*venti.ScoreSize:])
 			addr = venti.GlobalToLocal(score)
-			copy(b.data[i*venti.ScoreSize:], vtZeroScore[:venti.ScoreSize])
+			copy(b.data[i*venti.ScoreSize:], venti.ZeroScore[:venti.ScoreSize])
 			blockDirty(b)
 			if addr != NilBlock {
 				blockRemoveLink(b, addr, typ-1, e.tag, true)
@@ -577,7 +577,7 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 
 	if p.l.typ&BtLevelMask == 0 {
 		assert(p.l.typ == BtDir)
-		typ = entryType(e)
+		typ = EntryType(e)
 		b, err = cacheGlobal(c, e.score, typ, e.tag, mode)
 	} else {
 		typ = int(p.l.typ) - 1
@@ -659,7 +659,7 @@ func sourceGrowDepth(r *Source, p *Block, e *Entry, depth int) error {
 	assert(r.b != nil)
 	assert(depth <= venti.PointerDepth)
 
-	typ = entryType(e)
+	typ = EntryType(e)
 	b, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
@@ -690,7 +690,7 @@ func sourceGrowDepth(r *Source, p *Block, e *Entry, depth int) error {
 		typ++
 		e.tag = tag
 		e.flags |= venti.EntryLocal
-		blockDependency(bb, b, 0, vtZeroScore[:], nil)
+		blockDependency(bb, b, 0, venti.ZeroScore[:], nil)
 		blockPut(b)
 		b = bb
 		blockDirty(b)
@@ -718,7 +718,7 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 	assert(r.b != nil)
 	assert(depth <= venti.PointerDepth)
 
-	typ = entryType(e)
+	typ = EntryType(e)
 	rb, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
@@ -786,7 +786,7 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 	blockDirty(p)
 
 	/* (ii) */
-	copy(ob.data, vtZeroScore[:venti.ScoreSize])
+	copy(ob.data, venti.ZeroScore[:venti.ScoreSize])
 
 	blockDependency(ob, p, 0, b.score[:], nil)
 	blockDirty(ob)

@@ -10,23 +10,9 @@ import (
 )
 
 var (
-	cflag = flag.String("c", "", "execute the console command `cmd`")
-	Dflag = flag.Bool("D", false, "toggle the debug flag")
-	fflag = flag.String("f", "", "read and execute console commands stored in the Fossil disk `file`")
-	mflag = flag.Int("m", 30, "allocate `%` percent of the available free RAM for buffers")
-	//tflag = flag.Bool("t", false, "start a file server console on /dev/cons")
-)
-
-var (
 	mempcnt  int    /* for 9fsys.c */
-	none     string = "none"
 	foptname string = "/none/such"
 )
-
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s [-Dt] [-c cmd] [-f partition] [-m %%]\n", os.Args[0])
-	os.Exit(1)
-}
 
 func readCmdPart(file string, cmd []string) []string {
 	fd, err := os.Open(file)
@@ -73,18 +59,22 @@ func isspace(c byte) bool {
 	return unicode.IsSpace(rune(c))
 }
 
-var argv0 string
-
-func init() {
-	log.SetFlags(0)
-	log.SetPrefix("fatal error: ")
-	log.SetOutput(os.Stderr)
-
-	argv0 = os.Args[0]
-}
-
-func main() {
-	flag.Parse()
+func srvMain(argv []string) {
+	flags := flag.NewFlagSet("srv", flag.ContinueOnError)
+	flags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [-c cmd] [-f partition] [-m %%]\n", argv0)
+		flags.PrintDefaults()
+		os.Exit(1)
+	}
+	var (
+		cflag = flags.String("c", "", "execute the console command `cmd`")
+		fflag = flags.String("f", "", "read and execute console commands stored in the Fossil disk `file`")
+		mflag = flags.Int("m", 30, "allocate `%` percent of the available free RAM for buffers")
+	)
+	err := flags.Parse(argv)
+	if err != nil {
+		flags.Usage()
+	}
 
 	var cmd []string
 	if *cflag != "" {
@@ -98,11 +88,11 @@ func main() {
 	}
 	mempcnt = *mflag
 	if mempcnt <= 0 || mempcnt >= 100 {
-		usage()
+		flags.Usage()
 	}
 
-	if flag.NArg() != 0 {
-		usage()
+	if flags.NArg() != 0 {
+		flags.Usage()
 	}
 
 	consInit()

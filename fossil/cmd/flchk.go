@@ -48,14 +48,14 @@ var (
 
 func main() {
 	fsck := new(fossil.Fsck)
-	fsck.UseVenti = true
+	fsck.useventi = true
 	bout = bufio.NewWriter(os.Stdout)
 
 	flag.Usage = usage
 	flag.Parse()
 
 	csize := *cflag
-	fsck.UseVenti = !*fflag
+	fsck.useventi = !*fflag
 	host := *hflag
 	fsck.PrintDirs = *vflag
 
@@ -69,7 +69,7 @@ func main() {
 	// Connect to Venti.
 	z, err := venti.Dial(host, 0)
 	if err != nil {
-		if fsck.UseVenti {
+		if fsck.useventi {
 			log.Fatalf("could not connect to server: %s", vtGetError())
 		}
 	} else if err = venti.Connect(z, ""); err != nil {

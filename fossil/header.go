@@ -1,4 +1,10 @@
-package fossil
+package main
+
+import (
+	"fmt"
+
+	"sigint.ca/fs/internal/pack"
+)
 
 const (
 	HeaderMagic   = 0x3776ae89
@@ -16,7 +22,7 @@ type Header struct {
 	end       uint32 /* end of data blocks */
 }
 
-func HeaderPack(h *Header, p []byte) {
+func headerPack(h *Header, p []byte) {
 	for i := 0; i < HeaderSize; i++ {
 		p[i] = 0
 	}
@@ -29,7 +35,7 @@ func HeaderPack(h *Header, p []byte) {
 	pack.U32PUT(p[20:], h.end)
 }
 
-func HeaderUnpack(h *Header, p []byte) error {
+func headerUnpack(h *Header, p []byte) error {
 	if pack.U32GET(p) != HeaderMagic {
 		return fmt.Errorf("vac header bad magic")
 	}

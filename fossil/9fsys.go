@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"sigint.ca/fs/venti"
 )
 
 type Fsys struct {
@@ -843,7 +845,7 @@ func fsysClrep(fsys *Fsys, argv []string, ch int) error {
 		if b.l.typ == BtDir || b.l.typ == BtData {
 			return fmt.Errorf("wrong block type")
 		}
-		copy(zero[:], vtZeroScore[:venti.ScoreSize])
+		copy(zero[:], venti.ZeroScore[:venti.ScoreSize])
 	}
 	max := fs.blockSize / sz
 	for i := 1; i < argc; i++ {
@@ -1311,23 +1313,22 @@ func fsckClrp(fsck *Fsck, b *Block, offset int) {
 		return
 	}
 
-	copy(b.data[offset*venti.ScoreSize:], vtZeroScore[:venti.ScoreSize])
+	copy(b.data[offset*venti.ScoreSize:], venti.ZeroScore[:venti.ScoreSize])
 	blockDirty(b)
 }
 
 func fsysCheck(fsys *Fsys, argv []string) error {
 	var i int
 	var usage string = "usage: [fsys name] check [-v] [options]"
-	var fsck Fsck
 	var super Super
 
-	fsck = Fsck{}
-	fsck.fs = fsys.fs
-	fsck.clri = fsckClri
-	fsck.clre = fsckClre
-	fsck.clrp = fsckClrp
-	fsck.close = fsckClose
-	fsck.printf = consPrintf
+	fsck := &Fsck{
+		clri:   fsckClri,
+		clre:   fsckClre,
+		clrp:   fsckClrp,
+		close:  fsckClose,
+		printf: consPrintf,
+	}
 
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	if err := flags.Parse(argv[1:]); err != nil {
@@ -1357,7 +1358,6 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 		} else if argv[i] == "snapshot" {
 			fsck.walksnapshots = true
 		} else {
-
 			consPrintf("unknown option '%s'\n", argv[i])
 			return fmt.Errorf(usage)
 		}
@@ -1381,7 +1381,7 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 		}
 	}
 
-	fsCheck(&fsck)
+	fsck.check(fsys.fs)
 	consPrintf("fsck: %d clri, %d clre, %d clrp, %d bclose\n", fsck.nclri, fsck.nclre, fsck.nclrp, fsck.nclose)
 
 Out:

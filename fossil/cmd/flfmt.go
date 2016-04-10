@@ -174,7 +174,7 @@ func main() {
 		root = rootInit(&e)
 	}
 
-	superInit(label, root, vtZeroScore)
+	superInit(label, root, venti.ZeroScore)
 	diskFree(disk)
 
 	if score == "" {
@@ -258,7 +258,7 @@ func entryInit(e *Entry) {
 	e.flags = venti.EntryActive
 	e.depth = 0
 	e.size = 0
-	copy(e.score[:], vtZeroScore[:venti.ScoreSize])
+	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
 	e.tag = tagGen()
 	e.snap = 0
 	e.archive = 0
@@ -316,7 +316,7 @@ func rootMetaInit(e *Entry) {
 	e.flags |= venti.EntryLocal
 	e.size = uint64(bsize)
 	e.tag = tag
-	localToGlobal(addr, e.score)
+	venti.LocalToGlobal(addr, e.score)
 }
 
 func rootInit(e *Entry) uint {
@@ -346,7 +346,7 @@ func rootInit(e *Entry) uint {
 	e.flags |= venti.EntryLocal | venti.EntryDir
 	e.size = venti.EntrySize * 3
 	e.tag = tag
-	localToGlobal(uint(addr), e.score)
+	venti.LocalToGlobal(uint(addr), e.score)
 
 	addr = uint32(blockAlloc(BtDir, RootTag))
 	for i = 0; i < bsize; i++ {
@@ -403,7 +403,7 @@ func superInit(label string, root uint, score venti.Score) {
 	strecpy(s.name, s.name[sizeof(s.name):], label)
 	copy(s.last, score[:venti.ScoreSize])
 
-	SuperPack(&s, buf)
+	superPack(&s, buf)
 	_blockWrite(PartSuper, 0)
 }
 
@@ -483,11 +483,11 @@ func topLevel(name string) {
 func ventiRead(score venti.Score, typ int) int {
 	var n int
 
-	n = vtRead(z, score, typ, buf, bsize)
+	n = venti.Read(z, score, typ, buf, bsize)
 	if n < 0 {
 		log.Fatalf("ventiRead %V (%d) failed: %R", score, typ)
 	}
-	vtZeroExtend(typ, buf, n, bsize)
+	venti.ZeroExtend(typ, buf, n, bsize)
 	return n
 }
 
@@ -519,7 +519,7 @@ func ventiRoot(host string, s string) uint {
 	if vtRootUnpack(&root, buf) == 0 {
 		log.Fatalf("corrupted root: vtRootUnpack")
 	}
-	n = ventiRead(root.score, venti.DirType)
+	n = ventiRead(root.Score, venti.DirType)
 
 	/*
 	 * Fossil's vac archives start with an extra layer of source,
@@ -574,7 +574,7 @@ func ventiRoot(host string, s string) uint {
 	e.flags |= venti.EntryLocal | venti.EntryDir
 	e.size = venti.EntrySize * 3
 	e.tag = tag
-	localToGlobal(addr, e.score)
+	venti.LocalToGlobal(addr, e.score)
 
 	addr = blockAlloc(BtDir, RootTag)
 	for i = 0; i < bsize; i++ {

@@ -1,4 +1,4 @@
-package fossil
+package main
 
 import (
 	"errors"
@@ -118,7 +118,7 @@ func fsOpen(file string, z net.Conn, ncache int, mode int) (*Fs, error) {
 		if err != nil {
 			goto Err
 		}
-		localToGlobal(super.active, oscore)
+		venti.LocalToGlobal(super.active, oscore)
 		super.active = b.addr
 		bs, err = cacheLocal(fs.cache, PartSuper, 0, OReadWrite)
 		if err != nil {
@@ -127,7 +127,7 @@ func fsOpen(file string, z net.Conn, ncache int, mode int) (*Fs, error) {
 			goto Err
 		}
 
-		SuperPack(&super, bs.data)
+		superPack(&super, bs.data)
 		blockDependency(bs, b, 0, oscore[:], nil)
 		blockPut(b)
 		blockDirty(bs)
@@ -234,7 +234,7 @@ func superGet(c *Cache, super *Super) (*Block, error) {
 }
 
 func superWrite(b *Block, super *Super, forceWrite int) {
-	SuperPack(super, b.data)
+	superPack(super, b.data)
 	blockDirty(b)
 	if forceWrite != 0 {
 		for !blockWrite(b, Waitlock) {
@@ -497,7 +497,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 * Record that the new super.active can't get written out until
 	 * the new b gets written out.  Until then, use the old value.
 	 */
-	localToGlobal(oldaddr, oscore)
+	venti.LocalToGlobal(oldaddr, oscore)
 
 	blockDependency(bs, b, 0, oscore[:], nil)
 	blockPut(b)
@@ -695,10 +695,10 @@ func fsVac(fs *Fs, name string, score venti.Score) error {
 }
 
 func vtWriteBlock(z net.Conn, buf []byte, n uint, typ uint, score venti.Score) error {
-	if err := vtWrite(z, score, int(typ), buf); err != nil {
+	if err := venti.Write(z, score, int(typ), buf); err != nil {
 		return err
 	}
-	return vtSha1Check(score, buf, int(n))
+	return venti.Sha1Check(score, buf, int(n))
 }
 
 func mkVac(z net.Conn, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score venti.Score) error {
@@ -764,19 +764,19 @@ func mkVac(z net.Conn, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, sco
 
 	n = venti.EntrySize * 3
 	root = venti.Root{}
-	if err = vtWriteBlock(z, buf[:], n, venti.DirType, root.score); err != nil {
+	if err = vtWriteBlock(z, buf[:], n, venti.DirType, root.Score); err != nil {
 		return err
 	}
 
 	/*
 	 * Save root.
 	 */
-	root.version = venti.RootVersion
+	root.Version = venti.RootVersion
 
-	root.typ = "vac"
-	root.name = de.elem
-	root.blockSize = uint16(blockSize)
-	vtRootPack(&root, buf[:])
+	root.Type = "vac"
+	root.Name = de.elem
+	root.BlockSize = uint16(blockSize)
+	venti.RootPack(&root, buf[:])
 	if err = vtWriteBlock(z, buf[:], venti.RootSize, venti.RootType, score); err != nil {
 		return err
 	}

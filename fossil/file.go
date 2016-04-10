@@ -1,4 +1,4 @@
-package fossil
+package main
 
 import (
 	"errors"
@@ -1811,7 +1811,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 	blockPut(b)
 
 	if checkepoch {
-		b, err = cacheGlobal(r.fs.cache, e.score, entryType(e), e.tag, OReadOnly)
+		b, err = cacheGlobal(r.fs.cache, e.score, EntryType(e), e.tag, OReadOnly)
 		if err == nil {
 			if b.l.epoch >= epoch {
 				fmt.Fprintf(os.Stderr, "warning: entry %p epoch not older %#.8x/%d %v/%d in getEntry\n", r, b.addr, b.l.epoch, r.score, epoch)

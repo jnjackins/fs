@@ -1,4 +1,4 @@
-package fossil
+package main
 
 import (
 	"sigint.ca/fs/internal/pack"
@@ -23,7 +23,7 @@ type Super struct {
 	name      [128]byte   /* label */
 }
 
-func SuperPack(s *Super, p []byte) {
+func superPack(s *Super, p []byte) {
 	for i := 0; i < SuperSize; i++ {
 		p[i] = 0
 	}
@@ -40,7 +40,7 @@ func SuperPack(s *Super, p []byte) {
 	copy(p[54:], s.name[:])
 }
 
-func SuperUnpack(s *Super, p []byte) error {
+func superUnpack(s *Super, p []byte) error {
 	*s = Super{}
 	if pack.U32GET(p) != SuperMagic {
 		goto Err

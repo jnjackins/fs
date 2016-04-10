@@ -2,7 +2,7 @@
  * Generic traversal routines.
  */
 
-package fossil
+package main
 
 import "sigint.ca/fs/venti"
 
