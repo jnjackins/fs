@@ -237,7 +237,7 @@ func cmdSrv(argc int, argv [XXX]string) int {
 	}
 
 	if pipe((*int)(fd)) < 0 {
-		err = fmt.Errorf("srv pipe: %r")
+		err = fmt.Errorf("srv pipe: %v", err)
 		return err
 	}
 

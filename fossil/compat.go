@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
+
+	"9fans.net/go/plan9"
 )
 
 func nsec() int64 {
@@ -53,6 +57,14 @@ func bool2int(v bool) int {
 		return 1
 	}
 	return 0
+}
+
+func dirfstat(fd int) (*plan9.Dir, error) {
+	return nil, errors.New("dirfstat: TODO")
+}
+
+func lrand() int {
+	return rand.Intn(231)
 }
 
 // TODO

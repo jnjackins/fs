@@ -218,7 +218,7 @@ func bwatchDependency(b *Block) {
 	case BtDir:
 		epb = int(blockSize / venti.EntrySize)
 		for i = 0; i < epb; i++ {
-			EntryUnpack(&e, b.data, i)
+			entryUnpack(&e, b.data, i)
 			if e.flags&venti.EntryActive == 0 {
 				continue
 			}

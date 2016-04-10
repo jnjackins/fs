@@ -23,7 +23,7 @@ func authRead(afid *Fid, data interface{}, count int) int {
 	case ARdone:
 		ai = auth_getinfo(rpc)
 		if ai == nil {
-			err = fmt.Errorf("%r")
+			err = fmt.Errorf("%v", err)
 			break
 		}
 
@@ -58,7 +58,7 @@ func authRead(afid *Fid, data interface{}, count int) int {
 		return int(rpc.narg)
 
 	case ARphase:
-		err = fmt.Errorf("%r")
+		err = fmt.Errorf("%v", err)
 	}
 
 	return -1

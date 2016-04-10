@@ -59,8 +59,8 @@ func isspace(c byte) bool {
 	return unicode.IsSpace(rune(c))
 }
 
-func srvMain(argv []string) {
-	flags := flag.NewFlagSet("srv", flag.ContinueOnError)
+func serve(argv []string) {
+	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [-c cmd] [-f partition] [-m %%]\n", argv0)
 		flags.PrintDefaults()

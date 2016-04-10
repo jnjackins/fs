@@ -369,7 +369,7 @@ func iso9660labels(disk *Disk, buf []byte, write func(int, uint)) {
 	var sect [Blocksize]uint8
 
 	if diskReadRaw(disk, PartData, uint((startoff-fsoff)/uint32(h.blockSize)), buf) == 0 {
-		log.Fatalf("disk read failed: %r")
+		log.Fatalf("disk read failed: %v", err)
 	}
 	getsect(sect[:], int(startoff/Blocksize))
 	if memcmp(buf, sect, Blocksize) != 0 {

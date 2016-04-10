@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,7 +32,7 @@ type Snap struct {
 	ignore      uint
 }
 
-func fsOpen(file string, z net.Conn, ncache int, mode int) (*Fs, error) {
+func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	var oscore venti.Score
 	var bs *Block
 	var super Super
@@ -200,13 +199,9 @@ func fsClose(fs *Fs) {
 
 func fsRedial(fs *Fs, host string) error {
 	fs.z.Close()
-
 	var err error
-	fs.z, err = net.Dial("tcp", host)
-	if err != nil {
-		return err
-	}
-	return nil
+	fs.z, err = venti.Dial(host, false)
+	return err
 }
 
 func fsGetRoot(fs *Fs) *File {
@@ -471,7 +466,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	if false {
 		fmt.Fprintf(os.Stderr, "%s: snapshot root from %d to %d\n", argv0, oldaddr, b.addr)
 	}
-	EntryPack(&e, b.data, 1)
+	entryPack(&e, b.data, 1)
 	blockDirty(b)
 
 	/*
@@ -694,14 +689,14 @@ func fsVac(fs *Fs, name string, score venti.Score) error {
 	return mkVac(fs.z, uint(fs.blockSize), &e, &ee, &de, score)
 }
 
-func vtWriteBlock(z net.Conn, buf []byte, n uint, typ uint, score venti.Score) error {
+func vtWriteBlock(z *venti.Session, buf []byte, n uint, typ uint, score venti.Score) error {
 	if err := venti.Write(z, score, int(typ), buf); err != nil {
 		return err
 	}
 	return venti.Sha1Check(score, buf, int(n))
 }
 
-func mkVac(z net.Conn, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score venti.Score) error {
+func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score venti.Score) error {
 	var buf []byte
 	var i, o int
 	var n uint
@@ -758,9 +753,9 @@ func mkVac(z net.Conn, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, sco
 	/*
 	 * Build root source with three entries in it.
 	 */
-	EntryPack(&e, buf[:], 0)
-	EntryPack(&ee, buf[:], 1)
-	EntryPack(&eee, buf[:], 2)
+	entryPack(&e, buf[:], 0)
+	entryPack(&ee, buf[:], 1)
+	entryPack(&eee, buf[:], 2)
 
 	n = venti.EntrySize * 3
 	root = venti.Root{}

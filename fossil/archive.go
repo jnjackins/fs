@@ -6,7 +6,6 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"sync"
 	"time"
@@ -20,14 +19,14 @@ type Arch struct {
 	diskSize  uint
 	c         *Cache
 	fs        *Fs
-	z         net.Conn
+	z         *venti.Session
 
 	lk     *sync.Mutex
 	starve *sync.Cond
 	die    *sync.Cond
 }
 
-func archInit(c *Cache, disk *Disk, fs *Fs, z net.Conn) *Arch {
+func archInit(c *Cache, disk *Disk, fs *Fs, z *venti.Session) *Arch {
 	a := &Arch{
 		c:         c,
 		z:         z,
@@ -203,7 +202,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 					e.size = 0
 					e.tag = 0
 					e.flags &^= venti.EntryLocal
-					EntryPack(e, *data, w.n-1)
+					entryPack(e, *data, w.n-1)
 					continue
 				}
 			}
@@ -264,7 +263,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 				if e != nil {
 					copy(e.score[:], p.score[:venti.ScoreSize])
 					e.flags &^= venti.EntryLocal
-					EntryPack(e, *data, w.n-1)
+					entryPack(e, *data, w.n-1)
 				} else {
 					copy((*data)[(w.n-1)*venti.ScoreSize:], p.score[:venti.ScoreSize])
 				}

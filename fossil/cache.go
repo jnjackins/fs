@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"sort"
 	"sync"
@@ -31,7 +30,7 @@ type Cache struct {
 	disk    *Disk
 	size    int /* block size */
 	ndmap   int /* size of per-block dirty pointer map used in blockWrite */
-	z       net.Conn
+	z       *venti.Session
 	now     uint32   /* ticks for usage timestamps */
 	heads   []*Block /* hash table for finding address */
 	nheap   int      /* number of available victims */
@@ -129,7 +128,7 @@ var vtType = [BtMax]int{
 /*
  * Allocate the memory cache.
  */
-func cacheAlloc(disk *Disk, z net.Conn, nblocks uint, mode int) *Cache {
+func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	var bl *BList
 
 	c := &Cache{
@@ -1069,7 +1068,7 @@ func blockDependency(b *Block, bb *Block, index int, score []byte, e *Entry) {
 		 */
 		if b.l.typ == BtDir && b.part == PartData {
 
-			EntryPack(e, p.old.entry[:], 0)
+			entryPack(e, p.old.entry[:], 0)
 		} else {
 
 			copy(p.old.score[:], score[:])

@@ -32,9 +32,12 @@ func main() {
 	}
 
 	argv0 = flag.Arg(0)
+	argv := flag.Args()[1:]
 	switch argv0 {
-	case "srv":
-		srvMain(flag.Args()[1:])
+	case "serve":
+		serve(argv)
+	case "format":
+		format(argv)
 	default:
 		flag.Usage()
 	}

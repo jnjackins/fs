@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"os"
 
 	"sigint.ca/fs/internal/pack"
 )
@@ -53,15 +54,6 @@ const (
 )
 
 const NilBlock = ^uint32(0)
-
-type Root struct {
-	Version   uint16
-	Name      string
-	Type      string
-	Score     Score  /* to a Dir block */
-	BlockSize uint16 /* maximum block size */
-	Prev      Score  /* last root block */
-}
 
 type Score [ScoreSize]uint8
 
@@ -162,6 +154,15 @@ func ZeroTruncate(typ int, buf []byte, n int) int {
 	}
 }
 
+type Root struct {
+	Version   uint16
+	Name      string
+	Type      string
+	Score     Score  /* to a Dir block */
+	BlockSize uint16 /* maximum block size */
+	Prev      Score  /* last root block */
+}
+
 func RootPack(r *Root, buf []byte) {
 	pack.U16PUT(buf, r.Version)
 	buf = buf[2:]
@@ -169,12 +170,44 @@ func RootPack(r *Root, buf []byte) {
 	buf = buf[len(r.Name):]
 	copy(buf, r.Type)
 	buf = buf[len(r.Type):]
-	copy(buf, r.Score[:ScoreSize])
+	copy(buf, r.Score[:])
 	buf = buf[ScoreSize:]
 	pack.U16PUT(buf, r.BlockSize)
 	buf = buf[2:]
-	copy(buf, r.Prev[:ScoreSize])
+	copy(buf, r.Prev[:])
 	buf = buf[ScoreSize:]
+}
+
+func RootUnpack(r *Root, buf []byte) error {
+	*r = Root{}
+
+	r.Version = pack.U16GET(buf)
+	if r.Version != RootVersion {
+		return fmt.Errorf("unknown root version: %d", r.Version)
+	}
+	buf = buf[2:]
+	r.Name = string(buf[:len(r.Name)])
+	buf = buf[len(r.Name):]
+	r.Type = string(buf[:len(r.Type)])
+	buf = buf[len(r.Type):]
+	copy(r.Score[:], buf)
+	buf = buf[ScoreSize:]
+	r.BlockSize = pack.U16GET(buf)
+	if err := checkSize(int(r.BlockSize)); err != nil {
+		return err
+	}
+	buf = buf[2:]
+	copy(r.Prev[:], buf[ScoreSize:])
+	buf = buf[ScoreSize:]
+
+	return nil
+}
+
+func checkSize(n int) error {
+	if n < 256 || n > MaxLumpSize {
+		return fmt.Errorf("bad block size: %d", n)
+	}
+	return nil
 }
 
 func Sha1(sha1 Score, buf []byte, n int) {
@@ -186,7 +219,7 @@ func Sha1Check(score Score, buf []byte, n int) error {
 	return nil
 }
 
-func Read(z net.Conn, score Score, typ int, buf []byte) (int, error) {
+func Read(z *Session, score Score, typ int, buf []byte) (int, error) {
 	/*
 	   p = ReadPacket(z, score, type, n);
 	   if(p == nil)
@@ -201,12 +234,35 @@ func Read(z net.Conn, score Score, typ int, buf []byte) (int, error) {
 	return 0, nil
 }
 
-func Write(z net.Conn, score Score, typ int, buf []byte) error {
+func Write(z *Session, score Score, typ int, buf []byte) error {
 	panic("not implemented")
 	return nil
 }
 
-func Sync(z net.Conn) error {
+func Sync(z *Session) error {
 	panic("not implemented")
 	return nil
+}
+
+type Session struct {
+	conn net.Conn
+}
+
+func Dial(host string, canFail bool) (*Session, error) {
+	if host == "" {
+		host = os.Getenv("venti")
+	}
+	if host == "" {
+		host = "$venti"
+	}
+	conn, err := net.Dial("tcp", host)
+
+	if err != nil && !canFail {
+		return nil, fmt.Errorf("venti dial %s: %s", host, err)
+	}
+	return &Session{conn: conn}, nil
+}
+
+func (z *Session) Close() error {
+	return z.conn.Close()
 }

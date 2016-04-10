@@ -666,7 +666,7 @@ func fileMapBlock(f *File, bn uint32, score venti.Score, tag uint32) error {
 		assert(uint32(e.tag) == tag || e.tag == 0)
 		e.tag = tag
 		e.flags |= venti.EntryLocal
-		EntryPack(&e, b.data, int(f.source.offset%uint32(f.source.epb)))
+		entryPack(&e, b.data, int(f.source.offset%uint32(f.source.epb)))
 	} else {
 
 		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:venti.ScoreSize])
@@ -1444,7 +1444,7 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	if err != nil {
 		goto Err
 	}
-	if err = EntryUnpack(&e, b.data, int(elem)); err != nil {
+	if err = entryUnpack(&e, b.data, int(elem)); err != nil {
 		goto Err
 	}
 
@@ -1734,7 +1734,6 @@ func fileUnlock(f *File) {
  * We have to respect that ordering.
  */
 func fileMetaLock(f *File) {
-
 	if f.up == nil {
 		fmt.Fprintf(os.Stderr, "f->elem = %s\n", f.dir.elem)
 	}
@@ -1802,7 +1801,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 	if err != nil {
 		return err
 	}
-	if err = EntryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	if err = entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
 		blockPut(b)
 		return err
 	}
@@ -1835,13 +1834,13 @@ func setEntry(r *Source, e *Entry) error {
 	if err != nil {
 		return err
 	}
-	if err = EntryUnpack(&oe, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	if err = entryUnpack(&oe, b.data, int(r.offset%uint32(r.epb))); err != nil {
 		blockPut(b)
 		return err
 	}
 
 	e.gen = oe.gen
-	EntryPack(e, b.data, int(r.offset%uint32(r.epb)))
+	entryPack(e, b.data, int(r.offset%uint32(r.epb)))
 
 	/* BUG b should depend on the entry pointer */
 	blockDirty(b)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net"
 	"sync"
 	"time"
 
@@ -37,13 +36,13 @@ const (
 )
 
 type Fs struct {
-	arch       *Arch    /* immutable */
-	cache      *Cache   /* immutable */
-	mode       int      /* immutable */
-	noatimeupd bool     /* immutable */
-	blockSize  int      /* immutable */
-	z          net.Conn /* immutable */
-	snap       *Snap    /* immutable */
+	arch       *Arch          /* immutable */
+	cache      *Cache         /* immutable */
+	mode       int            /* immutable */
+	noatimeupd bool           /* immutable */
+	blockSize  int            /* immutable */
+	z          *venti.Session /* immutable */
+	snap       *Snap          /* immutable */
 	/* immutable; copy here & Fsys to ease error reporting */
 	name      string
 	metaFlush *time.Ticker /* periodically flushes metadata cached in files */

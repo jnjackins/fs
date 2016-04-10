@@ -26,7 +26,7 @@ type Entry struct {
 	archive bool   /* archive this snapshot: only valid for snap != 0 */
 }
 
-func EntryPack(e *Entry, p []byte, index int) {
+func entryPack(e *Entry, p []byte, index int) {
 	p = p[index*venti.EntrySize:]
 
 	pack.U32PUT(p, e.gen)
@@ -55,7 +55,7 @@ func EntryPack(e *Entry, p []byte, index int) {
 	}
 }
 
-func EntryUnpack(e *Entry, p []byte, index int) error {
+func entryUnpack(e *Entry, p []byte, index int) error {
 	p = p[index*venti.EntrySize:]
 
 	e.gen = pack.U32GET(p)

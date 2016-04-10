@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -23,7 +22,7 @@ type Fsys struct {
 	venti string
 
 	fs      *Fs
-	session net.Conn
+	session *venti.Session
 	ref     int
 
 	noauth     bool
@@ -68,20 +67,9 @@ func prventihost(host string) string {
 	return host
 }
 
-func myDial(host string, canfail int) (net.Conn, error) {
+func vtDial(host string, canfail bool) (*venti.Session, error) {
 	host = prventihost(host)
-	return net.Dial("tcp", host)
-}
-
-func myRedial(z *net.Conn, host string) error {
-	host = prventihost(host)
-	(*z).Close()
-	c, err := net.Dial("tcp", host)
-	if err != nil {
-		return err
-	}
-	*z = c
-	return nil
+	return venti.Dial(host, canfail)
 }
 
 func _fsysGet(name string) (*Fsys, error) {
@@ -840,7 +828,7 @@ func fsysClrep(fsys *Fsys, argv []string, ch int) error {
 			return fmt.Errorf("wrong block type")
 		}
 		var e Entry
-		EntryPack(&e, zero[:], 0)
+		entryPack(&e, zero[:], 0)
 	case 'p':
 		if b.l.typ == BtDir || b.l.typ == BtData {
 			return fmt.Errorf("wrong block type")
@@ -1300,7 +1288,7 @@ func fsckClre(fsck *Fsck, b *Block, offset int) {
 	}
 
 	e = Entry{}
-	EntryPack(&e, b.data, offset)
+	entryPack(&e, b.data, offset)
 	blockDirty(b)
 }
 
@@ -1430,12 +1418,14 @@ func fsysVenti(name string, argv []string) error {
 		}
 	}
 
-	/* already open: do a redial */
+	/* already open; redial */
 	if fsys.fs != nil {
 		if fsys.session == nil {
 			return errors.New("file system was opened with -V")
 		}
-		if err := myRedial(&fsys.session, host); err != nil {
+		fsys.session.Close()
+		fsys.session, err = vtDial(host, false)
+		if err != nil {
 			return err
 		}
 	}
@@ -1444,7 +1434,7 @@ func fsysVenti(name string, argv []string) error {
 	if fsys.session != nil {
 		fsys.session.Close()
 	}
-	fsys.session, err = myDial(host, 0)
+	fsys.session, err = vtDial(host, false)
 	if err != nil {
 		return err
 	}
@@ -1555,7 +1545,7 @@ func fsysOpen(name string, argv []string) error {
 		} else {
 			host = ""
 		}
-		fsys.session, err = myDial(host, 1)
+		fsys.session, err = vtDial(host, true)
 		if err != nil && !noventi {
 			fmt.Fprintf(os.Stderr, "warning: connecting to venti: %v\n", err)
 		}

@@ -159,14 +159,14 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	 * Second entry is link to previous epoch root,
 	 * just a convenience to help the search.
 	 */
-	if err := EntryUnpack(&e, b.data, 0); err != nil {
+	if err := entryUnpack(&e, b.data, 0); err != nil {
 		errorf(chk, "could not unpack root block %#.8x: %v", a, err)
 		blockPut(b)
 		return
 	}
 
 	walkEpoch(chk, b, e.score, BtDir, e.tag, epoch)
-	if err := EntryUnpack(&e, b.data, 1); err == nil {
+	if err := entryUnpack(&e, b.data, 1); err == nil {
 		chk.hint = venti.GlobalToLocal(e.score)
 	}
 	blockPut(b)
@@ -300,7 +300,7 @@ func walkEpoch(chk *Fsck, b *Block, score venti.Score, typ int, tag, epoch uint3
 
 	case BtDir:
 		for i = 0; i < chk.bsize/venti.EntrySize; i++ {
-			if err := EntryUnpack(&e, bb.data, i); err != nil {
+			if err := entryUnpack(&e, bb.data, i); err != nil {
 				//errorf(chk, "walk: could not unpack entry: %ux[%d]: %v", addr, i, err);
 				setBit(chk.errmap, bb.addr)
 

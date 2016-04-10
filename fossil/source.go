@@ -72,9 +72,9 @@ func sourceAlloc(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	 * can legitimately happen here. all the others
 	 * get prints.
 	 */
-	if err = EntryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
+	if err = entryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
 		pname = sourceName(p)
-		consPrintf("%s: %s %V: sourceAlloc: EntryUnpack failed\n", fs.name, pname, b.score)
+		consPrintf("%s: %s %V: sourceAlloc: entryUnpack failed\n", fs.name, pname, b.score)
 		goto Bad
 	}
 
@@ -230,9 +230,7 @@ func sourceCreate(r *Source, dsize int, dir bool, offset uint32) (*Source, error
 
 	size = sourceGetDirSize(r)
 	if offset == 0 {
-		/*
-		 * look at a random block to see if we can find an empty entry
-		 */
+		// look at a random block to see if we can find an empty entry
 		offset = uint32(rand.Intn(int(size + 1)))
 		offset -= offset % uint32(epb)
 	}
@@ -245,7 +243,7 @@ func sourceCreate(r *Source, dsize int, dir bool, offset uint32) (*Source, error
 			return nil, err
 		}
 		for i = int(offset % uint32(r.epb)); i < epb; i++ {
-			EntryUnpack(&e, b.data, i)
+			entryUnpack(&e, b.data, i)
 			if e.flags&venti.EntryActive == 0 && e.gen != ^uint32(0) {
 				goto Found
 			}
@@ -276,7 +274,7 @@ Found:
 	e.tag = 0
 	e.snap = 0
 	e.archive = false
-	EntryPack(&e, b.data, i)
+	entryPack(&e, b.data, i)
 	blockDirty(b)
 
 	offset = bn*uint32(epb) + uint32(i)
@@ -334,7 +332,7 @@ func sourceKill(r *Source, doremove bool) error {
 	e.size = 0
 	e.tag = 0
 	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
-	EntryPack(&e, b.data, int(r.offset%uint32(r.epb)))
+	entryPack(&e, b.data, int(r.offset%uint32(r.epb)))
 	blockDirty(b)
 	if addr != NilBlock {
 		blockRemoveLink(b, addr, typ, tag, true)
@@ -502,7 +500,7 @@ func sourceSetSize(r *Source, size uint64) error {
 	}
 
 	e.size = size
-	EntryPack(&e, b.data, int(r.offset%uint32(r.epb)))
+	entryPack(&e, b.data, int(r.offset%uint32(r.epb)))
 	blockDirty(b)
 	blockPut(b)
 
@@ -557,7 +555,7 @@ func sourceSetEntry(r *Source, e *Entry) error {
 	if err != nil {
 		return err
 	}
-	EntryPack(e, b.data, int(r.offset%uint32(r.epb)))
+	entryPack(e, b.data, int(r.offset%uint32(r.epb)))
 	blockDirty(b)
 	blockPut(b)
 
@@ -610,7 +608,7 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 	 */
 	if e.tag == 0 {
 		assert(p.l.typ == BtDir)
-		e.tag = tagGen()
+		e.tag = sourceTagGen()
 		e.flags |= venti.EntryLocal
 	}
 
@@ -627,7 +625,7 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 	copy(score[:], b.score[:venti.ScoreSize])
 	if p.l.typ == BtDir {
 		copy(e.score[:], b.score[:venti.ScoreSize])
-		EntryPack(e, p.data, index)
+		entryPack(e, p.data, index)
 		blockDependency(p, b, index, nil, &oe)
 	} else {
 		copy(oscore[:], p.data[index*venti.ScoreSize:][:venti.ScoreSize])
@@ -667,7 +665,7 @@ func sourceGrowDepth(r *Source, p *Block, e *Entry, depth int) error {
 
 	tag = e.tag
 	if tag == 0 {
-		tag = tagGen()
+		tag = sourceTagGen()
 	}
 
 	oe = *e
@@ -696,7 +694,7 @@ func sourceGrowDepth(r *Source, p *Block, e *Entry, depth int) error {
 		blockDirty(b)
 	}
 
-	EntryPack(e, p.data, int(r.offset%uint32(r.epb)))
+	entryPack(e, p.data, int(r.offset%uint32(r.epb)))
 	blockDependency(p, b, int(r.offset%uint32(r.epb)), nil, &oe)
 	blockPut(b)
 	blockDirty(p)
@@ -726,7 +724,7 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 
 	tag = e.tag
 	if tag == 0 {
-		tag = tagGen()
+		tag = sourceTagGen()
 	}
 
 	/*
@@ -781,7 +779,7 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 		e.flags &^= venti.EntryLocal
 	}
 	copy(e.score[:], b.score[:venti.ScoreSize])
-	EntryPack(e, p.data, int(r.offset%uint32(r.epb)))
+	entryPack(e, p.data, int(r.offset%uint32(r.epb)))
 	blockDependency(p, b, int(r.offset%uint32(r.epb)), nil, &oe)
 	blockDirty(p)
 
@@ -1121,7 +1119,7 @@ func sourceLoad(r *Source, e *Entry) (*Block, error) {
 
 	assert(r.b != nil)
 	b = r.b
-	if err := EntryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	if err := entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
 		return nil, err
 	}
 	if e.gen != r.gen {
@@ -1146,16 +1144,14 @@ func sizeToDepth(s uint64, psize int, dsize int) int {
 	return d
 }
 
-func tagGen() uint32 {
+func sourceTagGen() uint32 {
 	var tag uint32
-
 	for {
-		tag = uint32(rand.Intn(231))
+		tag = uint32(lrand())
 		if tag >= UserTag {
 			break
 		}
 	}
-
 	return tag
 }
 
