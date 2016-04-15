@@ -9,7 +9,7 @@ import (
 
 /* locking/threads */
 
-/* void vtLockInit(sync.RWMutex**); */
+/* void LockInit(sync.RWMutex**); */
 
 /* fd functions - really network (socket) functions */
 
@@ -21,57 +21,57 @@ import (
  * V	a venti score
  * R	venti error
  */
-type VtAuth struct {
+type Auth struct {
 	state  int
-	client [VtScoreSize]uint8
-	sever  [VtScoreSize]uint8
+	client [ScoreSize]uint8
+	sever  [ScoreSize]uint8
 }
 
 /* op codes */
 const (
-	VtRError = 1 + iota
-	VtQPing
-	VtRPing
-	VtQHello
-	VtRHello
-	VtQGoodbye
-	VtRGoodbye
-	VtQAuth0
-	VtRAuth0
-	VtQAuth1
-	VtRAuth1
-	VtQRead
-	VtRRead
-	VtQWrite
-	VtRWrite
-	VtQSync
-	VtRSync
-	VtMaxOp
+	RError = 1 + iota
+	QPing
+	RPing
+	QHello
+	RHello
+	QGoodbye
+	RGoodbye
+	QAuth0
+	RAuth0
+	QAuth1
+	RAuth1
+	QRead
+	RRead
+	QWrite
+	RWrite
+	QSync
+	RSync
+	MaxOp
 )
 
 /* connection state */
 const (
-	VtStateAlloc = iota
-	VtStateConnected
-	VtStateClosed
+	StateAlloc = iota
+	StateConnected
+	StateClosed
 )
 
 /* auth state */
 const (
-	VtAuthHello = iota
-	VtAuth0
-	VtAuth1
-	VtAuthOK
-	VtAuthFailed
+	AuthHello = iota
+	Auth0
+	Auth1
+	AuthOK
+	AuthFailed
 )
 
-type VtSession struct {
+type Session struct {
 	lk             *sync.Mutex
-	vtbl           *VtServerVtbl
+	bl             *ServerVtbl
 	cstate         int
 	conn           net.Conn
 	connErr        error
-	auth           VtAuth
+	auth           Auth
 	inLock         *sync.Mutex
 	part           *Packet
 	outLock        *sync.Mutex

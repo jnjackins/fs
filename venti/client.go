@@ -14,13 +14,13 @@ var (
 	ENotConnected         = errors.New("not connected to venti server")
 )
 
-func vtClientAlloc() *VtSession {
-	var z *VtSession = vtAlloc()
+func ClientAlloc() *Session {
+	var z *Session = Alloc()
 	return z
 }
 
-func vtDial(host string, canfail int) (*VtSession, error) {
-	var z *VtSession
+func Dial(host string, canfail int) (*Session, error) {
+	var z *Session
 	var conn net.Conn
 	var na string
 
@@ -48,15 +48,15 @@ func vtDial(host string, canfail int) (*VtSession, error) {
 		}
 	}
 
-	z = vtClientAlloc()
+	z = ClientAlloc()
 	if conn != nil {
 		z.connErr = err
 	}
-	vtSetConn(z, conn)
+	SetConn(z, conn)
 	return z, nil
 }
 
-func vtRedial(z *VtSession, host string) error {
+func Redial(z *Session, host string) error {
 	if host == "" {
 		host = os.Getenv("venti")
 	}
@@ -69,15 +69,15 @@ func vtRedial(z *VtSession, host string) error {
 		return err
 	}
 
-	vtReset(z)
-	vtSetConn(z, conn)
+	Reset(z)
+	SetConn(z, conn)
 	return nil
 }
 
 /*
-func vtStdioServer(server string) (*VtSession, error) {
+func StdioServer(server string) (*Session, error) {
 	var pfd [2]int
-	var z *VtSession
+	var z *Session
 
 	if server == "" {
 		return nil, errors.New("empty server name")
@@ -95,7 +95,7 @@ func vtStdioServer(server string) (*VtSession, error) {
 	case -1:
 		syscall.Close(pfd[0])
 		syscall.Close(pfd[1])
-		return nil, vtOSError()
+		return nil, OSError()
 
 	case 0:
 		syscall.Close(pfd[0])
@@ -107,17 +107,17 @@ func vtStdioServer(server string) (*VtSession, error) {
 
 	syscall.Close(pfd[1])
 
-	z = vtClientAlloc()
-	vtSetFd(z, pfd[0])
+	z = ClientAlloc()
+	SetFd(z, pfd[0])
 	return z, nil
 }
 */
 
-func vtPing(z *VtSession) error {
+func Ping(z *Session) error {
 	var p *Packet = packetAlloc()
 
 	var err error
-	p, err = vtRPC_client(z, VtQPing, p)
+	p, err = RPC_client(z, QPing, p)
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func vtPing(z *VtSession) error {
 	return nil
 }
 
-func vtHello(z *VtSession) error {
+func Hello(z *Session) error {
 	var p *Packet
 	var buf [10]uint8
 	var sid string
@@ -133,24 +133,24 @@ func vtHello(z *VtSession) error {
 	p = packetAlloc()
 	defer packetFree(p)
 
-	if err := vtAddString(p, vtGetVersion(z)); err != nil {
+	if err := AddString(p, GetVersion(z)); err != nil {
 		return err
 	}
-	if err := vtAddString(p, vtGetUid(z)); err != nil {
+	if err := AddString(p, GetUid(z)); err != nil {
 		return err
 	}
-	buf[0] = uint8(vtGetCryptoStrength(z))
+	buf[0] = uint8(GetCryptoStrength(z))
 	buf[1] = 0
 	buf[2] = 0
 	packetAppend(p, buf[:], 3)
 	var err error
-	p, err = vtRPC_client(z, VtQHello, p)
+	p, err = RPC_client(z, QHello, p)
 	if err != nil {
 		return err
 	}
 	defer packetFree(p)
 
-	if err := vtGetString(p, &sid); err != nil {
+	if err := GetString(p, &sid); err != nil {
 		return err
 	}
 	if err := packetConsume(p, buf[:], 2); err != nil {
@@ -162,7 +162,7 @@ func vtHello(z *VtSession) error {
 
 	z.lk.Lock()
 	z.sid = sid
-	z.auth.state = VtAuthOK
+	z.auth.state = AuthOK
 	//z.inHash = nil
 	//z.outHash = nil
 	z.lk.Unlock()
@@ -170,11 +170,11 @@ func vtHello(z *VtSession) error {
 	return nil
 }
 
-func vtSync(z *VtSession) error {
+func Sync(z *Session) error {
 	var p *Packet = packetAlloc()
 
 	var err error
-	p, err = vtRPC_client(z, VtQSync, p)
+	p, err = RPC_client(z, QSync, p)
 	if err != nil {
 		return err
 	}
@@ -187,24 +187,24 @@ func vtSync(z *VtSession) error {
 	return nil
 }
 
-func vtWrite(z *VtSession, score [VtScoreSize]uint8, type_ int, buf []byte, n int) error {
+func Write(z *Session, score [ScoreSize]uint8, type_ int, buf []byte, n int) error {
 	var p *Packet = packetAlloc()
 
 	packetAppend(p, buf, n)
-	return vtWritePacket(z, score, type_, p)
+	return WritePacket(z, score, type_, p)
 }
 
-func vtWritePacket(z *VtSession, score [VtScoreSize]uint8, type_ int, p *Packet) error {
+func WritePacket(z *Session, score [ScoreSize]uint8, type_ int, p *Packet) error {
 	var n int = packetSize(p)
 	var hdr []byte
 
-	if n > VtMaxLumpSize || n < 0 {
+	if n > MaxLumpSize || n < 0 {
 		packetFree(p)
 		return ELumpSize
 	}
 
 	if n == 0 {
-		copy(score[:], vtZeroScore[:VtScoreSize])
+		copy(score[:], ZeroScore[:ScoreSize])
 		return nil
 	}
 
@@ -214,13 +214,13 @@ func vtWritePacket(z *VtSession, score [VtScoreSize]uint8, type_ int, p *Packet)
 	hdr[2] = 0 /* pad */
 	hdr[3] = 0 /* pad */
 	var err error
-	p, err = vtRPC_client(z, VtQWrite, p)
+	p, err = RPC_client(z, QWrite, p)
 	if err != nil {
 		return err
 	}
 	defer packetFree(p)
 
-	if err := packetConsume(p, score[:], VtScoreSize); err != nil {
+	if err := packetConsume(p, score[:], ScoreSize); err != nil {
 		return err
 	}
 	if packetSize(p) != 0 {
@@ -230,11 +230,11 @@ func vtWritePacket(z *VtSession, score [VtScoreSize]uint8, type_ int, p *Packet)
 	return nil
 }
 
-func vtRead(z *VtSession, score [VtScoreSize]uint8, type_ int, buf []byte, n int) (int, error) {
+func Read(z *Session, score [ScoreSize]uint8, type_ int, buf []byte, n int) (int, error) {
 	var p *Packet
 
 	var err error
-	p, err = vtReadPacket(z, score, type_, n)
+	p, err = ReadPacket(z, score, type_, n)
 	if err != nil {
 		return -1, err
 	}
@@ -244,29 +244,29 @@ func vtRead(z *VtSession, score [VtScoreSize]uint8, type_ int, buf []byte, n int
 	return n, nil
 }
 
-func vtReadPacket(z *VtSession, score [VtScoreSize]uint8, type_ int, n int) (*Packet, error) {
+func ReadPacket(z *Session, score [ScoreSize]uint8, type_ int, n int) (*Packet, error) {
 	var p *Packet
 	var buf [10]uint8
 
-	if n < 0 || n > VtMaxLumpSize {
+	if n < 0 || n > MaxLumpSize {
 		return nil, ELumpSize
 	}
 
 	p = packetAlloc()
-	if bytes.Compare(score[:], vtZeroScore[:]) == 0 {
+	if bytes.Compare(score[:], ZeroScore[:]) == 0 {
 		return p, nil
 	}
 
-	packetAppend(p, score[:], VtScoreSize)
+	packetAppend(p, score[:], ScoreSize)
 	buf[0] = uint8(type_)
 	buf[1] = 0 /* pad */
 	buf[2] = uint8(n >> 8)
 	buf[3] = uint8(n)
 	packetAppend(p, buf[:], 4)
-	return vtRPC_client(z, VtQRead, p)
+	return RPC_client(z, QRead, p)
 }
 
-func vtRPC_client(z *VtSession, op int, p *Packet) (*Packet, error) {
+func RPC_client(z *Session, op int, p *Packet) (*Packet, error) {
 	var hdr []byte
 	var buf [2]uint8
 	var errstr string
@@ -282,7 +282,7 @@ func vtRPC_client(z *VtSession, op int, p *Packet) (*Packet, error) {
 	z.lk.Lock()
 	defer z.lk.Unlock()
 
-	if z.cstate != VtStateConnected {
+	if z.cstate != StateConnected {
 		err = ENotConnected
 		goto Err
 	}
@@ -290,24 +290,24 @@ func vtRPC_client(z *VtSession, op int, p *Packet) (*Packet, error) {
 	hdr, _ = packetHeader(p, 2)
 	hdr[0] = byte(op) /* op */
 	hdr[1] = 0        /* tid */
-	vtDebug(z, "client send: ")
-	vtDebugMesg(z, p, "\n")
-	if err = vtSendPacket(z, p); err != nil {
+	Debug(z, "client send: ")
+	DebugMesg(z, p, "\n")
+	if err = SendPacket(z, p); err != nil {
 		p = nil
 		goto Err
 	}
 
-	p, err = vtRecvPacket(z)
+	p, err = RecvPacket(z)
 	if err != nil {
 		goto Err
 	}
-	vtDebug(z, "client recv: ")
-	vtDebugMesg(z, p, "\n")
+	Debug(z, "client recv: ")
+	DebugMesg(z, p, "\n")
 	if err = packetConsume(p, buf[:], 2); err != nil {
 		goto Err
 	}
-	if buf[0] == VtRError {
-		if err = vtGetString(p, &errstr); err != nil {
+	if buf[0] == RError {
+		if err = GetString(p, &errstr); err != nil {
 			err = EProtocolBotch_client
 			goto Err
 		}
@@ -324,10 +324,10 @@ func vtRPC_client(z *VtSession, op int, p *Packet) (*Packet, error) {
 	return p, nil
 
 Err:
-	vtDebug(z, "vtRPC failed: %v\n", err)
+	Debug(z, "RPC failed: %v\n", err)
 	if p != nil {
 		packetFree(p)
 	}
-	vtDisconnect(z, 1)
+	Disconnect(z, 1)
 	return nil, err
 }

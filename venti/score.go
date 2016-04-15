@@ -2,10 +2,10 @@ package venti
 
 import "fmt"
 
-type Score [VtScoreSize]uint8
+type Score [ScoreSize]uint8
 
 /* score of a zero length block */
-var vtZeroScore = Score{
+var ZeroScore = Score{
 	0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55,
 	0xbf, 0xef, 0x95, 0x60, 0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09,
 }
@@ -13,11 +13,11 @@ var vtZeroScore = Score{
 func ParseScore(buf string, score *Score) error {
 	var c int
 
-	for i := 0; i < VtScoreSize; i++ {
+	for i := 0; i < ScoreSize; i++ {
 		score[i] = 0
 	}
 
-	for i := 0; i < VtScoreSize*2; i++ {
+	for i := 0; i < ScoreSize*2; i++ {
 		if buf[i] >= '0' && buf[i] <= '9' {
 			c = int(buf[i]) - '0'
 		} else if buf[i] >= 'a' && buf[i] <= 'f' {
@@ -43,7 +43,7 @@ func (sc *Score) String() string {
 	if sc == nil {
 		s += fmt.Sprintf("*")
 	} else {
-		for i := 0; i < VtScoreSize; i++ {
+		for i := 0; i < ScoreSize; i++ {
 			s += fmt.Sprintf("%2.2x", sc[i])
 		}
 	}

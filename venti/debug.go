@@ -5,14 +5,14 @@ import (
 	"os"
 )
 
-func vtDebug(s *VtSession, fmt_ string, args ...interface{}) {
+func Debug(s *Session, fmt_ string, args ...interface{}) {
 	if s.debug == 0 {
 		return
 	}
 	fmt.Fprintf(os.Stderr, fmt_, args...)
 }
 
-func vtDebugMesg(z *VtSession, p *Packet, s string) {
+func DebugMesg(z *Session, p *Packet, s string) {
 	var op int
 	var tid int
 	var n int
@@ -37,11 +37,11 @@ func vtDebugMesg(z *VtSession, p *Packet, s string) {
 		tmp = 'R'
 	}
 	fmt.Fprintf(os.Stderr, "%c%d[%d] %d", tmp, op, tid, n)
-	vtDumpSome(p)
+	DumpSome(p)
 	fmt.Fprintf(os.Stderr, "%s", s)
 }
 
-func vtDumpSome(pkt *Packet) {
+func DumpSome(pkt *Packet) {
 	var n int
 	var data [32]uint8
 	var p []byte

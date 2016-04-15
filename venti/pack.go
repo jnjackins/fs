@@ -10,7 +10,7 @@ import (
 // integer conversion routines
 
 func checkSize(n int) error {
-	if n < 256 || n > VtMaxLumpSize {
+	if n < 256 || n > MaxLumpSize {
 		return errors.New("bad block size")
 	}
 	return nil
@@ -24,18 +24,18 @@ func RootPack(r *Root, buf []byte) {
 	copy(buf, r.Type)
 	buf = buf[len(r.Type):]
 	copy(buf, r.Score[:])
-	buf = buf[VtScoreSize:]
+	buf = buf[ScoreSize:]
 	pack.U16PUT(buf, r.BlockSize)
 	buf = buf[2:]
 	copy(buf, r.Prev[:])
-	buf = buf[VtScoreSize:]
+	buf = buf[ScoreSize:]
 }
 
-func vtRootUnpack(r *Root, buf []byte) error {
+func RootUnpack(r *Root, buf []byte) error {
 	*r = Root{}
 
 	r.Version = pack.U16GET(buf)
-	if r.Version != VtRootVersion {
+	if r.Version != RootVersion {
 		return fmt.Errorf("unknown root version: %d", r.Version)
 	}
 	buf = buf[2:]
@@ -44,22 +44,22 @@ func vtRootUnpack(r *Root, buf []byte) error {
 	r.Type = string(buf[:len(r.Type)])
 	buf = buf[len(r.Type):]
 	copy(r.Score[:], buf)
-	buf = buf[VtScoreSize:]
+	buf = buf[ScoreSize:]
 	r.BlockSize = pack.U16GET(buf)
 	if err := checkSize(int(r.BlockSize)); err != nil {
 		return err
 	}
 	buf = buf[2:]
-	copy(r.Prev[:], buf[VtScoreSize:])
-	buf = buf[VtScoreSize:]
+	copy(r.Prev[:], buf[ScoreSize:])
+	buf = buf[ScoreSize:]
 
 	return nil
 }
 
-func vtEntryPack(e *VtEntry, p []byte, index int) {
+func EntryPack(e *Entry, p []byte, index int) {
 	var flags int
 
-	p = p[index*VtEntrySize:]
+	p = p[index*EntrySize:]
 
 	pack.U32PUT(p, e.gen)
 	p = p[4:]
@@ -67,7 +67,7 @@ func vtEntryPack(e *VtEntry, p []byte, index int) {
 	p = p[2:]
 	pack.U16PUT(p, e.dsize)
 	p = p[2:]
-	flags = int(e.flags) | (int(e.depth)<<VtEntryDepthShift)&VtEntryDepthMask
+	flags = int(e.flags) | (int(e.depth)<<EntryDepthShift)&EntryDepthMask
 	pack.U8PUT(p, uint8(flags))
 	p = p[1:]
 	for i := 0; i < 5; i++ {
@@ -79,8 +79,8 @@ func vtEntryPack(e *VtEntry, p []byte, index int) {
 	copy(p[:], e.score[:])
 }
 
-func vtEntryUnpack(e *VtEntry, p []byte, index int) error {
-	p = p[index*VtEntrySize:]
+func EntryUnpack(e *Entry, p []byte, index int) error {
+	p = p[index*EntrySize:]
 
 	e.gen = pack.U32GET(p)
 	p = p[4:]
@@ -89,15 +89,15 @@ func vtEntryUnpack(e *VtEntry, p []byte, index int) error {
 	e.dsize = pack.U16GET(p)
 	p = p[2:]
 	e.flags = pack.U8GET(p)
-	e.depth = (e.flags & VtEntryDepthMask) >> VtEntryDepthShift
-	e.flags &^= VtEntryDepthMask
+	e.depth = (e.flags & EntryDepthMask) >> EntryDepthShift
+	e.flags &^= EntryDepthMask
 	p = p[1:]
 	p = p[5:]
 	e.size = pack.U48GET(p)
 	p = p[6:]
 	copy(e.score[:], p)
 
-	if e.flags&VtEntryActive == 0 {
+	if e.flags&EntryActive == 0 {
 		return nil
 	}
 

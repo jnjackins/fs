@@ -9,33 +9,33 @@ var (
 	EProtocolBotch_server = errors.New("venti protocol botch")
 )
 
-func vtServerAlloc(vtbl *VtServerVtbl) *VtSession {
-	var z *VtSession = vtAlloc()
-	z.vtbl = new(VtServerVtbl)
-	//setmalloctag(z.vtbl, getcallerpc(&vtbl))
-	*z.vtbl = *vtbl
+func ServerAlloc(bl *ServerVtbl) *Session {
+	var z *Session = Alloc()
+	z.bl = new(ServerVtbl)
+	//setmalloctag(z.bl, getcallerpc(&bl))
+	*z.bl = *bl
 	return z
 }
 
-func srvHello(z *VtSession, version string, uid string, _1 int, _2 []byte, _3 int, _4 []byte, _5 int) error {
-	z.auth.state = VtAuthFailed
+func srvHello(z *Session, version string, uid string, _1 int, _2 []byte, _3 int, _4 []byte, _5 int) error {
+	z.auth.state = AuthFailed
 	z.lk.Lock()
 	defer z.lk.Unlock()
 
-	if z.auth.state != VtAuthHello {
+	if z.auth.state != AuthHello {
 		return EAuthState
 	}
 
-	if version != vtGetVersion(z) {
+	if version != GetVersion(z) {
 		return EVersion
 	}
 
 	z.uid = uid
-	z.auth.state = VtAuthOK
+	z.auth.state = AuthOK
 	return nil
 }
 
-func dispatchHello(z *VtSession, pkt **Packet) error {
+func dispatchHello(z *Session, pkt **Packet) error {
 	var version string
 	var uid string
 	var crypto []byte
@@ -53,10 +53,10 @@ func dispatchHello(z *VtSession, pkt **Packet) error {
 	crypto = nil
 	codec = nil
 
-	if err := vtGetString(p, &version); err != nil {
+	if err := GetString(p, &version); err != nil {
 		return err
 	}
-	if err := vtGetString(p, &uid); err != nil {
+	if err := GetString(p, &uid); err != nil {
 		return err
 	}
 	if err := packetConsume(p, buf[:], 2); err != nil {
@@ -86,26 +86,26 @@ func dispatchHello(z *VtSession, pkt **Packet) error {
 		packetFree(p)
 		*pkt = nil
 	} else {
-		if err := vtAddString(p, vtGetSid(z)); err != nil {
+		if err := AddString(p, GetSid(z)); err != nil {
 			return err
 		}
-		buf[0] = uint8(vtGetCrypto(z))
-		buf[1] = uint8(vtGetCodec(z))
+		buf[0] = uint8(GetCrypto(z))
+		buf[1] = uint8(GetCodec(z))
 		packetAppend(p, buf[:], 2)
 	}
 
 	return nil
 }
 
-func dispatchRead(z *VtSession, pkt **Packet) error {
+func dispatchRead(z *Session, pkt **Packet) error {
 	var p *Packet
 	var type_ int
 	var n int
-	var score [VtScoreSize]uint8
+	var score [ScoreSize]uint8
 	var buf [4]uint8
 
 	p = *pkt
-	if err := packetConsume(p, score[:], VtScoreSize); err != nil {
+	if err := packetConsume(p, score[:], ScoreSize); err != nil {
 		return err
 	}
 	if err := packetConsume(p, buf[:], 4); err != nil {
@@ -118,14 +118,14 @@ func dispatchRead(z *VtSession, pkt **Packet) error {
 	}
 
 	packetFree(p)
-	*pkt = (z.vtbl.read)(z, score, type_, n)
+	*pkt = (z.bl.read)(z, score, type_, n)
 	return nil
 }
 
-func dispatchWrite(z *VtSession, pkt **Packet) error {
+func dispatchWrite(z *Session, pkt **Packet) error {
 	var p *Packet
 	var type_ int
-	var score [VtScoreSize]uint8
+	var score [ScoreSize]uint8
 	var buf [4]uint8
 
 	p = *pkt
@@ -133,18 +133,18 @@ func dispatchWrite(z *VtSession, pkt **Packet) error {
 		return err
 	}
 	type_ = int(buf[0])
-	if (z.vtbl.write)(z, score, type_, p) == 0 {
+	if (z.bl.write)(z, score, type_, p) == 0 {
 		*pkt = nil
 	} else {
 		*pkt = packetAlloc()
-		packetAppend(*pkt, score[:], VtScoreSize)
+		packetAppend(*pkt, score[:], ScoreSize)
 	}
 
 	return nil
 }
 
-func dispatchSync(z *VtSession, pkt **Packet) error {
-	(z.vtbl.sync)(z)
+func dispatchSync(z *Session, pkt **Packet) error {
+	(z.bl.sync)(z)
 	if packetSize(*pkt) != 0 {
 		return EProtocolBotch_server
 	}
@@ -152,16 +152,16 @@ func dispatchSync(z *VtSession, pkt **Packet) error {
 	return nil
 }
 
-func vtExport(z *VtSession) error {
-	if z.vtbl == nil {
+func Export(z *Session) error {
+	if z.bl == nil {
 		return ENotServer
 	}
 
-	go vtExportThread(z)
+	go ExportThread(z)
 	return nil
 }
 
-func vtExportThread(z *VtSession) {
+func ExportThread(z *Session) {
 	var p *Packet
 	var buf [10]uint8
 	var hdr []byte
@@ -172,23 +172,23 @@ func vtExportThread(z *VtSession) {
 
 	p = nil
 	clean = 0
-	if err = vtConnect(z, ""); err != nil {
+	if err = Connect(z, ""); err != nil {
 		goto Exit
 	}
 
-	vtDebug(z, "server connected!\n")
+	Debug(z, "server connected!\n")
 	if false {
-		vtSetDebug(z, 1)
+		SetDebug(z, 1)
 	}
 
 	for {
-		p, err = vtRecvPacket(z)
+		p, err = RecvPacket(z)
 		if err != nil {
 			break
 		}
 
-		vtDebug(z, "server recv: ")
-		vtDebugMesg(z, p, "\n")
+		Debug(z, "server recv: ")
+		DebugMesg(z, p, "\n")
 
 		if err = packetConsume(p, buf[:], 2); err != nil {
 			err = EProtocolBotch_server
@@ -202,29 +202,29 @@ func vtExportThread(z *VtSession) {
 			err = EProtocolBotch_server
 			goto Exit
 
-		case VtQPing:
+		case QPing:
 			break
 
-		case VtQGoodbye:
+		case QGoodbye:
 			clean = 1
 			goto Exit
 
-		case VtQHello:
+		case QHello:
 			if err = dispatchHello(z, &p); err != nil {
 				goto Exit
 			}
 
-		case VtQRead:
+		case QRead:
 			if err = dispatchRead(z, &p); err != nil {
 				goto Exit
 			}
 
-		case VtQWrite:
+		case QWrite:
 			if err = dispatchWrite(z, &p); err != nil {
 				goto Exit
 			}
 
-		case VtQSync:
+		case QSync:
 			if err = dispatchSync(z, &p); err != nil {
 				goto Exit
 			}
@@ -237,17 +237,17 @@ func vtExportThread(z *VtSession) {
 		} else {
 			p = packetAlloc()
 			hdr, _ = packetHeader(p, 2)
-			hdr[0] = VtRError
+			hdr[0] = RError
 			hdr[1] = byte(tid)
-			if err = vtAddString(p, err.Error()); err != nil {
+			if err = AddString(p, err.Error()); err != nil {
 				goto Exit
 			}
 		}
 
-		vtDebug(z, "server send: ")
-		vtDebugMesg(z, p, "\n")
+		Debug(z, "server send: ")
+		DebugMesg(z, p, "\n")
 
-		if err = vtSendPacket(z, p); err != nil {
+		if err = SendPacket(z, p); err != nil {
 			p = nil
 			goto Exit
 		}
@@ -257,9 +257,9 @@ Exit:
 	if p != nil {
 		packetFree(p)
 	}
-	if z.vtbl.closing != nil {
-		z.vtbl.closing(z, clean)
+	if z.bl.closing != nil {
+		z.bl.closing(z, clean)
 	}
-	vtClose(z)
-	vtFree(z)
+	Close(z)
+	Free(z)
 }

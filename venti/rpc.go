@@ -6,13 +6,13 @@ import (
 	"sync"
 )
 
-type vtVersion struct {
+type Version struct {
 	version int
 	s       string
 }
 
-var vtVersions = []vtVersion{
-	{VtVersion02, "02"},
+var Versions = []Version{
+	{Version02, "02"},
 }
 
 var (
@@ -22,13 +22,13 @@ var (
 	EBadVersion = errors.New("bad format in version string")
 )
 
-func vtAlloc() *VtSession {
-	z := new(VtSession)
+func Alloc() *Session {
+	z := new(Session)
 	z.lk = new(sync.Mutex)
-	//z->inHash = vtSha1Alloc();
+	//z->inHash = Sha1Alloc();
 	z.inLock = new(sync.Mutex)
 	z.part = packetAlloc()
-	//z->outHash = vtSha1Alloc();
+	//z->outHash = Sha1Alloc();
 	z.outLock = new(sync.Mutex)
 	z.conn = nil
 	z.uid = "anonymous"
@@ -36,9 +36,9 @@ func vtAlloc() *VtSession {
 	return z
 }
 
-func vtReset(z *VtSession) {
+func Reset(z *Session) {
 	z.lk.Lock()
-	z.cstate = VtStateAlloc
+	z.cstate = StateAlloc
 	if z.conn != nil {
 		z.conn.Close()
 		z.conn = nil
@@ -46,56 +46,56 @@ func vtReset(z *VtSession) {
 	z.lk.Unlock()
 }
 
-func vtConnected(z *VtSession) bool {
-	return z.cstate == VtStateConnected
+func Connected(z *Session) bool {
+	return z.cstate == StateConnected
 }
 
-func vtDisconnect(z *VtSession, errno int) {
+func Disconnect(z *Session, errno int) {
 	var p *Packet
 	var b []byte
 
-	vtDebug(z, "vtDisconnect\n")
+	Debug(z, "Disconnect\n")
 	z.lk.Lock()
-	if z.cstate == VtStateConnected && errno == 0 && z.vtbl == nil {
+	if z.cstate == StateConnected && errno == 0 && z.bl == nil {
 		/* clean shutdown */
 		p = packetAlloc()
 
 		b, _ = packetHeader(p, 2)
-		b[0] = VtQGoodbye
+		b[0] = QGoodbye
 		b[1] = 0
-		vtSendPacket(z, p)
+		SendPacket(z, p)
 	}
 
 	if z.conn != nil {
 		z.conn.Close()
 	}
 	z.conn = nil
-	z.cstate = VtStateClosed
+	z.cstate = StateClosed
 	z.lk.Unlock()
 }
 
-func vtClose(z *VtSession) {
-	vtDisconnect(z, 0)
+func Close(z *Session) {
+	Disconnect(z, 0)
 }
 
-func vtFree(z *VtSession) {
+func Free(z *Session) {
 	if z == nil {
 		return
 	}
 	packetFree(z.part)
-	*z = VtSession{}
+	*z = Session{}
 	z.conn = nil
 }
 
-func vtGetUid(s *VtSession) string {
+func GetUid(s *Session) string {
 	return s.uid
 }
 
-func vtGetSid(z *VtSession) string {
+func GetSid(z *Session) string {
 	return z.sid
 }
 
-func vtSetDebug(z *VtSession, debug int) int {
+func SetDebug(z *Session, debug int) int {
 	var old int
 	z.lk.Lock()
 	old = z.debug
@@ -104,9 +104,9 @@ func vtSetDebug(z *VtSession, debug int) int {
 	return old
 }
 
-func vtSetConn(z *VtSession, conn net.Conn) error {
+func SetConn(z *Session, conn net.Conn) error {
 	z.lk.Lock()
-	if z.cstate != VtStateAlloc {
+	if z.cstate != StateAlloc {
 		z.lk.Unlock()
 		return errors.New("bad state")
 	}
@@ -118,27 +118,27 @@ func vtSetConn(z *VtSession, conn net.Conn) error {
 	return nil
 }
 
-func vtGetConn(z *VtSession) net.Conn {
+func GetConn(z *Session) net.Conn {
 	return z.conn
 }
 
-func vtSetCryptoStrength(z *VtSession, c int) error {
-	if z.cstate != VtStateAlloc {
+func SetCryptoStrength(z *Session, c int) error {
+	if z.cstate != StateAlloc {
 		return errors.New("bad state")
 	}
-	if c != VtCryptoStrengthNone {
+	if c != CryptoStrengthNone {
 		return errors.New("not supported yet")
 	}
 	return nil
 }
 
-func vtGetCryptoStrength(s *VtSession) int {
+func GetCryptoStrength(s *Session) int {
 	return s.cryptoStrength
 }
 
-func vtSetCompression(z *VtSession, conn net.Conn) error {
+func SetCompression(z *Session, conn net.Conn) error {
 	z.lk.Lock()
-	if z.cstate != VtStateAlloc {
+	if z.cstate != StateAlloc {
 		z.lk.Unlock()
 		return errors.New("bad state")
 	}
@@ -148,37 +148,37 @@ func vtSetCompression(z *VtSession, conn net.Conn) error {
 	return nil
 }
 
-func vtGetCompression(s *VtSession) int {
+func GetCompression(s *Session) int {
 	return s.compression
 }
 
-func vtGetCrypto(s *VtSession) int {
+func GetCrypto(s *Session) int {
 	return s.crypto
 }
 
-func vtGetCodec(s *VtSession) int {
+func GetCodec(s *Session) int {
 	return s.codec
 }
 
-func vtGetVersion(z *VtSession) string {
+func GetVersion(z *Session) string {
 	v := z.version
 	if v == 0 {
 		return "unknown"
 	}
-	for i := range vtVersions {
-		if vtVersions[i].version == v {
-			return vtVersions[i].s
+	for i := range Versions {
+		if Versions[i].version == v {
+			return Versions[i].s
 		}
 	}
 	panic("not reached")
 }
 
 /* hold z->inLock */
-func vtVersionRead(z *VtSession, prefix string, ret *int) error {
+func VersionRead(z *Session, prefix string, ret *int) error {
 	q := prefix
-	buf := make([]byte, 0, VtMaxStringSize)
+	buf := make([]byte, 0, MaxStringSize)
 	for {
-		if len(buf) >= VtMaxStringSize {
+		if len(buf) >= MaxStringSize {
 			return EBadVersion
 		}
 
@@ -188,7 +188,7 @@ func vtVersionRead(z *VtSession, prefix string, ret *int) error {
 		}
 		c := cbuf[0]
 		//if z.inHash != nil {
-		//	vtSha1Update(z.inHash, []byte(&c), 1)
+		//	Sha1Update(z.inHash, []byte(&c), 1)
 		//}
 		if c == '\n' {
 			break
@@ -204,19 +204,19 @@ func vtVersionRead(z *VtSession, prefix string, ret *int) error {
 		}
 	}
 
-	vtDebug(z, "version string in: %s\n", buf)
+	Debug(z, "version string in: %s\n", buf)
 
 	p := buf[len(prefix):]
 	for {
 		var i int
 		for i = 0; i < len(p) && p[i] != ':' && p[i] != '-'; i++ {
 		}
-		for j := range vtVersions {
-			if len(vtVersions[j].s) != i {
+		for j := range Versions {
+			if len(Versions[j].s) != i {
 				continue
 			}
-			if vtVersions[j].s == string(p[:i]) {
-				*ret = vtVersions[j].version
+			if Versions[j].s == string(p[:i]) {
+				*ret = Versions[j].version
 				return nil
 			}
 		}
@@ -229,12 +229,12 @@ func vtVersionRead(z *VtSession, prefix string, ret *int) error {
 	}
 }
 
-func vtRecvPacket(z *VtSession) (*Packet, error) {
+func RecvPacket(z *Session) (*Packet, error) {
 	var buf [10]uint8
 	var p *Packet
 	var size int
 
-	if z.cstate != VtStateConnected {
+	if z.cstate != StateConnected {
 		return nil, errors.New("session not connected")
 	}
 
@@ -283,7 +283,7 @@ func vtRecvPacket(z *VtSession) (*Packet, error) {
 	return packetSplit(p, int(length))
 }
 
-func vtSendPacket(z *VtSession, p *Packet) error {
+func SendPacket(z *Session, p *Packet) error {
 	var ioc IOchunk
 	var n int
 	var buf [2]uint8
@@ -318,7 +318,7 @@ func vtSendPacket(z *VtSession, p *Packet) error {
 	return nil
 }
 
-func vtGetString(p *Packet, ret *string) error {
+func GetString(p *Packet, ret *string) error {
 	var buf [2]uint8
 	var n int
 
@@ -326,7 +326,7 @@ func vtGetString(p *Packet, ret *string) error {
 		return err
 	}
 	n = (int(buf[0]) << 8) + int(buf[1])
-	if n > VtMaxStringSize {
+	if n > MaxStringSize {
 		return EBigString
 	}
 
@@ -340,7 +340,7 @@ func vtGetString(p *Packet, ret *string) error {
 	return nil
 }
 
-func vtAddString(p *Packet, s string) error {
+func AddString(p *Packet, s string) error {
 	var buf [2]uint8
 	var n int
 
@@ -349,7 +349,7 @@ func vtAddString(p *Packet, s string) error {
 	}
 
 	n = len(s)
-	if n > VtMaxStringSize {
+	if n > MaxStringSize {
 		return EBigString
 	}
 
@@ -360,9 +360,9 @@ func vtAddString(p *Packet, s string) error {
 	return nil
 }
 
-func vtConnect(z *VtSession, password string) error {
+func Connect(z *Session, password string) error {
 	z.lk.Lock()
-	if z.cstate != VtStateAlloc {
+	if z.cstate != StateAlloc {
 		z.lk.Unlock()
 		return errors.New("bad session state")
 	}
@@ -377,42 +377,42 @@ func vtConnect(z *VtSession, password string) error {
 	z.outLock.Lock()
 
 	version := "venti-"
-	for i := range vtVersions {
+	for i := range Versions {
 		if i != 0 {
 			version += ":"
 		}
-		version += vtVersions[i].s
+		version += Versions[i].s
 	}
 	version += "-libventi\n"
-	if len(version) >= VtMaxStringSize {
+	if len(version) >= MaxStringSize {
 		panic("bad version")
 	}
 	//if z.outHash != nil {
-	//	vtSha1Update(z.outHash, []byte(version), len(version))
+	//	Sha1Update(z.outHash, []byte(version), len(version))
 	//}
 	var err error
 	if _, err = z.conn.Write([]byte(version)); err != nil {
 		goto Err
 	}
 
-	vtDebug(z, "version string out: %s", version)
+	Debug(z, "version string out: %s", version)
 
-	if err = vtVersionRead(z, "venti-", &z.version); err != nil {
+	if err = VersionRead(z, "venti-", &z.version); err != nil {
 		goto Err
 	}
 
-	vtDebug(z, "version = %d: %s\n", z.version, vtGetVersion(z))
+	Debug(z, "version = %d: %s\n", z.version, GetVersion(z))
 
 	z.inLock.Unlock()
 	z.outLock.Unlock()
-	z.cstate = VtStateConnected
+	z.cstate = StateConnected
 	z.lk.Unlock()
 
-	if z.vtbl != nil {
+	if z.bl != nil {
 		return nil
 	}
 
-	if err = vtHello(z); err != nil {
+	if err = Hello(z); err != nil {
 		goto Err
 	}
 	return nil
@@ -424,7 +424,7 @@ Err:
 	z.conn = nil
 	z.inLock.Unlock()
 	z.outLock.Unlock()
-	z.cstate = VtStateClosed
+	z.cstate = StateClosed
 	z.lk.Unlock()
 	return err
 }
