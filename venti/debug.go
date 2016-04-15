@@ -5,21 +5,21 @@ import (
 	"os"
 )
 
-func Debug(s *Session, fmt_ string, args ...interface{}) {
-	if s.debug == 0 {
+func (z *Session) Debug(fmt_ string, args ...interface{}) {
+	if !z.debug {
 		return
 	}
 	fmt.Fprintf(os.Stderr, fmt_, args...)
 }
 
-func DebugMesg(z *Session, p *Packet, s string) {
+func (z *Session) DebugMesg(p *Packet, s string) {
 	var op int
 	var tid int
 	var n int
 	var buf [100]uint8
 	var b []byte
 
-	if z.debug == 0 {
+	if !z.debug {
 		return
 	}
 	n = packetSize(p)

@@ -75,7 +75,7 @@ type Session struct {
 	inLock         *sync.Mutex
 	part           *Packet
 	outLock        *sync.Mutex
-	debug          int
+	debug          bool
 	version        int
 	ref            int
 	uid            string

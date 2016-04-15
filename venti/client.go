@@ -15,7 +15,7 @@ var (
 )
 
 func ClientAlloc() *Session {
-	var z *Session = Alloc()
+	var z *Session = NewSession()
 	return z
 }
 
@@ -52,7 +52,7 @@ func Dial(host string, canfail int) (*Session, error) {
 	if conn != nil {
 		z.connErr = err
 	}
-	SetConn(z, conn)
+	z.SetConn(conn)
 	return z, nil
 }
 
@@ -69,8 +69,8 @@ func Redial(z *Session, host string) error {
 		return err
 	}
 
-	Reset(z)
-	SetConn(z, conn)
+	z.Reset()
+	z.SetConn(conn)
 	return nil
 }
 
@@ -133,10 +133,10 @@ func Hello(z *Session) error {
 	p = packetAlloc()
 	defer packetFree(p)
 
-	if err := AddString(p, GetVersion(z)); err != nil {
+	if err := AddString(p, z.GetVersion()); err != nil {
 		return err
 	}
-	if err := AddString(p, GetUid(z)); err != nil {
+	if err := AddString(p, z.GetUid()); err != nil {
 		return err
 	}
 	buf[0] = uint8(GetCryptoStrength(z))
@@ -290,19 +290,19 @@ func RPC_client(z *Session, op int, p *Packet) (*Packet, error) {
 	hdr, _ = packetHeader(p, 2)
 	hdr[0] = byte(op) /* op */
 	hdr[1] = 0        /* tid */
-	Debug(z, "client send: ")
-	DebugMesg(z, p, "\n")
-	if err = SendPacket(z, p); err != nil {
+	z.Debug("client send: ")
+	z.DebugMesg(p, "\n")
+	if err = z.SendPacket(p); err != nil {
 		p = nil
 		goto Err
 	}
 
-	p, err = RecvPacket(z)
+	p, err = z.RecvPacket()
 	if err != nil {
 		goto Err
 	}
-	Debug(z, "client recv: ")
-	DebugMesg(z, p, "\n")
+	z.Debug("client recv: ")
+	z.DebugMesg(p, "\n")
 	if err = packetConsume(p, buf[:], 2); err != nil {
 		goto Err
 	}
@@ -324,10 +324,10 @@ func RPC_client(z *Session, op int, p *Packet) (*Packet, error) {
 	return p, nil
 
 Err:
-	Debug(z, "RPC failed: %v\n", err)
+	z.Debug("RPC failed: %v\n", err)
 	if p != nil {
 		packetFree(p)
 	}
-	Disconnect(z, 1)
+	z.Disconnect(1)
 	return nil, err
 }

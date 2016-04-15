@@ -22,7 +22,7 @@ var (
 	EBadVersion = errors.New("bad format in version string")
 )
 
-func Alloc() *Session {
+func NewSession() *Session {
 	z := new(Session)
 	z.lk = new(sync.Mutex)
 	//z->inHash = Sha1Alloc();
@@ -36,7 +36,7 @@ func Alloc() *Session {
 	return z
 }
 
-func Reset(z *Session) {
+func (z *Session) Reset() {
 	z.lk.Lock()
 	z.cstate = StateAlloc
 	if z.conn != nil {
@@ -46,15 +46,15 @@ func Reset(z *Session) {
 	z.lk.Unlock()
 }
 
-func Connected(z *Session) bool {
+func (z *Session) Connected() bool {
 	return z.cstate == StateConnected
 }
 
-func Disconnect(z *Session, errno int) {
+func (z *Session) Disconnect(errno int) {
 	var p *Packet
 	var b []byte
 
-	Debug(z, "Disconnect\n")
+	z.Debug("Disconnect\n")
 	z.lk.Lock()
 	if z.cstate == StateConnected && errno == 0 && z.bl == nil {
 		/* clean shutdown */
@@ -63,7 +63,7 @@ func Disconnect(z *Session, errno int) {
 		b, _ = packetHeader(p, 2)
 		b[0] = QGoodbye
 		b[1] = 0
-		SendPacket(z, p)
+		z.SendPacket(p)
 	}
 
 	if z.conn != nil {
@@ -74,11 +74,11 @@ func Disconnect(z *Session, errno int) {
 	z.lk.Unlock()
 }
 
-func Close(z *Session) {
-	Disconnect(z, 0)
+func (z *Session) Close() {
+	z.Disconnect(0)
 }
 
-func Free(z *Session) {
+func (z *Session) Free() {
 	if z == nil {
 		return
 	}
@@ -87,24 +87,23 @@ func Free(z *Session) {
 	z.conn = nil
 }
 
-func GetUid(s *Session) string {
-	return s.uid
+func (z *Session) GetUid() string {
+	return z.uid
 }
 
-func GetSid(z *Session) string {
+func (z *Session) GetSid() string {
 	return z.sid
 }
 
-func SetDebug(z *Session, debug int) int {
-	var old int
+func (z *Session) SetDebug(debug bool) bool {
 	z.lk.Lock()
-	old = z.debug
+	old := z.debug
 	z.debug = debug
 	z.lk.Unlock()
 	return old
 }
 
-func SetConn(z *Session, conn net.Conn) error {
+func (z *Session) SetConn(conn net.Conn) error {
 	z.lk.Lock()
 	if z.cstate != StateAlloc {
 		z.lk.Unlock()
@@ -118,11 +117,11 @@ func SetConn(z *Session, conn net.Conn) error {
 	return nil
 }
 
-func GetConn(z *Session) net.Conn {
+func (z *Session) GetConn() net.Conn {
 	return z.conn
 }
 
-func SetCryptoStrength(z *Session, c int) error {
+func (z *Session) SetCryptoStrength(c int) error {
 	if z.cstate != StateAlloc {
 		return errors.New("bad state")
 	}
@@ -136,7 +135,7 @@ func GetCryptoStrength(s *Session) int {
 	return s.cryptoStrength
 }
 
-func SetCompression(z *Session, conn net.Conn) error {
+func (z *Session) SetCompression(conn net.Conn) error {
 	z.lk.Lock()
 	if z.cstate != StateAlloc {
 		z.lk.Unlock()
@@ -160,7 +159,7 @@ func GetCodec(s *Session) int {
 	return s.codec
 }
 
-func GetVersion(z *Session) string {
+func (z *Session) GetVersion() string {
 	v := z.version
 	if v == 0 {
 		return "unknown"
@@ -174,7 +173,7 @@ func GetVersion(z *Session) string {
 }
 
 /* hold z->inLock */
-func VersionRead(z *Session, prefix string, ret *int) error {
+func (z *Session) VersionRead(prefix string, ret *int) error {
 	q := prefix
 	buf := make([]byte, 0, MaxStringSize)
 	for {
@@ -204,7 +203,7 @@ func VersionRead(z *Session, prefix string, ret *int) error {
 		}
 	}
 
-	Debug(z, "version string in: %s\n", buf)
+	z.Debug("version string in: %s\n", buf)
 
 	p := buf[len(prefix):]
 	for {
@@ -229,7 +228,7 @@ func VersionRead(z *Session, prefix string, ret *int) error {
 	}
 }
 
-func RecvPacket(z *Session) (*Packet, error) {
+func (z *Session) RecvPacket() (*Packet, error) {
 	var buf [10]uint8
 	var p *Packet
 	var size int
@@ -283,7 +282,7 @@ func RecvPacket(z *Session) (*Packet, error) {
 	return packetSplit(p, int(length))
 }
 
-func SendPacket(z *Session, p *Packet) error {
+func (z *Session) SendPacket(p *Packet) error {
 	var ioc IOchunk
 	var n int
 	var buf [2]uint8
@@ -360,7 +359,7 @@ func AddString(p *Packet, s string) error {
 	return nil
 }
 
-func Connect(z *Session, password string) error {
+func (z *Session) Connect(password string) error {
 	z.lk.Lock()
 	if z.cstate != StateAlloc {
 		z.lk.Unlock()
@@ -395,13 +394,13 @@ func Connect(z *Session, password string) error {
 		goto Err
 	}
 
-	Debug(z, "version string out: %s", version)
+	z.Debug("version string out: %s", version)
 
-	if err = VersionRead(z, "venti-", &z.version); err != nil {
+	if err = z.VersionRead("venti-", &z.version); err != nil {
 		goto Err
 	}
 
-	Debug(z, "version = %d: %s\n", z.version, GetVersion(z))
+	z.Debug("version = %d: %s\n", z.version, z.GetVersion())
 
 	z.inLock.Unlock()
 	z.outLock.Unlock()

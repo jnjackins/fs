@@ -10,7 +10,7 @@ var (
 )
 
 func ServerAlloc(bl *ServerVtbl) *Session {
-	var z *Session = Alloc()
+	z := NewSession()
 	z.bl = new(ServerVtbl)
 	//setmalloctag(z.bl, getcallerpc(&bl))
 	*z.bl = *bl
@@ -26,7 +26,7 @@ func srvHello(z *Session, version string, uid string, _1 int, _2 []byte, _3 int,
 		return EAuthState
 	}
 
-	if version != GetVersion(z) {
+	if version != z.GetVersion() {
 		return EVersion
 	}
 
@@ -86,7 +86,7 @@ func dispatchHello(z *Session, pkt **Packet) error {
 		packetFree(p)
 		*pkt = nil
 	} else {
-		if err := AddString(p, GetSid(z)); err != nil {
+		if err := AddString(p, z.GetSid()); err != nil {
 			return err
 		}
 		buf[0] = uint8(GetCrypto(z))
@@ -172,23 +172,23 @@ func ExportThread(z *Session) {
 
 	p = nil
 	clean = 0
-	if err = Connect(z, ""); err != nil {
+	if err = z.Connect(""); err != nil {
 		goto Exit
 	}
 
-	Debug(z, "server connected!\n")
+	z.Debug("server connected!\n")
 	if false {
-		SetDebug(z, 1)
+		z.SetDebug(true)
 	}
 
 	for {
-		p, err = RecvPacket(z)
+		p, err = z.RecvPacket()
 		if err != nil {
 			break
 		}
 
-		Debug(z, "server recv: ")
-		DebugMesg(z, p, "\n")
+		z.Debug("server recv: ")
+		z.DebugMesg(p, "\n")
 
 		if err = packetConsume(p, buf[:], 2); err != nil {
 			err = EProtocolBotch_server
@@ -244,10 +244,10 @@ func ExportThread(z *Session) {
 			}
 		}
 
-		Debug(z, "server send: ")
-		DebugMesg(z, p, "\n")
+		z.Debug("server send: ")
+		z.DebugMesg(p, "\n")
 
-		if err = SendPacket(z, p); err != nil {
+		if err = z.SendPacket(p); err != nil {
 			p = nil
 			goto Exit
 		}
@@ -260,6 +260,6 @@ Exit:
 	if z.bl.closing != nil {
 		z.bl.closing(z, clean)
 	}
-	Close(z)
-	Free(z)
+	z.Close()
+	z.Free()
 }
