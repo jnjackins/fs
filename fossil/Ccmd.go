@@ -251,7 +251,6 @@ func cmd9p(argv []string) error {
 	return nil
 }
 
-/*
 func cmdDot(argv []string) error {
 	usage := "usage: . file"
 
@@ -260,46 +259,37 @@ func cmdDot(argv []string) error {
 	if err != nil || flags.NArg() != 1 {
 		return fmt.Errorf(usage)
 	}
+	argv = flags.Args()
 
-	dir, err := dirstat(argv[0])
-	if dir == nil {
-		return fmt.Errorf(". dirstat %s: %v", argv[0], err)
+	fi, err := os.Stat(argv[0])
+	if err != nil {
+		return fmt.Errorf(". stat %s: %v", argv[0], err)
 	}
-	length = dir.length
+	length := fi.Size()
 
-	r = 1
+	r := 1
 	if length != 0 {
 		// Read the whole file in.
-		fd = open(argv[0], 0)
-		if fd < 0 {
-
+		fd, err := syscall.Open(argv[0], 0, 0)
+		if err != nil {
 			return fmt.Errorf(". open %s: %v", argv[0], err)
 		}
-		f = vtMemAlloc(int(dir.length + 1)).(string)
-		l = read(fd, f, int(length))
-		if l < 0 {
-			close(fd)
+		f := make([]byte, length)
+		_, err = syscall.Read(fd, f)
+		if err != nil {
+			syscall.Close(fd)
 			return fmt.Errorf(". read %s: %v", argv[0], err)
 		}
 
-		close(fd)
-		f[l] = '\x00'
+		syscall.Close(fd)
 
 		// Call cliExec() for each line.
-		s = f
-		for p = s; p[0] != '\x00'; p = p[1:] {
-
-			if p[0] == '\n' {
-				p[0] = '\x00'
-				if cliExec(s) == 0 {
-					r = 0
-					consPrintf("%s: %R\n", s)
-				}
-
-				s = p[1:]
+		for _, line := range strings.Split(string(f), "\n") {
+			if err := cliExec(line); err != nil {
+				r = 0
+				consPrintf("%s: %v\n", line, err)
 			}
 		}
-
 	}
 
 	if r == 0 {
@@ -307,7 +297,6 @@ func cmdDot(argv []string) error {
 	}
 	return nil
 }
-*/
 
 func cmdDflag(argv []string) error {
 	usage := "usage: dflag"
@@ -402,7 +391,7 @@ func cmdInit() error {
 	cmdbox.confd[1] = -1
 	cmdbox.confd[0] = cmdbox.confd[1]
 
-	//cliAddCmd(".", cmdDot)
+	cliAddCmd(".", cmdDot)
 	cliAddCmd("9p", cmd9p)
 	cliAddCmd("dflag", cmdDflag)
 	cliAddCmd("echo", cmdEcho)
@@ -412,8 +401,8 @@ func cmdInit() error {
 		return err
 	}
 
-	cmdbox.con = conAlloc(cmdbox.confd[1], "console", 0)
-	cmdbox.con.isconsole = true
+	//cmdbox.con = conAlloc(cmdbox.confd[1], "console", 0)
+	//cmdbox.con.isconsole = true
 
 	return nil
 }

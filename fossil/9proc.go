@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -270,99 +271,94 @@ func msgFlush(m *Msg) {
 }
 
 func msgProc() {
-	panic("TODO")
-	/*
-		var m *Msg
-		var con *Con
+	//vtThreadSetName("msgProc")
 
-		//vtThreadSetName("msgProc")
+	var m *Msg
+	var con *Con
 
-		for {
-			// If surplus to requirements, exit.
-			// If not, wait for and pull a message off
-			// the read queue.
-			mbox.rlock.Lock()
+	for {
+		// If surplus to requirements, exit.
+		// If not, wait for and pull a message off
+		// the read queue.
+		mbox.rlock.Lock()
 
-			if mbox.nproc > mbox.maxproc {
-				mbox.nproc--
-				mbox.rlock.Unlock()
-				break
-			}
-
-			for mbox.rhead == nil {
-				mbox.rrendez.Wait()
-			}
-			m = mbox.rhead
-			mbox.rhead = m.rwnext
-			m.rwnext = nil
+		if mbox.nproc > mbox.maxproc {
+			mbox.nproc--
 			mbox.rlock.Unlock()
-
-			con = m.con
-			var e error
-
-			// If the message has been flushed before
-			// any 9P processing has started, mark it so
-			// none will be attempted.
-			con.mlock.Lock()
-			if m.state == MsgF {
-				e = errors.New("flushed")
-			} else {
-				m.state = Msg9
-			}
-			con.mlock.Unlock()
-
-			if e == nil {
-				// explain this
-				con.lock.Lock()
-				if m.t.Type == plan9.Tversion {
-					con.version = m
-					con.state = ConDown
-					for con.mhead != m {
-						con.rendez.Wait()
-					}
-					assert(con.state == ConDown)
-					if con.version == m {
-						con.version = nil
-						con.state = ConInit
-					} else {
-						e = errors.New("Tversion aborted")
-					}
-				} else if con.state != ConUp {
-					e = errors.New("connection not ready")
-				}
-				con.lock.Unlock()
-			}
-
-			// Dispatch if not error already.
-			m.r.Tag = m.t.Tag
-			if e == nil {
-				var r *plan9.Fcall
-				r, e = plan9.ReadFcall(m)
-				m.r = *r
-			}
-			if e != nil {
-				m.r.Type = plan9.Rerror
-				m.r.Ename = e.Error()
-			} else {
-				m.r.Type = m.t.Type + 1
-			}
-
-			// Put the message (with reply) on the
-			// write queue and wakeup the write process.
-			if m.nowq == 0 {
-				con.wlock.Lock()
-				if con.whead == nil {
-					con.whead = m
-				} else {
-
-					con.wtail.rwnext = m
-				}
-				con.wtail = m
-				con.wrendez.Signal()
-				con.wlock.Unlock()
-			}
+			break
 		}
-	*/
+
+		for mbox.rhead == nil {
+			mbox.rrendez.Wait()
+		}
+		m = mbox.rhead
+		mbox.rhead = m.rwnext
+		m.rwnext = nil
+		mbox.rlock.Unlock()
+
+		con = m.con
+		var err error
+
+		// If the message has been flushed before
+		// any 9P processing has started, mark it so
+		// none will be attempted.
+		con.mlock.Lock()
+		if m.state == MsgF {
+			err = errors.New("flushed")
+		} else {
+			m.state = Msg9
+		}
+		con.mlock.Unlock()
+
+		if err == nil {
+			// explain this
+			con.lock.Lock()
+			if m.t.Type == plan9.Tversion {
+				con.version = m
+				con.state = ConDown
+				for con.mhead != m {
+					con.rendez.Wait()
+				}
+				assert(con.state == ConDown)
+				if con.version == m {
+					con.version = nil
+					con.state = ConInit
+				} else {
+					err = errors.New("Tversion aborted")
+				}
+			} else if con.state != ConUp {
+				err = errors.New("connection not ready")
+			}
+			con.lock.Unlock()
+		}
+
+		// Dispatch if not error already.
+		m.r.Tag = m.t.Tag
+		if err == nil {
+			panic("TODO: dispatch msg")
+		}
+		if err != nil {
+			m.r.Type = plan9.Rerror
+			m.r.Ename = err.Error()
+		} else {
+			m.r.Type = m.t.Type + 1
+		}
+
+		// Put the message (with reply) on the
+		// write queue and wakeup the write process.
+		if m.nowq == 0 {
+			con.wlock.Lock()
+			if con.whead == nil {
+				con.whead = m
+			} else {
+
+				con.wtail.rwnext = m
+			}
+			con.wtail = m
+			con.wrendez.Signal()
+			con.wlock.Unlock()
+		}
+	}
 }
 
 func msgRead(con *Con) {
@@ -375,7 +371,7 @@ func msgRead(con *Con) {
 
 		var err error
 		// TODO: use a reader to begin with
-		r := os.NewFile(uintptr(con.fd), "")
+		r := os.NewFile(uintptr(con.fd), "confd")
 		m.t, err = plan9.ReadFcall(r)
 		if err == io.EOF {
 			m.t.Type = plan9.Tversion
@@ -433,12 +429,12 @@ func msgRead(con *Con) {
 }
 
 func msgWrite(con *Con) {
+	//vtThreadSetName("msgWrite")
+
 	var eof int
 	var n int
 	var flush *Msg
 	var m *Msg
-
-	//vtThreadSetName("msgWrite")
 
 	go msgRead(con)
 

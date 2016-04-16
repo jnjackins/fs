@@ -17,7 +17,6 @@ const (
 )
 
 type Msg struct {
-	//data   []byte
 	msize  uint32       /* actual size of data */
 	t      *plan9.Fcall // XXX: transmit?
 	r      *plan9.Fcall // XXX: receive?
@@ -49,8 +48,7 @@ const (
 )
 
 type Con struct {
-	name string
-	//data      []byte    /* max, not negotiated */
+	name      string
 	isconsole bool      /* immutable */
 	flags     int       /* immutable */
 	remote    [128]byte /* immutable */

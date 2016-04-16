@@ -1774,6 +1774,9 @@ func cmdFsys(argv []string) error {
 	argc := flags.NArg()
 	if argc == 0 {
 		sbox.lock.RLock()
+		if sbox.head == nil {
+			return errors.New("no current fsys")
+		}
 		currfsysname = sbox.head.name
 		for fsys = sbox.head; fsys != nil; fsys = fsys.next {
 			consPrintf("\t%s\n", fsys.name)

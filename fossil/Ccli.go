@@ -22,7 +22,7 @@ const (
 func cliExec(buf string) error {
 	argv := tokenize(buf)
 
-	if argv[0][0] == '#' {
+	if len(argv) == 0 || argv[0][0] == '#' {
 		return nil
 	}
 
