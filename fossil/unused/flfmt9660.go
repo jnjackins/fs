@@ -610,7 +610,7 @@ func iso9660copyfile(fs *Fs, dir *File, c *Cdir) {
 		len = little(c.dlen, 4)
 		off = little(c.dloc, 4) * Blocksize
 		for foff = 0; foff < len; foff += uint32(h.blockSize) {
-			venti.LocalToGlobal(uint((off+foff-fsoff)/uint32(h.blockSize)), score)
+			localToGlobal(uint((off+foff-fsoff)/uint32(h.blockSize)), score)
 			if fileMapBlock(f, foff/uint32(h.blockSize), score, Tag) == 0 {
 				log.Fatalf("fileMapBlock: %R")
 			}

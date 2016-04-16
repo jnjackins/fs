@@ -2,7 +2,7 @@ package main
 
 import "sigint.ca/fs/venti"
 
-func bwatchReset(score venti.Score) {
+func bwatchReset(score *venti.Score) {
 }
 
 func bwatchInit() {

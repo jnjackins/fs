@@ -33,7 +33,6 @@ type Snap struct {
 }
 
 func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
-	var oscore venti.Score
 	var bs *Block
 	var super Super
 	var err error
@@ -117,7 +116,9 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		if err != nil {
 			goto Err
 		}
-		venti.LocalToGlobal(super.active, oscore)
+
+		var oscore venti.Score
+		localToGlobal(super.active, &oscore)
 		super.active = b.addr
 		bs, err = cacheLocal(fs.cache, PartSuper, 0, OReadWrite)
 		if err != nil {
@@ -130,7 +131,7 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		blockDependency(bs, b, 0, oscore[:], nil)
 		blockPut(b)
 		blockDirty(bs)
-		blockRemoveLink(bs, venti.GlobalToLocal(oscore), BtDir, RootTag, false)
+		blockRemoveLink(bs, globalToLocal(&oscore), BtDir, RootTag, false)
 		blockPut(bs)
 		fs.source, err = sourceRoot(fs, super.active, mode)
 		if err != nil {
@@ -427,7 +428,6 @@ func fsEpochLow(fs *Fs, low uint32) error {
 }
 
 func bumpEpoch(fs *Fs, doarchive bool) error {
-	var oscore venti.Score
 	var oldaddr uint32
 	var b *Block
 	var bs *Block
@@ -492,7 +492,8 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 * Record that the new super.active can't get written out until
 	 * the new b gets written out.  Until then, use the old value.
 	 */
-	venti.LocalToGlobal(oldaddr, oscore)
+	var oscore venti.Score
+	localToGlobal(oldaddr, &oscore)
 
 	blockDependency(bs, b, 0, oscore[:], nil)
 	blockPut(b)
@@ -511,7 +512,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 */
 	superWrite(bs, &super, 1)
 
-	blockRemoveLink(bs, venti.GlobalToLocal(oscore), BtDir, RootTag, false)
+	blockRemoveLink(bs, globalToLocal(&oscore), BtDir, RootTag, false)
 	blockPut(bs)
 
 	return nil
@@ -664,7 +665,7 @@ Err:
 	return err
 }
 
-func fsVac(fs *Fs, name string, score venti.Score) error {
+func fsVac(fs *Fs, name string, score *venti.Score) error {
 	fs.elk.RLock()
 	defer fs.elk.RUnlock()
 
@@ -689,14 +690,14 @@ func fsVac(fs *Fs, name string, score venti.Score) error {
 	return mkVac(fs.z, uint(fs.blockSize), &e, &ee, &de, score)
 }
 
-func vtWriteBlock(z *venti.Session, buf []byte, n uint, typ uint, score venti.Score) error {
+func vtWriteBlock(z *venti.Session, buf []byte, n uint, typ uint, score *venti.Score) error {
 	if err := z.Write(score, int(typ), buf); err != nil {
 		return err
 	}
-	return venti.Sha1Check(score, buf, int(n))
+	return venti.Sha1Check(score, buf[:n])
 }
 
-func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score venti.Score) error {
+func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score *venti.Score) error {
 	var buf []byte
 	var i, o int
 	var n uint
@@ -713,7 +714,7 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 	ee = *pee
 	de = *pde
 
-	if venti.GlobalToLocal(e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && venti.GlobalToLocal(ee.score) != NilBlock) {
+	if globalToLocal(e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && globalToLocal(ee.score) != NilBlock) {
 		return fmt.Errorf("can only vac paths already stored on venti")
 	}
 

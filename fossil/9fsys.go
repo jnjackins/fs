@@ -314,8 +314,6 @@ func fsysClose(fsys *Fsys, argv []string) error {
 }
 
 func fsysVac(fsys *Fsys, argv []string) error {
-
-	var score venti.Score
 	var usage string = "usage: [fsys name] vac path"
 
 	flags := flag.NewFlagSet("vac", flag.ContinueOnError)
@@ -328,11 +326,12 @@ func fsysVac(fsys *Fsys, argv []string) error {
 		return fmt.Errorf(usage)
 	}
 
-	if err := fsVac(fsys.fs, argv[0], score); err != nil {
+	var score venti.Score
+	if err := fsVac(fsys.fs, argv[0], &score); err != nil {
 		return err
 	}
 
-	consPrintf("vac:%V\n", score)
+	consPrintf("vac:%v\n", &score)
 	return nil
 }
 

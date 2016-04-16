@@ -20,7 +20,7 @@ type Entry struct {
 	depth   uint8  /* unpacked from flags */
 	flags   uint8
 	size    uint64
-	score   venti.Score
+	score   *venti.Score
 	tag     uint32 /* tag for local blocks: zero if stored on Venti */
 	snap    uint32 /* non-zero -> entering snapshot of given epoch */
 	archive bool   /* archive this snapshot: only valid for snap != 0 */
@@ -40,7 +40,7 @@ func entryPack(e *Entry, p []byte, index int) {
 	pack.U48PUT(p[14:], e.size)
 
 	if flags&venti.EntryLocal != 0 {
-		if venti.GlobalToLocal(e.score) == NilBlock {
+		if globalToLocal(e.score) == NilBlock {
 			panic("abort")
 		}
 		for i := 0; i < 7; i++ {

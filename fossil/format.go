@@ -256,7 +256,7 @@ func rootMetaInit(e *Entry) {
 	e.flags |= venti.EntryLocal
 	e.size = uint64(bsize)
 	e.tag = tag
-	venti.LocalToGlobal(addr, e.score)
+	localToGlobal(addr, e.score)
 }
 
 func rootInit(e *Entry) uint32 {
@@ -283,7 +283,7 @@ func rootInit(e *Entry) uint32 {
 	e.flags |= venti.EntryLocal | venti.EntryDir
 	e.size = venti.EntrySize * 3
 	e.tag = tag
-	venti.LocalToGlobal(addr, e.score)
+	localToGlobal(addr, e.score)
 
 	addr = uint32(blockAlloc(BtDir, RootTag))
 	for i := 0; i < bsize; i++ {
@@ -324,7 +324,7 @@ func blockAlloc(typ int, tag uint32) uint32 {
 	return tmp1
 }
 
-func superInit(label string, root uint32, score venti.Score) {
+func superInit(label string, root uint32, score *venti.Score) {
 	var s Super
 
 	for i := 0; i < bsize; i++ {
@@ -412,8 +412,8 @@ func topLevel(name string) {
 	fsClose(fs)
 }
 
-func ventiRead(score venti.Score, typ int) int {
-	n, err := venti.Read(z, score, typ, buf)
+func ventiRead(score *venti.Score, typ int) int {
+	n, err := z.Read(score, typ, buf)
 	if err != nil {
 		log.Fatalf("ventiRead %v (%d) failed: %v", score, typ, err)
 	}
@@ -424,12 +424,12 @@ func ventiRead(score venti.Score, typ int) int {
 func ventiRoot(host string, s string) uint32 {
 	var i int
 	var n int
-	var score venti.Score
 	var de DirEntry
 	var me MetaEntry
 	var e Entry
 	var root venti.Root
 
+	var score venti.Score
 	if err := parseScore(score[:], s); err != nil {
 		log.Fatalf("bad score '%s': %v", s, err)
 	}
@@ -443,7 +443,7 @@ func ventiRoot(host string, s string) uint32 {
 	tag := formatTagGen()
 	addr := blockAlloc(BtDir, tag)
 
-	ventiRead(score, venti.RootType)
+	ventiRead(&score, venti.RootType)
 	if err := venti.RootUnpack(&root, buf); err != nil {
 		log.Fatalf("corrupted root: vtRootUnpack: %v", err)
 	}
@@ -504,7 +504,7 @@ func ventiRoot(host string, s string) uint32 {
 	e.flags |= venti.EntryLocal | venti.EntryDir
 	e.size = venti.EntrySize * 3
 	e.tag = tag
-	venti.LocalToGlobal(addr, e.score)
+	localToGlobal(addr, e.score)
 
 	addr = blockAlloc(BtDir, RootTag)
 	for i := 0; i < bsize; i++ {

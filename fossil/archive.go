@@ -69,7 +69,7 @@ func ventiSend(a *Arch, b *Block, data []byte) error {
 		return err
 	}
 
-	if err := venti.Sha1Check(&score, data, int(n)); err != nil {
+	if err := venti.Sha1Check(&score, data[:n]); err != nil {
 		var score2 venti.Score
 		venti.Sha1(&score2, data[:n])
 		fmt.Fprintf(os.Stderr, "ventiSend: venti.Write block %#x failed venti.Sha1Check %v %v\n", b.addr, score, &score2)
@@ -183,7 +183,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 		var score venti.Score
 		var e *Entry
 		initWalk(&w, b, size)
-		for i := 0; nextWalk(&w, score, &typ, &tag, &e); i++ {
+		for i := 0; nextWalk(&w, &score, &typ, &tag, &e); i++ {
 			if e != nil {
 				if e.flags&venti.EntryActive == 0 {
 					continue
@@ -208,7 +208,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 				}
 			}
 
-			addr = venti.GlobalToLocal(score)
+			addr = globalToLocal(&score)
 			if addr == NilBlock {
 				continue
 			}
@@ -418,7 +418,7 @@ func archThread(a *Arch) {
 		venti.RootPack(&root, rbuf[:])
 
 		err1 := a.z.Write(p.score, venti.RootType, rbuf[:venti.RootSize])
-		err2 := venti.Sha1Check(p.score, rbuf[:], venti.RootSize)
+		err2 := venti.Sha1Check(p.score, rbuf[:venti.RootSize])
 		if err1 != nil || err2 != nil {
 			err = err1
 			if err2 != nil {
@@ -447,7 +447,7 @@ func archThread(a *Arch) {
 		blockPut(b)
 		a.fs.elk.Unlock()
 
-		consPrintf("archive vac:%V\n", p.score)
+		consPrintf("archive vac:%v\n", p.score)
 	}
 
 Done:

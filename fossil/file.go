@@ -627,7 +627,7 @@ Err1:
  * Changes the file block bn to be the given block score.
  * Very sneaky.  Only used by flfmt.
  */
-func fileMapBlock(f *File, bn uint32, score venti.Score, tag uint32) error {
+func fileMapBlock(f *File, bn uint32, score *venti.Score, tag uint32) error {
 	var b *Block
 	var e Entry
 	var s *Source

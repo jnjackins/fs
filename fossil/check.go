@@ -167,7 +167,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 
 	walkEpoch(chk, b, e.score, BtDir, e.tag, epoch)
 	if err := entryUnpack(&e, b.data, 1); err == nil {
-		chk.hint = venti.GlobalToLocal(e.score)
+		chk.hint = globalToLocal(e.score)
 	}
 	blockPut(b)
 }
@@ -182,7 +182,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
  * (v) if b is a past life of b' then only one of b and b' is active
  *	(too hard to check)
  */
-func walkEpoch(chk *Fsck, b *Block, score venti.Score, typ int, tag, epoch uint32) bool {
+func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint32) bool {
 	var i int
 	var ep uint32
 	var e Entry
@@ -192,7 +192,7 @@ func walkEpoch(chk *Fsck, b *Block, score venti.Score, typ int, tag, epoch uint3
 		chk.printf("%v %d %#.8x %#.8x\n", b.score, b.l.typ, b.l.tag, b.l.epoch)
 	}
 
-	if !chk.useventi && venti.GlobalToLocal(score) == NilBlock {
+	if !chk.useventi && globalToLocal(score) == NilBlock {
 		return true
 	}
 
@@ -210,7 +210,7 @@ func walkEpoch(chk *Fsck, b *Block, score venti.Score, typ int, tag, epoch uint3
 	}
 
 	ret := false
-	addr := venti.GlobalToLocal(score)
+	addr := globalToLocal(score)
 	if addr == NilBlock {
 		ret = true
 		goto Exit
@@ -288,7 +288,7 @@ func walkEpoch(chk *Fsck, b *Block, score venti.Score, typ int, tag, epoch uint3
 		for i = 0; i < chk.bsize/venti.ScoreSize; i++ {
 			var score venti.Score
 			copy(score[:], bb.data[i*venti.ScoreSize:])
-			if !walkEpoch(chk, bb, score, typ-1, tag, epoch) {
+			if !walkEpoch(chk, bb, &score, typ-1, tag, epoch) {
 				setBit(chk.errmap, bb.addr)
 				chk.clrp(chk, bb, i)
 				chk.nclrp++
@@ -536,7 +536,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
 	var o uint32
 	var e Entry
 
-	if !chk.useventi && venti.GlobalToLocal(r.score) == NilBlock {
+	if !chk.useventi && globalToLocal(r.score) == NilBlock {
 		return
 	}
 	if err := sourceGetEntry(r, &e); err != nil {
@@ -544,7 +544,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
 		return
 	}
 
-	a = venti.GlobalToLocal(e.score)
+	a = globalToLocal(e.score)
 	if !chk.useventi && a == NilBlock {
 		return
 	}
@@ -588,7 +588,7 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 	var r, mr *Source
 	var err error
 
-	if !chk.useventi && venti.GlobalToLocal(source.score) == NilBlock && venti.GlobalToLocal(meta.score) == NilBlock {
+	if !chk.useventi && globalToLocal(source.score) == NilBlock && globalToLocal(meta.score) == NilBlock {
 		return
 	}
 
@@ -606,8 +606,8 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		return
 	}
 
-	a1 = venti.GlobalToLocal(e1.score)
-	a2 = venti.GlobalToLocal(e2.score)
+	a1 = globalToLocal(e1.score)
+	a2 = globalToLocal(e2.score)
 	if (!chk.useventi && a1 == NilBlock && a2 == NilBlock) || (getBit(chk.smap, a1) != 0 && getBit(chk.smap, a2) != 0) {
 		sourceUnlock(source)
 		sourceUnlock(meta)

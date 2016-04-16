@@ -38,7 +38,7 @@ func initWalk(w *WalkPtr, b *Block, size uint) {
 	}
 }
 
-func nextWalk(w *WalkPtr, score venti.Score, typ *uint8, tag *uint32, e **Entry) bool {
+func nextWalk(w *WalkPtr, score *venti.Score, typ *uint8, tag *uint32, e **Entry) bool {
 	if w.n >= w.m {
 		return false
 	}

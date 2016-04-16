@@ -252,7 +252,7 @@ func dump(s *Source, ident int, entry uint32) {
 		}
 	}
 
-	fmt.Fprintf(bout, "%4lud: gen %4ud depth %d tag=%x score=%V", entry, e.gen, e.depth, e.tag, e.score)
+	fmt.Fprintf(bout, "%4lud: gen %4ud depth %d tag=%x score=%v", entry, e.gen, e.depth, e.tag, e.score)
 	if s.dir == 0 {
 
 		fmt.Fprintf(bout, " data size: %llud\n", e.size)
