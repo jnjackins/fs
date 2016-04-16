@@ -193,7 +193,7 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c.heapwait = sync.NewCond(c.lk)
 	c.syncTicker = time.NewTicker(30 * time.Second)
 
-	// TODO: leakes goroutine? loop does not terminate when ticker
+	// TODO: leaks goroutine? loop does not terminate when ticker
 	// is stopped
 	go func() {
 		for range c.syncTicker.C {
@@ -361,7 +361,7 @@ func cacheBumpBlock(c *Cache) *Block {
 	 * unchain the block from hash chain
 	 */
 	if b.prev != nil {
-		b.prev = b.next
+		*b.prev = b.next
 		if b.next != nil {
 			b.next.prev = b.prev
 		}
@@ -387,9 +387,8 @@ func cacheBumpBlock(c *Cache) *Block {
  */
 func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock int, lockfailure *int) (*Block, error) {
 	var b *Block
-	var h uint32
 
-	h = addr % uint32(c.hashSize)
+	h := addr % uint32(c.hashSize)
 
 	if lockfailure != nil {
 		*lockfailure = 0
@@ -469,11 +468,10 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32) (*Block, error) {
  */
 func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Block, error) {
 	var b *Block
-	var h uint32
 
 	assert(part != PartVenti)
 
-	h = addr % uint32(c.hashSize)
+	h := addr % uint32(c.hashSize)
 
 	/*
 	 * look for the block in the cache
@@ -481,9 +479,9 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	c.lk.Lock()
 
 	for b = c.heads[h]; b != nil; b = b.next {
-		fmt.Fprintf(os.Stderr, "%p\n", b)
-		time.Sleep(10 * time.Millisecond)
 		if b.part != part || b.addr != addr {
+			fmt.Fprintf(os.Stderr, "wanted %d, %d, got %d, %d\n", addr, part, b.addr, b.part)
+			fmt.Fprintf(os.Stderr, "next: %p\n", b.next)
 			continue
 		}
 		if epoch != 0 && b.l.epoch != epoch {
@@ -506,12 +504,15 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
+		if b.next == b {
+			panic("cycle")
+		}
 
 		c.heads[h] = b
 		if b.next != nil {
-			b.next.prev = b.next
+			b.next.prev = &b.next
 		}
-		b.prev = c.heads[h]
+		b.prev = &c.heads[h]
 	}
 
 	c.lk.Unlock()
@@ -648,12 +649,15 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
+		if b.next == b {
+			panic("cycle")
+		}
 
 		c.heads[h] = b
 		if b.next != nil {
-			b.next.prev = b.next
+			b.next.prev = &b.next
 		}
-		b.prev = c.heads[h]
+		b.prev = &c.heads[h]
 	}
 
 	c.lk.Unlock()

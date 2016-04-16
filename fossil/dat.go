@@ -133,7 +133,7 @@ type Block struct {
 
 	/* the following is private; used by cache */
 	next *Block /* doubly linked hash chains */
-	prev *Block
+	prev **Block
 	heap uint32 /* index in heap table */
 	used uint32 /* last reference times */
 
