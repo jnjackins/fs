@@ -34,10 +34,12 @@ func main() {
 	argv0 = flag.Arg(0)
 	argv := flag.Args()[1:]
 	switch argv0 {
-	case "serve":
-		serve(argv)
+	case "start":
+		start(argv)
 	case "format":
 		format(argv)
+	case "check":
+		check(argv)
 	default:
 		flag.Usage()
 	}

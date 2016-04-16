@@ -34,7 +34,7 @@ func Dial(host string, canfail bool) (*Session, error) {
 		na = ""
 		conn = nil
 	} else {
-		conn, err = net.Dial("venti", host)
+		conn, err = net.Dial("tcp", host)
 	}
 
 	if err != nil {
@@ -59,7 +59,7 @@ func (z *Session) Redial(host string) error {
 		host = "$venti"
 	}
 
-	conn, err := net.Dial("venti", host)
+	conn, err := net.Dial("tcp", host)
 	if err != nil {
 		return err
 	}

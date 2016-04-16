@@ -43,7 +43,7 @@ func confirm(msg string) bool {
 }
 
 func format(argv []string) {
-	flags := flag.NewFlagSet("format", flag.ContinueOnError)
+	flags := flag.NewFlagSet("format", flag.ExitOnError)
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: %s [-b blocksize] [-h host] [-l label] [-v score] [-y] file\n", argv0)
 		flags.PrintDefaults()
