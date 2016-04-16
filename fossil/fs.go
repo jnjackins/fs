@@ -690,7 +690,7 @@ func fsVac(fs *Fs, name string, score venti.Score) error {
 }
 
 func vtWriteBlock(z *venti.Session, buf []byte, n uint, typ uint, score venti.Score) error {
-	if err := venti.Write(z, score, int(typ), buf); err != nil {
+	if err := z.Write(score, int(typ), buf); err != nil {
 		return err
 	}
 	return venti.Sha1Check(score, buf, int(n))

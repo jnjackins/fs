@@ -64,19 +64,19 @@ func ventiSend(a *Arch, b *Block, data []byte) error {
 	if *Dflag {
 		fmt.Fprintf(os.Stderr, "ventiSend: truncate %d to %d\n", a.blockSize, n)
 	}
-	if err := venti.Write(a.z, score, vtType[b.l.typ], data[:n]); err != nil {
+	if err := a.z.Write(&score, vtType[b.l.typ], data[:n]); err != nil {
 		fmt.Fprintf(os.Stderr, "ventiSend: venti.Write block %#x failed: %v\n", b.addr, err)
 		return err
 	}
 
-	if err := venti.Sha1Check(score, data, int(n)); err != nil {
+	if err := venti.Sha1Check(&score, data, int(n)); err != nil {
 		var score2 venti.Score
-		venti.Sha1(score2, data, int(n))
-		fmt.Fprintf(os.Stderr, "ventiSend: venti.Write block %#x failed venti.Sha1Check %v %v\n", b.addr, score, score2)
+		venti.Sha1(&score2, data[:n])
+		fmt.Fprintf(os.Stderr, "ventiSend: venti.Write block %#x failed venti.Sha1Check %v %v\n", b.addr, score, &score2)
 		return err
 	}
 
-	if err := venti.Sync(a.z); err != nil {
+	if err := a.z.Sync(); err != nil {
 		return err
 	}
 	return nil
@@ -104,11 +104,12 @@ type Param struct {
 	dsize     uint
 	psize     uint
 	l         Label
-	score     venti.Score
+	score     *venti.Score
 }
 
-func shaBlock(score venti.Score, b *Block, data []byte, bsize uint) {
-	venti.Sha1(score, data, venti.ZeroTruncate(vtType[b.l.typ], data, int(bsize)))
+func shaBlock(score *venti.Score, b *Block, data []byte, bsize uint) {
+	n := venti.ZeroTruncate(vtType[b.l.typ], data, int(bsize))
+	venti.Sha1(score, data[:n])
 }
 
 func etype(e *Entry) uint {
@@ -416,7 +417,7 @@ func archThread(a *Arch) {
 		copy(root.Prev[:], super.last[:venti.ScoreSize])
 		venti.RootPack(&root, rbuf[:])
 
-		err1 := venti.Write(a.z, p.score, venti.RootType, rbuf[:venti.RootSize])
+		err1 := a.z.Write(p.score, venti.RootType, rbuf[:venti.RootSize])
 		err2 := venti.Sha1Check(p.score, rbuf[:], venti.RootSize)
 		if err1 != nil || err2 != nil {
 			err = err1

@@ -9,8 +9,8 @@ var (
 	EProtocolBotch_server = errors.New("venti protocol botch")
 )
 
-func ServerAlloc(bl *ServerVtbl) *Session {
-	z := NewSession()
+func NewServer(bl *ServerVtbl) *Session {
+	z := newSession()
 	z.bl = new(ServerVtbl)
 	//setmalloctag(z.bl, getcallerpc(&bl))
 	*z.bl = *bl

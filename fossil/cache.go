@@ -606,7 +606,7 @@ func cacheLocalData(c *Cache, addr uint32, typ int, tag uint32, mode int, epoch 
  * if it's not there, load it, bumping some other block.
  * check tag and type if it's really a local block in disguise.
  */
-func cacheGlobal(c *Cache, score venti.Score, typ int, tag uint32, mode int) (*Block, error) {
+func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*Block, error) {
 	addr := venti.GlobalToLocal(score)
 	if addr != NilBlock {
 		b, err := cacheLocalData(c, addr, typ, tag, mode, 0)
@@ -668,7 +668,7 @@ func cacheGlobal(c *Cache, score venti.Score, typ int, tag uint32, mode int) (*B
 		fallthrough
 
 	case BioEmpty:
-		n, err := venti.Read(c.z, score, vtType[typ], b.data[:c.size])
+		n, err := c.z.Read(score, vtType[typ], b.data[:c.size])
 		if err != nil {
 			blockSetIOState(b, BioVentiError)
 			blockPut(b)

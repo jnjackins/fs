@@ -14,12 +14,7 @@ var (
 	ENotConnected         = errors.New("not connected to venti server")
 )
 
-func ClientAlloc() *Session {
-	var z *Session = NewSession()
-	return z
-}
-
-func Dial(host string, canfail int) (*Session, error) {
+func Dial(host string, canfail bool) (*Session, error) {
 	var z *Session
 	var conn net.Conn
 	var na string
@@ -33,7 +28,7 @@ func Dial(host string, canfail int) (*Session, error) {
 
 	var err error
 	if host == "" {
-		if canfail == 0 {
+		if !canfail {
 			err = errors.New("no venti host set")
 		}
 		na = ""
@@ -43,12 +38,12 @@ func Dial(host string, canfail int) (*Session, error) {
 	}
 
 	if err != nil {
-		if canfail == 0 {
+		if !canfail {
 			return nil, fmt.Errorf("venti dialstring %s: %v", na, err)
 		}
 	}
 
-	z = ClientAlloc()
+	z = newSession()
 	if conn != nil {
 		z.connErr = err
 	}
@@ -56,7 +51,7 @@ func Dial(host string, canfail int) (*Session, error) {
 	return z, nil
 }
 
-func Redial(z *Session, host string) error {
+func (z *Session) Redial(host string) error {
 	if host == "" {
 		host = os.Getenv("venti")
 	}
@@ -113,11 +108,11 @@ func StdioServer(server string) (*Session, error) {
 }
 */
 
-func Ping(z *Session) error {
+func (z *Session) Ping() error {
 	var p *Packet = packetAlloc()
 
 	var err error
-	p, err = RPC_client(z, QPing, p)
+	p, err = z.RPC_client(QPing, p)
 	if err != nil {
 		return err
 	}
@@ -125,7 +120,7 @@ func Ping(z *Session) error {
 	return nil
 }
 
-func Hello(z *Session) error {
+func (z *Session) Hello() error {
 	var p *Packet
 	var buf [10]uint8
 	var sid string
@@ -144,7 +139,7 @@ func Hello(z *Session) error {
 	buf[2] = 0
 	packetAppend(p, buf[:], 3)
 	var err error
-	p, err = RPC_client(z, QHello, p)
+	p, err = z.RPC_client(QHello, p)
 	if err != nil {
 		return err
 	}
@@ -170,11 +165,11 @@ func Hello(z *Session) error {
 	return nil
 }
 
-func Sync(z *Session) error {
+func (z *Session) Sync() error {
 	var p *Packet = packetAlloc()
 
 	var err error
-	p, err = RPC_client(z, QSync, p)
+	p, err = z.RPC_client(QSync, p)
 	if err != nil {
 		return err
 	}
@@ -187,14 +182,14 @@ func Sync(z *Session) error {
 	return nil
 }
 
-func Write(z *Session, score [ScoreSize]uint8, type_ int, buf []byte, n int) error {
+func (z *Session) Write(score *Score, type_ int, buf []byte) error {
 	var p *Packet = packetAlloc()
 
-	packetAppend(p, buf, n)
-	return WritePacket(z, score, type_, p)
+	packetAppend(p, buf, len(buf))
+	return z.WritePacket(score, type_, p)
 }
 
-func WritePacket(z *Session, score [ScoreSize]uint8, type_ int, p *Packet) error {
+func (z *Session) WritePacket(score *Score, type_ int, p *Packet) error {
 	var n int = packetSize(p)
 	var hdr []byte
 
@@ -214,7 +209,7 @@ func WritePacket(z *Session, score [ScoreSize]uint8, type_ int, p *Packet) error
 	hdr[2] = 0 /* pad */
 	hdr[3] = 0 /* pad */
 	var err error
-	p, err = RPC_client(z, QWrite, p)
+	p, err = z.RPC_client(QWrite, p)
 	if err != nil {
 		return err
 	}
@@ -230,21 +225,21 @@ func WritePacket(z *Session, score [ScoreSize]uint8, type_ int, p *Packet) error
 	return nil
 }
 
-func Read(z *Session, score [ScoreSize]uint8, type_ int, buf []byte, n int) (int, error) {
+func (z *Session) Read(score *Score, type_ int, buf []byte) (int, error) {
 	var p *Packet
 
 	var err error
-	p, err = ReadPacket(z, score, type_, n)
+	p, err = z.ReadPacket(score, type_, len(buf))
 	if err != nil {
 		return -1, err
 	}
-	n = packetSize(p)
+	n := packetSize(p)
 	packetCopy(p, buf, 0, n)
 	packetFree(p)
 	return n, nil
 }
 
-func ReadPacket(z *Session, score [ScoreSize]uint8, type_ int, n int) (*Packet, error) {
+func (z *Session) ReadPacket(score *Score, type_ int, n int) (*Packet, error) {
 	var p *Packet
 	var buf [10]uint8
 
@@ -263,10 +258,10 @@ func ReadPacket(z *Session, score [ScoreSize]uint8, type_ int, n int) (*Packet, 
 	buf[2] = uint8(n >> 8)
 	buf[3] = uint8(n)
 	packetAppend(p, buf[:], 4)
-	return RPC_client(z, QRead, p)
+	return z.RPC_client(QRead, p)
 }
 
-func RPC_client(z *Session, op int, p *Packet) (*Packet, error) {
+func (z *Session) RPC_client(op int, p *Packet) (*Packet, error) {
 	var hdr []byte
 	var buf [2]uint8
 	var errstr string

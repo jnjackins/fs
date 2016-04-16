@@ -33,12 +33,12 @@ type Source struct {
 	// sources that have become invalid because they belong to an old
 	// snapshot.
 	epoch      uint32
-	b          *Block      /* block containing this source */
-	score      venti.Score /* score of block containing this source */
-	scoreEpoch uint32      /* epoch of block containing this source */
-	epb        int         /* immutable: entries per block in parent */
-	tag        uint32      /* immutable: tag of parent */
-	offset     uint32      /* immutable: entry offset in parent */
+	b          *Block       /* block containing this source */
+	score      *venti.Score /* score of block containing this source */
+	scoreEpoch uint32       /* epoch of block containing this source */
+	epb        int          /* immutable: entries per block in parent */
+	tag        uint32       /* immutable: tag of parent */
+	offset     uint32       /* immutable: entry offset in parent */
 }
 
 func sourceIsLocked(r *Source) bool {

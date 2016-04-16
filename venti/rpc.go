@@ -22,7 +22,7 @@ var (
 	EBadVersion = errors.New("bad format in version string")
 )
 
-func NewSession() *Session {
+func newSession() *Session {
 	z := new(Session)
 	z.lk = new(sync.Mutex)
 	//z->inHash = Sha1Alloc();
@@ -411,7 +411,7 @@ func (z *Session) Connect(password string) error {
 		return nil
 	}
 
-	if err = Hello(z); err != nil {
+	if err = z.Hello(); err != nil {
 		goto Err
 	}
 	return nil
