@@ -67,7 +67,7 @@ var (
 )
 
 var freeList struct {
-	lk        *sync.Mutex
+	lk        sync.Mutex
 	packet    *Packet
 	npacket   int
 	frag      *Frag
@@ -85,14 +85,14 @@ func _FRAGASIZE(f *Frag) int { return f.mem.eoff }
 func packetAlloc() *Packet {
 	var p *Packet
 
-	freeList.lk.Lock()
+	(&freeList.lk).Lock()
 	p = freeList.packet
 	if p != nil {
 		freeList.packet = p.next
 	} else {
 		freeList.npacket++
 	}
-	freeList.lk.Unlock()
+	(&freeList.lk).Unlock()
 
 	if p == nil {
 		p = new(Packet)
@@ -128,10 +128,10 @@ func packetFree(p *Packet) {
 	p.first = nil
 	p.last = nil
 
-	freeList.lk.Lock()
+	(&freeList.lk).Lock()
 	p.next = freeList.packet
 	freeList.packet = p
-	freeList.lk.Unlock()
+	(&freeList.lk).Unlock()
 }
 
 func packetDup(p *Packet, offset int, n int) (*Packet, error) {
@@ -575,7 +575,7 @@ func packetStats() {
 	var nsm int
 	var nbm int
 
-	freeList.lk.Lock()
+	(&freeList.lk).Lock()
 	np = 0
 	for p = freeList.packet; p != nil; p = p.next {
 		np++
@@ -595,7 +595,7 @@ func packetStats() {
 
 	fmt.Fprintf(os.Stderr, "packet: %d/%d frag: %d/%d small mem: %d/%d big mem: %d/%d\n", np, freeList.npacket, nf, freeList.nfrag, nsm, freeList.nsmallMem, nbm, freeList.nbigMem)
 
-	freeList.lk.Unlock()
+	(&freeList.lk).Unlock()
 }
 
 func packetSize(p *Packet) int {
@@ -732,14 +732,14 @@ func fragAlloc(p *Packet, n int, pos int, next *Frag) *Frag {
 		}
 	}
 
-	freeList.lk.Lock()
+	(&freeList.lk).Lock()
 	f = freeList.frag
 	if f != nil {
 		freeList.frag = f.next
 	} else {
 		freeList.nfrag++
 	}
-	freeList.lk.Unlock()
+	(&freeList.lk).Unlock()
 
 	if f == nil {
 		f = new(Frag)
@@ -797,10 +797,10 @@ func fragFree(f *Frag) {
 		return
 	}
 
-	freeList.lk.Lock()
+	(&freeList.lk).Lock()
 	f.next = freeList.frag
 	freeList.frag = f
-	freeList.lk.Unlock()
+	(&freeList.lk).Unlock()
 }
 
 func memAlloc(n int, pos int) (*Mem, error) {
@@ -812,24 +812,24 @@ func memAlloc(n int, pos int) (*Mem, error) {
 	}
 
 	if n <= SmallMemSize {
-		freeList.lk.Lock()
+		(&freeList.lk).Lock()
 		m = freeList.smallMem
 		if m != nil {
 			freeList.smallMem = m.next
 		} else {
 			freeList.nsmallMem++
 		}
-		freeList.lk.Unlock()
+		(&freeList.lk).Unlock()
 		nn = SmallMemSize
 	} else {
-		freeList.lk.Lock()
+		(&freeList.lk).Lock()
 		m = freeList.bigMem
 		if m != nil {
 			freeList.bigMem = m.next
 		} else {
 			freeList.nbigMem++
 		}
-		freeList.lk.Unlock()
+		(&freeList.lk).Unlock()
 		nn = BigMemSize
 	}
 
@@ -884,15 +884,15 @@ func memFree(m *Mem) {
 	default:
 		panic("bad mem size")
 	case SmallMemSize:
-		freeList.lk.Lock()
+		(&freeList.lk).Lock()
 		m.next = freeList.smallMem
 		freeList.smallMem = m
-		freeList.lk.Unlock()
+		(&freeList.lk).Unlock()
 	case BigMemSize:
-		freeList.lk.Lock()
+		(&freeList.lk).Lock()
 		m.next = freeList.bigMem
 		freeList.bigMem = m
-		freeList.lk.Unlock()
+		(&freeList.lk).Unlock()
 	}
 }
 
