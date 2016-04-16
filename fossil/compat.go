@@ -30,12 +30,28 @@ func atoll(s string) int64 {
 	return i
 }
 
-func strtoul(s string, base int) uint {
+func strtol(s string, base int) int32 {
+	i, err := strconv.ParseInt(s, base, 32)
+	if err != nil {
+		return 0
+	}
+	return int32(i)
+}
+
+func strtoll(s string, base int) int64 {
+	i, err := strconv.ParseInt(s, base, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(i)
+}
+
+func strtoul(s string, base int) uint32 {
 	i, err := strconv.ParseUint(s, base, 32)
 	if err != nil {
 		return 0
 	}
-	return uint(i)
+	return uint32(i)
 }
 
 func strtoull(s string, base int) uint64 {

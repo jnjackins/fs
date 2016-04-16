@@ -1,11 +1,15 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
+
+	"9fans.net/go/plan9"
 )
 
 var cmdbox struct {
@@ -16,272 +20,236 @@ var cmdbox struct {
 	tag   uint16
 }
 
-/*
 func cmd9pStrtoul(s string) uint32 {
 	if s == "~0" {
-		return ^0
+		return ^uint32(0)
 	}
-	return strtoul(s, nil, 0)
+	return strtoul(s, 0)
 }
 
 func cmd9pStrtoull(s string) uint64 {
 	if s == "~0" {
-		return ^0
+		return ^uint64(0)
 	}
-	return strtoull(s, nil, 0)
+	return strtoull(s, 0)
 }
 
-func cmd9pTag(_ *Fcall, _ int, argv *string) error {
-	cmdbox.tag = uint16(strtoul(argv[0], nil, 0) - 1)
+func cmd9pTag(_ *plan9.Fcall, argv []string) error {
+	cmdbox.tag = uint16(strtoul(argv[0], 0) - 1)
 
 	return nil
 }
 
-var cmd9pTwstat_buf [sizeof(Dir) + 65535]uint8
+func cmd9pTwstat(f *plan9.Fcall, argv []string) error {
+	var d plan9.Dir
 
-func cmd9pTwstat(f *Fcall, int, argv *string) error {
-	var d Dir
+	d.Name = argv[1]
+	d.Uid = argv[2]
+	d.Gid = argv[3]
+	d.Mode = plan9.Perm(cmd9pStrtoul(argv[4]))
+	d.Mtime = cmd9pStrtoul(argv[5])
+	d.Length = cmd9pStrtoull(argv[6])
 
-	d = Dir{}
-	nulldir(&d)
-	d.name = argv[1]
-	d.uid = argv[2]
-	d.gid = argv[3]
-	d.mode = cmd9pStrtoul(argv[4])
-	d.mtime = cmd9pStrtoul(argv[5])
-	d.length = int64(cmd9pStrtoull(argv[6]))
-
-	f.fid = uint(strtol(argv[0], nil, 0))
-	f.stat = cmd9pTwstat_buf[:]
-	f.nstat = uint16(convD2M(&d, cmd9pTwstat_buf[:], uint(len(cmd9pTwstat_buf))))
-	if f.nstat < 2 {
-		return fmt.Errorf("Twstat: convD2M failed (internal error)")
+	f.Fid = uint32(strtol(argv[0], 0))
+	buf, err := d.Bytes()
+	if err != nil {
+		return fmt.Errorf("Twstat: error marshalling dir: %v", err)
 	}
+	f.Stat = buf
 
 	return nil
 }
 
-func cmd9pTstat(f *Fcall, int, argv *string) error {
-	f.fid = uint(strtol(argv[0], nil, 0))
+func cmd9pTstat(f *plan9.Fcall, argv []string) error {
+	f.Fid = uint32(strtol(argv[0], 0))
 
 	return nil
 }
 
-func cmd9pTremove(f *Fcall, int, argv *string) error {
-	f.fid = uint(strtol(argv[0], nil, 0))
+func cmd9pTremove(f *plan9.Fcall, argv []string) error {
+	f.Fid = uint32(strtol(argv[0], 0))
 
 	return nil
 }
 
-func cmd9pTclunk(f *Fcall, int, argv *string) error {
-	f.fid = uint(strtol(argv[0], nil, 0))
+func cmd9pTclunk(f *plan9.Fcall, argv []string) error {
+	f.Fid = uint32(strtol(argv[0], 0))
 
 	return nil
 }
 
-func cmd9pTwrite(f *Fcall, int, argv *string) error {
-	f.fid = uint(strtol(argv[0], nil, 0))
-	f.offset = strtoll(argv[1], nil, 0)
-	f.data = argv[2]
-	f.count = uint(len(argv[2]))
+func cmd9pTwrite(f *plan9.Fcall, argv []string) error {
+	f.Fid = uint32(strtol(argv[0], 0))
+	f.Offset = strtoull(argv[1], 0)
+	f.Data = []byte(argv[2])
+	f.Count = uint32(len(argv[2]))
 
 	return nil
 }
 
-func cmd9pTread(f *Fcall, int, argv *string) error {
-	f.fid = uint(strtol(argv[0], nil, 0))
-	f.offset = strtoll(argv[1], nil, 0)
-	f.count = uint(strtol(argv[2], nil, 0))
+func cmd9pTread(f *plan9.Fcall, argv []string) error {
+	f.Fid = uint32(strtol(argv[0], 0))
+	f.Offset = strtoull(argv[1], 0)
+	f.Count = uint32(strtol(argv[2], 0))
 
 	return nil
 }
 
-func cmd9pTcreate(f *Fcall, int, argv *string) error {
-	f.fid = uint(strtol(argv[0], nil, 0))
-	f.name = argv[1]
-	f.perm = uint(strtol(argv[2], nil, 8))
-	f.mode = uint8(strtol(argv[3], nil, 0))
+func cmd9pTcreate(f *plan9.Fcall, argv []string) error {
+	f.Fid = uint32(strtol(argv[0], 0))
+	f.Name = argv[1]
+	f.Perm = plan9.Perm(strtol(argv[2], 8))
+	f.Mode = uint8(strtol(argv[3], 0))
 
 	return nil
 }
 
-func cmd9pTopen(f *Fcall, int, argv *string) error {
-	f.fid = uint(strtol(argv[0], nil, 0))
-	f.mode = uint8(strtol(argv[1], nil, 0))
+func cmd9pTopen(f *plan9.Fcall, argv []string) error {
+	f.Fid = uint32(strtol(argv[0], 0))
+	f.Mode = uint8(strtol(argv[1], 0))
 
 	return nil
 }
 
-func cmd9pTwalk(f *Fcall, argc int, argv *string) error {
+func cmd9pTwalk(f *plan9.Fcall, argv []string) error {
 	var i int
 
-	if argc < 2 {
+	if len(argv) < 2 {
 		return fmt.Errorf("usage: Twalk tag fid newfid [name...]")
 	}
 
-	f.fid = uint(strtol(argv[0], nil, 0))
-	f.newfid = uint(strtol(argv[1], nil, 0))
-	f.nwname = uint16(argc - 2)
-	if f.nwname > 16 {
+	f.Fid = uint32(strtol(argv[0], 0))
+	f.Newfid = uint32(strtol(argv[1], 0))
+	nwname := uint16(len(argv) - 2)
+	if nwname > 16 {
 		return fmt.Errorf("Twalk: too many names")
 	}
 
-	for i = 0; i < argc-2; i++ {
-		f.wname[i] = argv[2+i]
+	for i = 0; i < len(argv)-2; i++ {
+		f.Wname[i] = argv[2+i]
 	}
 
 	return nil
 }
 
-func cmd9pTflush(f *Fcall, int, argv *string) error {
-	f.oldtag = uint16(strtol(argv[0], nil, 0))
+func cmd9pTflush(f *plan9.Fcall, argv []string) error {
+	f.Oldtag = uint16(strtol(argv[0], 0))
 
 	return nil
 }
 
-func cmd9pTattach(f *Fcall, int, argv *string) error {
-	f.fid = uint(strtol(argv[0], nil, 0))
-	f.afid = uint(strtol(argv[1], nil, 0))
-	f.uname = argv[2]
-	f.aname = argv[3]
+func cmd9pTattach(f *plan9.Fcall, argv []string) error {
+	f.Fid = uint32(strtol(argv[0], 0))
+	f.Afid = uint32(strtol(argv[1], 0))
+	f.Uname = argv[2]
+	f.Aname = argv[3]
 
 	return nil
 }
 
-func cmd9pTauth(f *Fcall, int, argv *string) error {
-	f.afid = uint(strtol(argv[0], nil, 0))
-	f.uname = argv[1]
-	f.aname = argv[2]
+func cmd9pTauth(f *plan9.Fcall, argv []string) error {
+	f.Afid = uint32(strtol(argv[0], 0))
+	f.Uname = argv[1]
+	f.Aname = argv[2]
 
 	return nil
 }
 
-func cmd9pTversion(f *Fcall, int, argv *string) error {
-	f.msize = uint(strtoul(argv[0], nil, 0))
-	if f.msize > cmdbox.con.msize {
+func cmd9pTversion(f *plan9.Fcall, argv []string) error {
+	f.Msize = uint32(strtoul(argv[0], 0))
+	if f.Msize > cmdbox.con.msize {
 		return fmt.Errorf("msize too big")
 	}
 
-	f.version = argv[1]
+	f.Version = argv[1]
 
 	return nil
 }
 
 type Cmd9p struct {
 	name  string
-	typ int
+	typ   int
 	argc  int
 	usage string
-	f     func(*Fcall, int, *string) int
+	f     func(*plan9.Fcall, []string) error
 }
 
 var cmd9pTmsg = [...]Cmd9p{
-	{"Tversion", Tversion, 2, "msize version", cmd9pTversion},
-	{"Tauth", Tauth, 3, "afid uname aname", cmd9pTauth},
-	{"Tflush", Tflush, 1, "oldtag", cmd9pTflush},
-	{"Tattach", Tattach, 4, "fid afid uname aname", cmd9pTattach},
-	{"Twalk", Twalk, 0, "fid newfid [name...]", cmd9pTwalk},
-	{"Topen", Topen, 2, "fid mode", cmd9pTopen},
-	{"Tcreate", Tcreate, 4, "fid name perm mode", cmd9pTcreate},
-	{"Tread", Tread, 3, "fid offset count", cmd9pTread},
-	{"Twrite", Twrite, 3, "fid offset data", cmd9pTwrite},
-	{"Tclunk", Tclunk, 1, "fid", cmd9pTclunk},
-	{"Tremove", Tremove, 1, "fid", cmd9pTremove},
-	{"Tstat", Tstat, 1, "fid", cmd9pTstat},
-	{"Twstat", Twstat, 7, "fid name uid gid mode mtime length", cmd9pTwstat},
+	{"Tversion", plan9.Tversion, 2, "msize version", cmd9pTversion},
+	{"Tauth", plan9.Tauth, 3, "afid uname aname", cmd9pTauth},
+	{"Tflush", plan9.Tflush, 1, "oldtag", cmd9pTflush},
+	{"Tattach", plan9.Tattach, 4, "fid afid uname aname", cmd9pTattach},
+	{"Twalk", plan9.Twalk, 0, "fid newfid [name...]", cmd9pTwalk},
+	{"Topen", plan9.Topen, 2, "fid mode", cmd9pTopen},
+	{"Tcreate", plan9.Tcreate, 4, "fid name perm mode", cmd9pTcreate},
+	{"Tread", plan9.Tread, 3, "fid offset count", cmd9pTread},
+	{"Twrite", plan9.Twrite, 3, "fid offset data", cmd9pTwrite},
+	{"Tclunk", plan9.Tclunk, 1, "fid", cmd9pTclunk},
+	{"Tremove", plan9.Tremove, 1, "fid", cmd9pTremove},
+	{"Tstat", plan9.Tstat, 1, "fid", cmd9pTstat},
+	{"Twstat", plan9.Twstat, 7, "fid name uid gid mode mtime length", cmd9pTwstat},
 	{"nexttag", 0, 0, "", cmd9pTag},
 }
 
 func cmd9p(argv []string) error {
+	usage := errors.New("usage: 9p T-message ...")
+
+	flags := flag.NewFlagSet("9p", flag.ContinueOnError)
+	err := flags.Parse(argv[1:])
+	if err != nil || flags.NArg() < 1 {
+		return usage
+	}
+	argv = flags.Args()
 
 	var i int
-	var n int
-	var f Fcall
-	var t Fcall
-	var buf []byte
-	var usage string
-	var msize uint
-
-	usage = "usage: 9p T-message ..."
-
-	argv++
-	argc--
-	for (func() { argv0 != "" || argv0 != "" }()); argv[0] != "" && argv[0][0] == '-' && argv[0][1] != 0; (func() { argc--; argv++ })() {
-		var _args string
-		var _argt string
-		var _argc uint
-		_args = string(&argv[0][1])
-		if _args[0] == '-' && _args[1] == 0 {
-			argc--
-			argv++
-			break
-		}
-		_argc = 0
-		for _args[0] != 0 && _args != "" {
-			switch _argc {
-			default:
-				return fmt.Errorf(usage)
-			}
-		}
-	}
-
-	if argc < 1 {
-		return fmt.Errorf(usage)
-	}
-
-	for i = 0; i < (sizeof(cmd9pTmsg) / sizeof(cmd9pTmsg[0])); i++ {
+	for i = 0; i < len(cmd9pTmsg); i++ {
 		if cmd9pTmsg[i].name == argv[0] {
 			break
 		}
 	}
 
-	if i == (sizeof(cmd9pTmsg) / sizeof(cmd9pTmsg[0])) {
-		return fmt.Errorf(usage)
+	if i == len(cmd9pTmsg) {
+		return usage
 	}
-	argc--
-	argv++
-	if cmd9pTmsg[i].argc != 0 && argc != cmd9pTmsg[i].argc {
+
+	argv = argv[1:]
+	if cmd9pTmsg[i].argc != 0 && len(argv) != cmd9pTmsg[i].argc {
 		return fmt.Errorf("usage: %s %s", cmd9pTmsg[i].name, cmd9pTmsg[i].usage)
 	}
 
-	t = Fcall{}
-	t.typ = uint8(cmd9pTmsg[i].typ)
-	if t.typ == Tversion {
-		t.tag = uint16(^0)
+	var t plan9.Fcall
+	t.Type = uint8(cmd9pTmsg[i].typ)
+	if t.Type == plan9.Tversion {
+		t.Tag = ^uint16(0)
 	} else {
 		cmdbox.tag++
-		t.tag = cmdbox.tag
+		t.Tag = cmdbox.tag
 	}
-	msize = cmdbox.con.msize
-	if err := cmd9pTmsg[i].f(&t, argc, (*string)(argv)); err != nil {
+	if err := cmd9pTmsg[i].f(&t, argv); err != nil {
 		return err
 	}
-	buf = vtMemAlloc(int(msize)).([]byte)
-	n = int(convS2M(&t, buf, msize))
-	if n <= 2 {
-		return fmt.Errorf("%s: convS2M error", cmd9pTmsg[i].name)
+
+	buf, err := t.Bytes()
+	if err != nil {
+		return fmt.Errorf("%s: error marshalling fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
-	if write(cmdbox.confd[0], buf, n) != n {
-		return fmt.Errorf("%s: write error: %r", cmd9pTmsg[i].name)
+	if _, err := syscall.Write(cmdbox.confd[0], buf); err != nil {
+		return fmt.Errorf("%s: write error: %v", cmd9pTmsg[i].name, err)
 	}
 
 	consPrintf("\t-> %F\n", &t)
 
-	n = read9pmsg(cmdbox.confd[0], buf, msize)
-	if n <= 0 {
-		return fmt.Errorf("%s: read error: %r", cmd9pTmsg[i].name)
-	}
-
-	if convM2S(buf, uint(n), &f) == 0 {
-		return fmt.Errorf("%s: convM2S error", cmd9pTmsg[i].name)
+	r := os.NewFile(uintptr(cmdbox.confd[0]), "confd0") // TODO: use readers in the first place
+	f, err := plan9.ReadFcall(r)
+	if err != nil {
+		return fmt.Errorf("%s: error reading fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
 	consPrintf("\t<- %F\n", &f)
 
-		return nil
+	return nil
 }
-*/
 
 /*
 func cmdDot(argv []string) error {
@@ -310,7 +278,7 @@ func cmdDot(argv []string) error {
 		f = vtMemAlloc(int(dir.length + 1)).(string)
 		l = read(fd, f, int(length))
 		if l < 0 {
-						close(fd)
+			close(fd)
 			return fmt.Errorf(". read %s: %v", argv[0], err)
 		}
 
@@ -332,7 +300,7 @@ func cmdDot(argv []string) error {
 			}
 		}
 
-			}
+	}
 
 	if r == 0 {
 		return fmt.Errorf("errors in . %#q", argv[0])
@@ -435,7 +403,7 @@ func cmdInit() error {
 	cmdbox.confd[0] = cmdbox.confd[1]
 
 	//cliAddCmd(".", cmdDot)
-	//cliAddCmd("9p", cmd9p)
+	cliAddCmd("9p", cmd9p)
 	cliAddCmd("dflag", cmdDflag)
 	cliAddCmd("echo", cmdEcho)
 	cliAddCmd("bind", cmdBind)
@@ -444,8 +412,8 @@ func cmdInit() error {
 		return err
 	}
 
-	//cmdbox.con = conAlloc(cmdbox.confd[1], "console", 0)
-	//cmdbox.con.isconsole = 1
+	cmdbox.con = conAlloc(cmdbox.confd[1], "console", 0)
+	cmdbox.con.isconsole = true
 
 	return nil
 }

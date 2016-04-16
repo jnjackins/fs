@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -71,7 +72,7 @@ func conFree(con *Con) {
 	con.state = ConDead
 	con.aok = 0
 	con.flags = 0
-	con.isconsole = 0
+	con.isconsole = false
 
 	cbox.alock.Lock()
 	if con.cprev != nil {
@@ -132,7 +133,6 @@ func msgAlloc(con *Con) *Msg {
 		}
 
 		m := &Msg{
-			data:  make([]byte, mbox.msize),
 			msize: mbox.msize,
 		}
 		mbox.nmsg++
@@ -366,163 +366,152 @@ func msgProc() {
 }
 
 func msgRead(con *Con) {
-	panic("TODO")
-	/*
-		var m *Msg
-		var eof int
-		var fd int
-		var n int
+	//vtThreadSetName("msgRead")
 
-		//vtThreadSetName("msgRead")
+	var m *Msg
+	eof := false
+	for !eof {
+		m = msgAlloc(con)
 
-		fd = con.fd
-		eof = 0
-
-		for eof == 0 {
-			m = msgAlloc(con)
-
-			for {
-				n = read9pmsg(fd, m.data, con.msize)
-				if n != 0 {
-					break
-				}
-			}
-			if n < 0 {
-				m.t.Type = plan9.Tversion
-				m.t.Fid = ^uint32(0)
-				m.t.Tag = ^uint16(0)
-				m.t.Msize = con.msize
-				m.t.Version = "9PEoF"
-				eof = 1
-			} else if convM2S(m.data, uint(n), &m.t) != uint(n) {
-				if *Dflag {
-					fmt.Fprintf(os.Stderr, "msgRead: convM2S error: %s\n", con.name)
-				}
-				msgFree(m)
-				continue
-			}
-
+		var err error
+		// TODO: use a reader to begin with
+		r := os.NewFile(uintptr(con.fd), "")
+		m.t, err = plan9.ReadFcall(r)
+		if err == io.EOF {
+			m.t.Type = plan9.Tversion
+			m.t.Fid = ^uint32(0)
+			m.t.Tag = ^uint16(0)
+			m.t.Msize = con.msize
+			m.t.Version = "9PEoF"
+			eof = true
+		} else if err != nil {
 			if *Dflag {
-				fmt.Fprintf(os.Stderr, "msgRead %p: t %v\n", con, &m.t)
+				fmt.Fprintf(os.Stderr, "msgRead: error unmarshalling fcall from %s: %v\n", con.name, err)
 			}
-
-			con.mlock.Lock()
-			if con.mtail != nil {
-				m.mprev = con.mtail
-				con.mtail.mnext = m
-			} else {
-
-				con.mhead = m
-				m.mprev = nil
-			}
-
-			con.mtail = m
-			con.mlock.Unlock()
-
-			mbox.rlock.Lock()
-			if mbox.rhead == nil {
-				mbox.rhead = m
-				// TODO: sync.Cond.Signal() never fails (but vtWakeup does)
-				//if mbox.rrendez.Signal() == 0 {
-				//	if mbox.nproc < mbox.maxproc {
-				//		go msgProc()
-				//		mbox.nproc++
-				//	} else {
-				//		mbox.nprocstarve++
-				//	}
-				//}
-
-				// don't need this surely?
-				//mbox.rrendez.Signal()
-			} else {
-				mbox.rtail.rwnext = m
-			}
-			mbox.rtail = m
-			mbox.rlock.Unlock()
+			msgFree(m)
+			continue
 		}
-	*/
+
+		if *Dflag {
+			fmt.Fprintf(os.Stderr, "msgRead %p: t %v\n", con, &m.t)
+		}
+
+		con.mlock.Lock()
+		if con.mtail != nil {
+			m.mprev = con.mtail
+			con.mtail.mnext = m
+		} else {
+
+			con.mhead = m
+			m.mprev = nil
+		}
+
+		con.mtail = m
+		con.mlock.Unlock()
+
+		mbox.rlock.Lock()
+		if mbox.rhead == nil {
+			mbox.rhead = m
+			// TODO: sync.Cond.Signal() never fails (but vtWakeup does)
+			//if mbox.rrendez.Signal() == 0 {
+			//	if mbox.nproc < mbox.maxproc {
+			//		go msgProc()
+			//		mbox.nproc++
+			//	} else {
+			//		mbox.nprocstarve++
+			//	}
+			//}
+
+			// don't need this surely?
+			//mbox.rrendez.Signal()
+		} else {
+			mbox.rtail.rwnext = m
+		}
+		mbox.rtail = m
+		mbox.rlock.Unlock()
+	}
 }
 
 func msgWrite(con *Con) {
-	panic("TODO")
-	/*
-		var eof int
-		var n int
-		var flush *Msg
-		var m *Msg
+	var eof int
+	var n int
+	var flush *Msg
+	var m *Msg
 
-		//vtThreadSetName("msgWrite")
+	//vtThreadSetName("msgWrite")
 
-		go msgRead(con)
+	go msgRead(con)
 
-		for {
-			 // Wait for and pull a message off the write queue.
-			con.wlock.Lock()
+	for {
+		// Wait for and pull a message off the write queue.
+		con.wlock.Lock()
 
-			for con.whead == nil {
-				con.wrendez.Wait()
-			}
-			m = con.whead
-			con.whead = m.rwnext
-			m.rwnext = nil
-			assert(m.nowq == 0)
-			con.wlock.Unlock()
-
-			eof = 0
-
-			// Write each message (if it hasn't been flushed)
-			// followed by any messages waiting for it to complete.
-			con.mlock.Lock()
-
-			for m != nil {
-				msgMunlink(m)
-
-				if *Dflag {
-					fmt.Fprintf(os.Stderr, "msgWrite %d: r %v\n", m.state, &m.r)
-				}
-
-				if m.state != MsgF {
-					m.state = MsgW
-					con.mlock.Unlock()
-
-					n = int(convS2M(&m.r, con.data, con.msize))
-					if nn, err := syscall.Write(con.fd, con.data); nn != n || err != nil {
-						eof = 1
-					}
-
-					con.mlock.Lock()
-				}
-
-				flush = m.flush
-				if flush != nil {
-					assert(flush.nowq != 0)
-					m.flush = nil
-				}
-
-				msgFree(m)
-				m = flush
-			}
-
-			con.mlock.Unlock()
-
-			con.lock.Lock()
-			if eof != 0 && con.fd >= 0 {
-				syscall.Close(con.fd)
-				con.fd = -1
-			}
-
-			if con.state == ConDown {
-				con.rendez.Signal()
-			}
-			if con.state == ConMoribund && con.mhead == nil {
-				con.lock.Unlock()
-				conFree(con)
-				break
-			}
-
-			con.lock.Unlock()
+		for con.whead == nil {
+			con.wrendez.Wait()
 		}
-	*/
+		m = con.whead
+		con.whead = m.rwnext
+		m.rwnext = nil
+		assert(m.nowq == 0)
+		con.wlock.Unlock()
+
+		eof = 0
+
+		// Write each message (if it hasn't been flushed)
+		// followed by any messages waiting for it to complete.
+		con.mlock.Lock()
+
+		for m != nil {
+			msgMunlink(m)
+
+			if *Dflag {
+				fmt.Fprintf(os.Stderr, "msgWrite %d: r %v\n", m.state, &m.r)
+			}
+
+			if m.state != MsgF {
+				m.state = MsgW
+				con.mlock.Unlock()
+
+				buf, err := m.r.Bytes()
+				if err != nil {
+					panic("unexpected error")
+				}
+				if nn, err := syscall.Write(con.fd, buf); nn != n || err != nil {
+					eof = 1
+				}
+
+				con.mlock.Lock()
+			}
+
+			flush = m.flush
+			if flush != nil {
+				assert(flush.nowq != 0)
+				m.flush = nil
+			}
+
+			msgFree(m)
+			m = flush
+		}
+
+		con.mlock.Unlock()
+
+		con.lock.Lock()
+		if eof != 0 && con.fd >= 0 {
+			syscall.Close(con.fd)
+			con.fd = -1
+		}
+
+		if con.state == ConDown {
+			con.rendez.Signal()
+		}
+		if con.state == ConMoribund && con.mhead == nil {
+			con.lock.Unlock()
+			conFree(con)
+			break
+		}
+
+		con.lock.Unlock()
+	}
 }
 
 func conAlloc(fd int, name string, flags int) *Con {
@@ -536,7 +525,6 @@ func conAlloc(fd int, name string, flags int) *Con {
 
 		con := &Con{
 			lock:    new(sync.Mutex),
-			data:    make([]byte, cbox.msize),
 			msize:   cbox.msize,
 			alock:   new(sync.Mutex),
 			mlock:   new(sync.Mutex),
@@ -598,7 +586,7 @@ func conAlloc(fd int, name string, flags int) *Con {
 	}
 
 	con.flags = flags
-	con.isconsole = 0
+	con.isconsole = false
 	cbox.alock.Unlock()
 
 	go msgWrite(con)

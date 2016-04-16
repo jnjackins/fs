@@ -17,10 +17,10 @@ const (
 )
 
 type Msg struct {
-	data   []byte
-	msize  uint32      /* actual size of data */
-	t      plan9.Fcall // XXX: transmit?
-	r      plan9.Fcall // XXX: receive?
+	//data   []byte
+	msize  uint32       /* actual size of data */
+	t      *plan9.Fcall // XXX: transmit?
+	r      *plan9.Fcall // XXX: receive?
 	con    *Con
 	anext  *Msg /* allocation free list */
 	mnext  *Msg /* all active messsages on this Con */
@@ -49,9 +49,9 @@ const (
 )
 
 type Con struct {
-	name      string
-	data      []byte    /* max, not negotiated */
-	isconsole int       /* immutable */
+	name string
+	//data      []byte    /* max, not negotiated */
+	isconsole bool      /* immutable */
 	flags     int       /* immutable */
 	remote    [128]byte /* immutable */
 	lock      *sync.Mutex
