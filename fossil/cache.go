@@ -480,8 +480,6 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 
 	for b = c.heads[h]; b != nil; b = b.next {
 		if b.part != part || b.addr != addr {
-			fmt.Fprintf(os.Stderr, "wanted %d, %d, got %d, %d\n", addr, part, b.addr, b.part)
-			fmt.Fprintf(os.Stderr, "next: %p\n", b.next)
 			continue
 		}
 		if epoch != 0 && b.l.epoch != epoch {
@@ -543,7 +541,6 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 
 	if epoch != 0 && b.l.epoch != epoch {
 		blockPut(b)
-		fmt.Fprintf(os.Stderr, "%s: _cacheLocal want epoch %d got %d\n", argv0, epoch, b.l.epoch)
 		return nil, ELabelMismatch
 	}
 
