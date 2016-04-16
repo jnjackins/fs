@@ -752,7 +752,7 @@ func fsysBfree(fsys *Fsys, argv []string) error {
 			l.tag = 0
 			l.epoch = 0
 			l.epochClose = 0
-			if err := blockSetLabel(b, &l, 0); err != nil {
+			if err := blockSetLabel(b, &l, false); err != nil {
 				consPrintf("freeing %#ux: %v\n", addr, err)
 			}
 		}
@@ -1270,7 +1270,7 @@ func fsckClose(fsck *Fsck, b *Block, epoch uint32) {
 		l.state = BsFree
 	}
 
-	if err := blockSetLabel(b, &l, 0); err != nil {
+	if err := blockSetLabel(b, &l, false); err != nil {
 		consPrintf("%#ux setlabel: %v\n", b.addr, err)
 	}
 }

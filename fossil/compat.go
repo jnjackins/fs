@@ -1,10 +1,10 @@
 package main
 
 import (
-	"errors"
 	"math/rand"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"9fans.net/go/plan9"
@@ -76,8 +76,26 @@ func bool2int(v bool) int {
 	return 0
 }
 
+// TODO: this is OS specific
 func dirfstat(fd int) (*plan9.Dir, error) {
-	return nil, errors.New("TODO")
+	var stat syscall.Stat_t
+	err := syscall.Fstat(fd, &stat)
+	if err != nil {
+		return nil, err
+	}
+
+	var d plan9.Dir
+	d.Dev = uint32(stat.Dev)
+	d.Length = uint64(stat.Size)
+	d.Mode = plan9.Perm(stat.Mode)
+	atime, _ := stat.Atimespec.Unix()
+	d.Atime = uint32(atime)
+	mtime, _ := stat.Mtimespec.Unix()
+	d.Mtime = uint32(mtime)
+	d.Uid = strconv.Itoa(int(stat.Uid))
+	d.Gid = strconv.Itoa(int(stat.Gid))
+
+	return &d, nil
 }
 
 func lrand() int {

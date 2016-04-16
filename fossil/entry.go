@@ -65,19 +65,14 @@ func entryUnpack(e *Entry, p []byte, index int) error {
 	e.depth = (e.flags & venti.EntryDepthMask) >> venti.EntryDepthShift
 	e.flags &^= venti.EntryDepthMask
 	e.size = pack.U48GET(p[14:])
+	e.score = new(venti.Score)
 
 	if e.flags&venti.EntryLocal != 0 {
 		e.archive = p[27] != 0
 		e.snap = pack.U32GET(p[28:])
 		e.tag = pack.U32GET(p[32:])
-		for i := 0; i < 16; i++ {
-			e.score[i] = 0
-		}
 		copy(e.score[16:], p[36:][:4])
 	} else {
-		e.archive = false
-		e.snap = 0
-		e.tag = 0
 		copy(e.score[:], p[20:][:venti.ScoreSize])
 	}
 

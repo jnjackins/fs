@@ -305,7 +305,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 			p.nreal++
 			l := b.l
 			l.state |= BsVenti
-			if err = blockSetLabel(b, &l, 0); err != nil {
+			if err = blockSetLabel(b, &l, false); err != nil {
 				ret = ArchFailure
 				goto Out
 			}

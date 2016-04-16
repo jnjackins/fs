@@ -155,10 +155,11 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 
 	for i := uint32(0); i < uint32(nblocks); i++ {
 		b := &Block{
-			lk:   new(sync.Mutex),
-			c:    c,
-			data: make([]byte, c.size),
-			heap: i,
+			lk:    new(sync.Mutex),
+			c:     c,
+			data:  make([]byte, c.size),
+			heap:  i,
+			score: new(venti.Score),
 		}
 		b.ioready = sync.NewCond(b.lk)
 		c.blocks[i] = b
@@ -467,7 +468,6 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32) (*Block, error) {
  * if it's not there, load it, bumping some other block.
  */
 func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Block, error) {
-
 	var b *Block
 	var h uint32
 
@@ -481,6 +481,8 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	c.lk.Lock()
 
 	for b = c.heads[h]; b != nil; b = b.next {
+		fmt.Fprintf(os.Stderr, "%p\n", b)
+		time.Sleep(10 * time.Millisecond)
 		if b.part != part || b.addr != addr {
 			continue
 		}
@@ -560,7 +562,6 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 			fallthrough
 		case BioEmpty:
 			diskRead(c.disk, b)
-
 			b.ioready.Wait()
 		case BioClean,
 			BioDirty:
@@ -784,7 +785,7 @@ Found:
 	lab.state = BsAlloc
 	lab.epoch = epoch
 	lab.epochClose = ^uint32(0)
-	if err = blockSetLabel(b, &lab, 1); err != nil {
+	if err = blockSetLabel(b, &lab, true); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx4 %v\n", argv0, err)
 		blockPut(b)
 		return nil, err
@@ -982,7 +983,7 @@ func _blockSetLabel(b *Block, l *Label) (*Block, error) {
 	return bb, nil
 }
 
-func blockSetLabel(b *Block, l *Label, allocating int) error {
+func blockSetLabel(b *Block, l *Label, allocating bool) error {
 	lb, err := _blockSetLabel(b, l)
 	if err != nil {
 		return err
@@ -1007,7 +1008,7 @@ func blockSetLabel(b *Block, l *Label, allocating int) error {
 	 *		BaActive vs. BaCopied, but that's handled
 	 *		by direct calls to _blockSetLabel.
 	 */
-	if allocating != 0 {
+	if allocating {
 		blockDependency(b, lb, -1, nil, nil)
 	}
 	blockPut(lb)
@@ -1285,7 +1286,6 @@ func blockSetIOState(b *Block, iostate int) {
 		 * The prior list isn't needed anymore.
 		 */
 		for p = b.prior; p != nil; p = q {
-
 			q = p.next
 			blistFree(c, p)
 		}
@@ -1307,17 +1307,14 @@ func blockSetIOState(b *Block, iostate int) {
 			if b.uhead != nil {
 				/* add unlink blocks to unlink queue */
 				if c.uhead == nil {
-
 					c.uhead = b.uhead
 					c.unlink.Signal()
 				} else {
-
 					c.utail.next = b.uhead
 				}
 				c.utail = b.utail
 				b.uhead = nil
 			}
-
 			c.lk.Unlock()
 		}
 
@@ -1445,7 +1442,7 @@ func blockCopy(b *Block, tag, ehi, elo uint32) (*Block, error) {
 				l.epoch = 0
 				l.epochClose = 0
 				l.tag = 0
-				blockSetLabel(bb, &l, 0)
+				blockSetLabel(bb, &l, false)
 				blockPut(bb)
 				return nil, err
 			}
@@ -1620,10 +1617,10 @@ func doRemoveLink(c *Cache, p *BList) {
 		if l.epoch == c.fl.epochLow {
 			c.fl.nused--
 		}
-		blockSetLabel(b, &l, 0)
+		blockSetLabel(b, &l, false)
 		c.fl.lk.Unlock()
 	} else {
-		blockSetLabel(b, &l, 0)
+		blockSetLabel(b, &l, false)
 	}
 	blockPut(b)
 }

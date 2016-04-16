@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
@@ -29,14 +30,12 @@ func init() {
 }
 
 func confirm(msg string) bool {
-	buf := make([]byte, 100)
 	fmt.Fprintf(os.Stderr, "%s [y/n]: ", msg)
-	os.Stdin.Read(buf)
-	n, _ := os.Stdin.Read(buf)
-	if n <= 0 {
+	line, _, err := bufio.NewReader(os.Stdin).ReadLine()
+	if err != nil {
 		return false
 	}
-	if buf[0] == 'y' {
+	if line[0] == 'y' {
 		return true
 	}
 	return false
@@ -84,7 +83,7 @@ func format(argv []string) {
 	}
 	argv = flags.Args()
 
-	fd, err := syscall.Open(argv[0], 2, 0)
+	fd, err := syscall.Open(argv[0], syscall.O_RDWR, 0)
 	if err != nil {
 		log.Fatalf("could not open file: %s: %v", argv[0], err)
 	}
@@ -104,6 +103,7 @@ func format(argv []string) {
 		log.Fatalf("dirfstat: %v", err)
 	}
 
+	// TODO
 	if d.Type == 'M' && !force && !confirm("fs file is mounted via devmnt (is not a kernel device); are you sure?") {
 		return
 	}
@@ -145,14 +145,6 @@ func format(argv []string) {
 	}
 }
 
-func fdsize(fd int) uint64 {
-	dir, err := dirfstat(fd)
-	if err != nil {
-		log.Fatalf("could not stat file: %v", err)
-	}
-	return uint64(dir.Length)
-}
-
 func partition(fd int, bsize int, h *Header) {
 	var nblock uint32
 	var ndata uint32
@@ -171,11 +163,11 @@ func partition(fd int, bsize int, h *Header) {
 
 	lpb = uint32(bsize) / LabelSize
 
-	nblock = uint32(fdsize(fd) / uint64(bsize))
+	nblock = uint32(devsize(fd) / int64(bsize))
 
 	/* sanity check */
 	if nblock < uint32((HeaderOffset*10)/bsize) {
-		log.Fatalf("file too small")
+		log.Fatalf("file too small: nblock=%d", nblock)
 	}
 
 	h.super = (HeaderOffset + 2*uint32(bsize)) / uint32(bsize)
@@ -204,6 +196,7 @@ func entryInit(e *Entry) {
 	e.flags = venti.EntryActive
 	e.depth = 0
 	e.size = 0
+	e.score = new(venti.Score)
 	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
 	e.tag = formatTagGen()
 	e.snap = 0

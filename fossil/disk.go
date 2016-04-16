@@ -228,20 +228,16 @@ func diskBlockSize(disk *Disk) int {
 }
 
 func diskFlush(disk *Disk) error {
-	panic("TODO")
-	/*
-		disk.lk.Lock()
-		for disk.nqueue > 0 {
-			disk.flush.Wait()
-		}
-		disk.lk.Unlock()
+	disk.lk.Lock()
+	for disk.nqueue > 0 {
+		disk.flush.Wait()
+	}
+	disk.lk.Unlock()
 
-		var dir plan9.Dir
-		if dirfwstat(disk.fd, &dir) < 0 {
-			vtOSError()
-			return err
-		}
-	*/
+	var st syscall.Stat_t
+	if err := syscall.Fstat(disk.fd, &st); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -249,27 +245,17 @@ func diskSize(disk *Disk, part int) uint32 {
 	return partEnd(disk, part) - partStart(disk, part)
 }
 
-//func mypc(x int) uintptr {
-//	return getcallerpc(&x)
-//}
-
 func disk2file(disk *Disk) string {
 	panic("TODO")
-	/*
-		if s, err := fd2path(disk.fd); err != nil {
-			return "GOK"
-		} else {
-			return s
-		}
-	*/
+	// if s, err := fd2path(disk.fd); err != nil {
+	// 	return "GOK"
+	// } else {
+	// 	return s
+	// }
 }
 
 func diskThread(disk *Disk) {
 	//vtThreadSetName("disk")
-
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "diskThread %d\n", os.Getpid())
-	}
 
 	var nio int
 	var t float64

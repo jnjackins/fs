@@ -86,7 +86,8 @@ func srvAlloc(service string, mode int, fd int) (*Srv, error) {
 
 		// If the service exists, but is stale,
 		// free it up and let the name be reused.
-		_, err := dirfstat(srv.srvfd)
+		var st syscall.Stat_t
+		err := syscall.Fstat(srv.srvfd, &st)
 		if err == nil {
 			srvbox.lock.Unlock()
 			return nil, fmt.Errorf("srv: already serving '%s'", service)

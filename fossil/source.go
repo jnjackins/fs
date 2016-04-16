@@ -126,16 +126,18 @@ func sourceAlloc(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 		epoch = e.snap
 	}
 
-	r = new(Source)
-	r.fs = fs
-	r.mode = mode
-	r.issnapshot = issnapshot
-	r.dsize = int(e.dsize)
-	r.gen = e.gen
-	r.dir = e.flags&venti.EntryDir != 0
-	r.lk = new(sync.Mutex)
-	r.ref = 1
-	r.parent = p
+	r = &Source{
+		fs:         fs,
+		mode:       mode,
+		issnapshot: issnapshot,
+		dsize:      int(e.dsize),
+		gen:        e.gen,
+		dir:        e.flags&venti.EntryDir != 0,
+		lk:         new(sync.Mutex),
+		ref:        1,
+		parent:     p,
+		score:      new(venti.Score),
+	}
 	if p != nil {
 		p.lk.Lock()
 		assert(mode == OReadOnly || p.mode == OReadWrite)

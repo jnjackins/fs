@@ -140,7 +140,9 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		}
 	}
 
-	//fprint(2, "%s: got fs source\n", argv0);
+	if *Dflag {
+		fmt.Fprintf(os.Stderr, "%s: got fs source\n", argv0)
+	}
 
 	fs.elk.RLock()
 
@@ -152,7 +154,9 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		goto Err
 	}
 
-	//fprint(2, "%s: got file root\n", argv0);
+	if *Dflag {
+		fmt.Fprintf(os.Stderr, "%s: got file root\n", argv0)
+	}
 
 	if mode == OReadWrite {
 		fs.metaFlush = time.NewTicker(1 * time.Second)
