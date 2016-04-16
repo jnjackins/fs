@@ -39,7 +39,6 @@ func fidLock(fid *Fid, flags int) {
 	 * resources still held.
 	 */
 	if flags&FidFCreate == 0 {
-
 		fsysFsRlock(fid.fsys)
 	}
 }
@@ -68,7 +67,7 @@ func fidAlloc() *Fid {
 	} else {
 
 		fid = new(Fid)
-		fid.lock = new(sync.Mutex)
+		fid.lock = new(sync.RWMutex)
 		fid.alock = new(sync.Mutex)
 	}
 
@@ -76,7 +75,7 @@ func fidAlloc() *Fid {
 	fbox.lock.Unlock()
 
 	fid.con = nil
-	fid.fidno = uint(^0)
+	fid.fidno = ^uint32(0)
 	fid.ref = 0
 	fid.flags = 0
 	fid.open = FidOCreate

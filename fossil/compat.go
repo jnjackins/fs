@@ -62,6 +62,7 @@ func strtoull(s string, base int) uint64 {
 	return uint64(i)
 }
 
+// TODO: remove
 func assert(cond bool) {
 	if !cond {
 		panic("assert")
@@ -76,7 +77,7 @@ func bool2int(v bool) int {
 }
 
 func dirfstat(fd int) (*plan9.Dir, error) {
-	return nil, errors.New("dirfstat: TODO")
+	return nil, errors.New("TODO")
 }
 
 func lrand() int {

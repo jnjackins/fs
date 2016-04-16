@@ -104,7 +104,7 @@ func start(argv []string) {
 	exclInit()
 	//fidInit()
 
-	//srvInit()
+	srvInit()
 	//lstnInit()
 	usersInit()
 

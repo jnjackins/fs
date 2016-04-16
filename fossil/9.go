@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"syscall"
 
 	"9fans.net/go/plan9"
 )
@@ -78,6 +79,10 @@ type Con struct {
 	nfid      int
 }
 
+func (c *Con) Read(buf []byte) (int, error) {
+	return syscall.Read(c.fd, buf)
+}
+
 const ( /* Fid.flags and fidGet(..., flags) */
 	FidFCreate = 0x01
 	FidFWlock  = 0x02
@@ -91,7 +96,7 @@ const ( /* Fid.open */
 )
 
 type Fid struct {
-	lock  *sync.Mutex
+	lock  *sync.RWMutex
 	con   *Con
 	fidno uint32
 	ref   int /* inc/dec under Con.fidlock */

@@ -371,8 +371,7 @@ func msgRead(con *Con) {
 
 		var err error
 		// TODO: use a reader to begin with
-		r := os.NewFile(uintptr(con.fd), "confd")
-		m.t, err = plan9.ReadFcall(r)
+		m.t, err = plan9.ReadFcall(con)
 		if err == io.EOF {
 			m.t.Type = plan9.Tversion
 			m.t.Fid = ^uint32(0)

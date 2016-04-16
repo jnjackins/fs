@@ -1,23 +1,28 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"sync"
+	"syscall"
 )
+
+const NETPATHLEN = 40
 
 type Lstn struct {
 	afd     int
 	flags   int
 	address string
-	dir     string
+	dir     [NETPATHLEN]byte
 
 	next *Lstn
 	prev *Lstn
 }
 
 var lbox struct {
-	lock *sync.Mutex
+	lock *sync.RWMutex
 
 	head *Lstn
 	tail *Lstn
@@ -40,74 +45,64 @@ func lstnFree(lstn *Lstn) {
 	lbox.lock.Unlock()
 
 	if lstn.afd != -1 {
-		close(lstn.afd)
+		syscall.Close(lstn.afd)
 	}
-	vtMemFree(lstn.address)
-	vtMemFree(lstn)
 }
 
-func lstnListen(a interface{}) {
-	var lstn *Lstn
-	var dfd int
-	var lfd int
-	var newdir string
+func lstnListen(lstn *Lstn) {
+	//vtThreadSetName("listen")
 
-	vtThreadSetName("listen")
+	var newdir [NETPATHLEN]byte
 
-	lstn = a.(*Lstn)
 	for {
-		lfd = listen(lstn.dir, newdir)
-		if lfd < 0 {
+		lfd, err := listen(lstn.dir, newdir)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "listen: listen '%s': %v", lstn.dir, err)
 			break
 		}
 
-		dfd = accept(lfd, newdir)
-		if dfd >= 0 {
-			conAlloc(dfd, newdir, lstn.flags)
+		dfd, err := accept(lfd, newdir)
+		if err == nil {
+			conAlloc(dfd, string(newdir[:]), lstn.flags)
 		} else {
-
 			fmt.Fprintf(os.Stderr, "listen: accept %s: %v\n", newdir, err)
 		}
-		close(lfd)
+		syscall.Close(lfd)
 	}
 
 	lstnFree(lstn)
 }
 
-func lstnAlloc(address string, flags int) *Lstn {
+func lstnAlloc(address string, flags int) (*Lstn, error) {
 	var afd int
 	var lstn *Lstn
-	var dir string
+	var dir [NETPATHLEN]byte
 
 	lbox.lock.Lock()
 	for lstn = lbox.head; lstn != nil; lstn = lstn.next {
 		if lstn.address != address {
 			continue
 		}
-		err = fmt.Errorf("listen: already serving '%s'", address)
 		lbox.lock.Unlock()
-		return nil
+		return nil, fmt.Errorf("listen: already serving '%s'", address)
 	}
 
 	afd = announce(address, dir)
 	if afd < 0 {
-		err = fmt.Errorf("listen: announce '%s': %r", address)
 		lbox.lock.Unlock()
-		return nil
+		return nil, fmt.Errorf("listen: announce '%s': %r", address)
 	}
 
 	lstn = new(Lstn)
 	lstn.afd = afd
 	lstn.address = address
 	lstn.flags = flags
-	copy(lstn.dir, dir[:40])
+	copy(lstn.dir[:], dir[:])
 
 	if lbox.tail != nil {
 		lstn.prev = lbox.tail
 		lbox.tail.next = lstn
 	} else {
-
 		lbox.head = lstn
 		lstn.prev = nil
 	}
@@ -115,56 +110,38 @@ func lstnAlloc(address string, flags int) *Lstn {
 	lbox.tail = lstn
 	lbox.lock.Unlock()
 
-	if vtThread(lstnListen, lstn) < 0 {
-		err = fmt.Errorf("listen: thread '%s': %r", lstn.address)
-		lstnFree(lstn)
-		return nil
-	}
+	go lstnListen(lstn)
 
-	return lstn
+	return lstn, nil
 }
 
-func cmdLstn(argc int, argv [XXX]string) int {
-	var dflag int
-	var flags int
+func cmdLstn(argv []string) error {
 	var lstn *Lstn
-	var usage string = "usage: listen [-dIN] [address]"
+	var usage = errors.New("usage: listen [-dIN] [address]")
 
-	dflag = 0
-	flags = 0
-	argv++
-	argc--
-	for (func() { argv0 != "" || argv0 != "" }()); argv[0] != "" && argv[0][0] == '-' && argv[0][1] != 0; (func() { argc--; argv++ })() {
-		var _args string
-		var _argt string
-		var _argc uint
-		_args = string(&argv[0][1])
-		if _args[0] == '-' && _args[1] == 0 {
-			argc--
-			argv++
-			break
-		}
-		_argc = 0
-		for _args[0] != 0 && _args != "" {
-			switch _argc {
-			default:
-				return cliError(usage)
-
-			case 'd':
-				dflag = 1
-
-			case 'I':
-				flags |= ConIPCheck
-
-			case 'N':
-				flags |= ConNoneAllow
-			}
-		}
+	flags := flag.NewFlagSet("listen", flag.ContinueOnError)
+	var (
+		dflag = flags.Bool("d", false, "")
+		Iflag = flags.Bool("I", false, "")
+		Nflag = flags.Bool("N", false, "")
+	)
+	err := flags.Parse(argv[1:])
+	if err != nil {
+		return usage
 	}
 
+	var lstnFlags int
+	if *Iflag {
+		lstnFlags |= ConIPCheck
+	}
+	if *Nflag {
+		lstnFlags |= ConNoneAllow
+	}
+
+	argc := flags.NArg()
 	switch argc {
 	default:
-		return cliError(usage)
+		return usage
 
 	case 0:
 		lbox.lock.RLock()
@@ -174,8 +151,8 @@ func cmdLstn(argc int, argv [XXX]string) int {
 		lbox.lock.RUnlock()
 
 	case 1:
-		if dflag == 0 {
-			if lstnAlloc(argv[0], flags) == nil {
+		if !*dflag {
+			if _, err := lstnAlloc(argv[0], lstnFlags); err != nil {
 				return err
 			}
 			break
@@ -187,7 +164,7 @@ func cmdLstn(argc int, argv [XXX]string) int {
 				continue
 			}
 			if lstn.afd != -1 {
-				close(lstn.afd)
+				syscall.Close(lstn.afd)
 				lstn.afd = -1
 			}
 
@@ -205,10 +182,8 @@ func cmdLstn(argc int, argv [XXX]string) int {
 	return nil
 }
 
-func lstnInit() int {
-	lbox.lock = new(sync.Mutex)
-
+func lstnInit() error {
+	lbox.lock = new(sync.RWMutex)
 	cliAddCmd("listen", cmdLstn)
-
 	return nil
 }
