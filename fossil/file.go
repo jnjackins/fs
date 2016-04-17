@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"sigint.ca/fs/venti"
 )
@@ -343,32 +343,26 @@ func fileWalk(f *File, elem string) (*File, error) {
 func _fileOpen(fs *Fs, path string, partial bool) (*File, error) {
 	f := fs.file
 	fileIncRef(f)
-	defer fileDecRef(f)
 
-	opath := path
-	for len(path) > 0 {
-		var p string
-		var n int
-		for p = path; len(p) > 0 && p[0] != '/'; p = p[1:] {
-			n++
+	// iterate through each element of path
+	elems := strings.Split(path, "/")
+	for i, elem := range elems {
+		if len(elem) == 0 {
+			continue
 		}
-		if n > 0 {
-			if n > venti.MaxStringSize {
-				return nil, fmt.Errorf("%s: element too long", EBadPath)
-			}
-			elem := path[:n]
-			ff, err := _fileWalk(f, elem, partial && len(p) == 0)
-			if err != nil {
-				return nil, fmt.Errorf("%.*s: %v", utf8.RuneCountInString(opath[:len(opath)-len(p)]), opath, err)
-			}
+		if len(elem) > venti.MaxStringSize {
 			fileDecRef(f)
-			f = ff
+			return nil, fmt.Errorf("%s: element too long", EBadPath)
 		}
-
-		if p[0] == '/' {
-			p = p[1:]
+		leaf := i == len(elems)-1
+		ff, err := _fileWalk(f, elem, partial && leaf)
+		if err != nil {
+			fileDecRef(f)
+			errpath := strings.Join(elems[:i+1], "/")
+			return nil, fmt.Errorf("%s: %v", errpath, err)
 		}
-		path = p
+		fileDecRef(f)
+		f = ff
 	}
 
 	return f, nil
