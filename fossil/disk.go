@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -194,15 +195,14 @@ func diskRead(disk *Disk, b *Block) {
 }
 
 func diskWrite(disk *Disk, b *Block) {
-	assert(b.nlock == 1)
+	nlock := atomic.LoadInt32(&b.nlock)
+	assert(nlock == 1)
 	assert(b.iostate == BioDirty)
 	blockSetIOState(b, BioWriting)
 	diskQueue(disk, b)
 }
 
 func diskWriteAndWait(disk *Disk, b *Block) {
-	var nlock int
-
 	/*
 	 * If b->nlock > 1, the block is aliased within
 	 * a single thread.  That thread is us.
@@ -211,16 +211,16 @@ func diskWriteAndWait(disk *Disk, b *Block) {
 	 * We humor diskWrite by temporarily setting
 	 * nlock to 1.  This needs to be revisited.
 	 */
-	nlock = b.nlock
+	nlock := atomic.LoadInt32(&b.nlock)
 
 	if nlock > 1 {
-		b.nlock = 1
+		atomic.StoreInt32(&b.nlock, 1)
 	}
 	diskWrite(disk, b)
 	for b.iostate != BioClean {
 		b.ioready.Wait()
 	}
-	b.nlock = nlock
+	atomic.StoreInt32(&b.nlock, nlock)
 }
 
 func diskBlockSize(disk *Disk) int {
@@ -306,7 +306,8 @@ func diskThread(disk *Disk) {
 		bwatchLock(b)
 		b.lk.Lock()
 		//b.pc = mypc(0)
-		assert(b.nlock == 1)
+		nlock := atomic.LoadInt32(&b.nlock)
+		assert(nlock == 1)
 		switch b.iostate {
 		default:
 			panic("abort")

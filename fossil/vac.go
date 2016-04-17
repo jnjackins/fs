@@ -263,7 +263,7 @@ func (mb *MetaBlock) Delete(i int) {
 
 	assert(i < mb.nindex)
 	mb.meUnpack(&me, i)
-	for i = 0; i < int(me.size); i++ {
+	for i := 0; i < int(me.size); i++ {
 		mb.buf[me.offset+i] = 0
 	}
 
@@ -275,9 +275,9 @@ func (mb *MetaBlock) Delete(i int) {
 
 	p = mb.buf[MetaHeaderSize+i*MetaIndexSize:]
 	n = (mb.nindex - i - 1) * MetaIndexSize
-	copy(p, p[MetaIndexSize:][:n])
+	copy(p[:n], p[MetaIndexSize:])
 	for i = 0; i < MetaIndexSize; i++ {
-		p[n:][i] = 0
+		p[n+i] = 0
 	}
 	mb.nindex--
 }
@@ -382,8 +382,10 @@ func (mb *MetaBlock) meCmp(me *MetaEntry, s string) int {
 		s = s[1:]
 		n--
 	}
-
-	return -(bool2int(s[0] != 0))
+	if s != "" {
+		return -1
+	}
+	return 0
 }
 
 /*
@@ -628,10 +630,6 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	n := int(me.size)
 
 	*dir = DirEntry{}
-
-	if *Dflag {
-		fmt.Printf("deUnpack\n")
-	}
 
 	/* magic */
 	if n < 4 || pack.U32GET(p) != DirMagic {

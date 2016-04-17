@@ -1699,7 +1699,7 @@ func chkSource(f *File) error {
 }
 
 func fileRLock(f *File) error {
-	assert(!vtCanLock(f.fs.elk))
+	//assert(!vtCanLock(f.fs.elk))
 	f.lk.RLock()
 	if err := chkSource(f); err != nil {
 		fileRUnlock(f)
@@ -1714,7 +1714,7 @@ func fileRUnlock(f *File) {
 }
 
 func fileLock(f *File) error {
-	assert(!vtCanLock(f.fs.elk))
+	//assert(!vtCanLock(f.fs.elk))
 	f.lk.Lock()
 	if err := chkSource(f); err != nil {
 		fileUnlock(f)
@@ -1738,7 +1738,7 @@ func fileMetaLock(f *File) {
 		fmt.Fprintf(os.Stderr, "f->elem = %s\n", f.dir.elem)
 	}
 	assert(f.up != nil)
-	assert(!vtCanLock(f.fs.elk))
+	//assert(!vtCanLock(f.fs.elk))
 	f.up.lk.Lock()
 }
 

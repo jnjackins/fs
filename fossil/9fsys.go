@@ -1490,7 +1490,7 @@ func freemem() uint32 {
 func fsysOpen(name string, argv []string) error {
 	var host string
 	var ncache int
-	var usage string = "usage: fsys name open [-A -P -V -W -r] [-c ncache]"
+	var usage string = "usage: fsys main open [-A -P -V -W -r] [-c ncache]"
 
 	ncache = 1000
 	noatimeupd := false

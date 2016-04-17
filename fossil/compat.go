@@ -3,7 +3,6 @@ package main
 import (
 	"math/rand"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -102,5 +101,6 @@ func lrand() int {
 	return rand.Intn(231)
 }
 
-// TODO
-func vtCanLock(_ sync.Locker) bool { return false }
+func (b *Block) canLock() bool {
+	return false
+}

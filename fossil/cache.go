@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"sigint.ca/fs/venti"
@@ -385,7 +386,7 @@ func cacheBumpBlock(c *Cache) *Block {
 /*
  * look for a particular version of the block in the memory cache.
  */
-func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock int, lockfailure *int) (*Block, error) {
+func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lockfailure *int) (*Block, error) {
 	var b *Block
 
 	h := addr % uint32(c.hashSize)
@@ -410,7 +411,7 @@ func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock int, lock
 		return nil, errors.New("miss")
 	}
 
-	if waitlock == 0 && vtCanLock(b.lk) {
+	if !waitlock && !b.canLock() {
 		*lockfailure = 1
 		c.lk.Unlock()
 		return nil, errors.New("miss")
@@ -421,10 +422,10 @@ func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock int, lock
 	c.lk.Unlock()
 
 	bwatchLock(b)
-	if waitlock != 0 {
+	if waitlock {
 		b.lk.Lock()
 	}
-	b.nlock = 1
+	atomic.StoreInt32(&b.nlock, 1)
 
 	for {
 		switch b.iostate {
@@ -529,7 +530,7 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	//}
 	bwatchLock(b)
 	b.lk.Lock()
-	b.nlock = 1
+	atomic.StoreInt32(&b.nlock, 1)
 
 	if part == PartData && b.iostate == BioEmpty {
 		if err := readLabel(c, &b.l, addr); err != nil {
@@ -661,7 +662,7 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 
 	bwatchLock(b)
 	b.lk.Lock()
-	b.nlock = 1
+	atomic.StoreInt32(&b.nlock, 1)
 	//b.pc = getcallerpc(&c)
 
 	switch b.iostate {
@@ -884,9 +885,9 @@ func cacheLocalSize(c *Cache, part int) uint32 {
  * blockPut once per reference.
  */
 func blockDupLock(b *Block) {
-
-	assert(b.nlock > 0)
-	b.nlock++
+	nlock := atomic.LoadInt32(&b.nlock)
+	assert(nlock > 0)
+	atomic.AddInt32(&b.nlock, 1)
 }
 
 /*
@@ -894,9 +895,6 @@ func blockDupLock(b *Block) {
  * unlock it.  can't use it after calling this.
  */
 func blockPut(b *Block) {
-
-	var c *Cache
-
 	if b == nil {
 		return
 	}
@@ -909,8 +907,9 @@ func blockPut(b *Block) {
 		bwatchDependency(b)
 	}
 
-	b.nlock--
-	if b.nlock > 0 {
+	atomic.AddInt32(&b.nlock, -1)
+	nlock := atomic.LoadInt32(&b.nlock)
+	if nlock > 0 {
 		return
 	}
 
@@ -921,15 +920,13 @@ func blockPut(b *Block) {
 	 * so we have to keep b->nlock set to 1 even
 	 * when the block is unlocked.
 	 */
-	assert(b.nlock == 0)
-	b.nlock = 1
-
-	//	b->pc = 0;
+	assert(nlock == 0)
+	atomic.StoreInt32(&b.nlock, 1)
+	//b->pc = 0;
 
 	bwatchUnlock(b)
-
 	b.lk.Unlock()
-	c = b.c
+	c := b.c
 	c.lk.Lock()
 
 	b.ref--
@@ -1169,7 +1166,7 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
  *
  *	Otherwise, bail.
  */
-func blockWrite(b *Block, waitlock int) bool {
+func blockWrite(b *Block, waitlock bool) bool {
 	var lockfail int
 	var bb *Block
 	var err error
@@ -1255,8 +1252,6 @@ func blockWrite(b *Block, waitlock int) bool {
  * switch statement (read comments there).
  */
 func blockSetIOState(b *Block, iostate int) {
-
-	var dowakeup int
 	var c *Cache
 	var p *BList
 	var q *BList
@@ -1267,7 +1262,7 @@ func blockSetIOState(b *Block, iostate int) {
 
 	c = b.c
 
-	dowakeup = 0
+	dowakeup := false
 	switch iostate {
 	default:
 		panic("abort")
@@ -1320,7 +1315,7 @@ func blockSetIOState(b *Block, iostate int) {
 		}
 
 		assert(b.uhead == nil)
-		dowakeup = 1
+		dowakeup = true
 
 		/*
 		 * Wrote out an old version of the block (see blockRollback).
@@ -1328,12 +1323,11 @@ func blockSetIOState(b *Block, iostate int) {
 		 */
 	case BioDirty:
 		if b.iostate == BioWriting {
-
 			c.lk.Lock()
 			b.vers = c.vers
 			c.vers++
 			c.lk.Unlock()
-			dowakeup = 1
+			dowakeup = true
 		}
 
 		/*
@@ -1345,7 +1339,6 @@ func blockSetIOState(b *Block, iostate int) {
 	case BioReading,
 		BioWriting:
 		c.lk.Lock()
-
 		b.ref++
 		c.lk.Unlock()
 
@@ -1354,15 +1347,14 @@ func blockSetIOState(b *Block, iostate int) {
 		 */
 	case BioReadError,
 		BioVentiError:
-		dowakeup = 1
+		dowakeup = true
 	}
-
 	b.iostate = iostate
 
 	/*
 	 * Now that the state has changed, we can wake the waiters.
 	 */
-	if dowakeup != 0 {
+	if dowakeup {
 		b.ioready.Broadcast()
 	}
 }
@@ -1655,7 +1647,6 @@ func blistAlloc(b *Block) *BList {
 
 		/* Block has no priors? Just write it. */
 		if b.prior == nil {
-
 			c.lk.Unlock()
 			diskWriteAndWait(c.disk, b)
 			return nil
@@ -1892,7 +1883,6 @@ func readLabel(c *Cache, l *Label, addr uint32) error {
  * Called with c->lk held.
  */
 func unlinkBody(c *Cache) {
-
 	var p *BList
 
 	for c.uhead != nil {
@@ -1994,10 +1984,6 @@ func flushFill(c *Cache) {
  * cacheFree has killed off the flushThread.
  */
 func cacheFlushBlock(c *Cache) bool {
-	var lockfail int
-	var nfail int
-
-	nfail = 0
 	for {
 		if c.br == c.be {
 			if c.bw == 0 || c.bw == c.be {
@@ -2014,13 +2000,12 @@ func cacheFlushBlock(c *Cache) bool {
 		}
 		p := &c.baddr[c.br]
 		c.br++
-		b, err := _cacheLocalLookup(c, p.part, p.addr, p.vers, Nowaitlock, &lockfail)
-		if err != nil && blockWrite(b, Nowaitlock) {
+		b, _ := _cacheLocalLookup(c, p.part, p.addr, p.vers, Waitlock, nil)
+		if b != nil && blockWrite(b, Nowaitlock) {
 			c.nflush++
 			blockPut(b)
 			return true
 		}
-
 		if b != nil {
 			blockPut(b)
 		}
@@ -2030,17 +2015,8 @@ func cacheFlushBlock(c *Cache) bool {
 		 */
 
 		/* Block already written out */
-		if b == nil && lockfail == 0 {
+		if b == nil {
 			continue
-		}
-
-		/* Failed to acquire lock; sleep if happens a lot. */
-		if lockfail != 0 {
-			nfail++
-			if nfail > 100 {
-				time.Sleep(500 * time.Millisecond)
-				nfail = 0
-			}
 		}
 
 		/* Requeue block. */
@@ -2070,13 +2046,11 @@ func flushThread(c *Cache) {
 				 * Pause a little.
 				 */
 				if i == 0 {
-
 					// fprint(2, "%s: flushthread found "
 					//	"nothing to flush - %d dirty\n",
 					//	argv0, c->ndirty);
 					time.Sleep(250 * time.Millisecond)
 				}
-
 				break
 			}
 		}

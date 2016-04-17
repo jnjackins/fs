@@ -420,8 +420,8 @@ func checkLeak(chk *Fsck) {
 	chk.printf("fsys blocks: total=%d used=%d(%.1f%%) free=%d(%.1f%%) lost=%d(%.1f%%)\n",
 		uint32(chk.nblocks),
 		uint32(chk.nblocks)-nfree-nlost, 100*float64((uint32(chk.nblocks)-nfree-nlost)/uint32(chk.nblocks)),
-		nfree, 100*float64(nfree/uint32(chk.nblocks)),
-		nlost, 100*float64(nlost/uint32(chk.nblocks)))
+		nfree, 100*float64(nfree)/float64(chk.nblocks),
+		nlost, 100*float64(nlost)/float64(chk.nblocks))
 }
 
 /*

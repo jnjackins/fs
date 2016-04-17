@@ -29,6 +29,12 @@ func init() {
 	buf = make([]byte, bsize)
 }
 
+func dprintf(format string, args ...interface{}) {
+	if *Dflag {
+		fmt.Fprintf(os.Stderr, format, args...)
+	}
+}
+
 func confirm(msg string) bool {
 	fmt.Fprintf(os.Stderr, "%s [y/n]: ", msg)
 	line, _, err := bufio.NewReader(os.Stdin).ReadLine()
@@ -92,11 +98,13 @@ func format(argv []string) {
 		log.Fatalf("could not read fs header block: %v", err)
 	}
 
+	dprintf("format: unpacking header... ")
 	var h Header
 	err = headerUnpack(&h, buf)
 	if err == nil && !force && !confirm("fs header block already exists; are you sure?") {
 		return
 	}
+	dprintf("done\n")
 
 	d, err := dirfstat(fd)
 	if err != nil {
@@ -108,40 +116,62 @@ func format(argv []string) {
 		return
 	}
 
+	dprintf("format: partitioning... ")
 	partition(fd, bsize, &h)
 	headerPack(&h, buf)
 	if _, err := syscall.Pwrite(fd, buf, HeaderOffset); err != nil {
 		log.Fatalf("could not write fs header: %v", err)
 	}
+	dprintf("done\n")
 
+	dprintf("format: allocating disk structure... ")
 	disk, err = diskAlloc(fd)
 	if err != nil {
 		log.Fatalf("could not open disk: %v", err)
 	}
+	dprintf("done\n")
 
-	/* zero labels */
+	dprintf("format: writing labels... ")
+	// zero labels
 	for i := 0; i < bsize; i++ {
 		buf[i] = 0
 	}
-
 	for bn := uint32(0); bn < diskSize(disk, PartLabel); bn++ {
 		_blockWrite(PartLabel, bn)
 	}
+	dprintf("done\n")
 
 	var root uint32
 	var e Entry
 	if score != "" {
+		dprintf("format: ventiRoot... ")
 		root = ventiRoot(host, score)
 	} else {
+		dprintf("format: rootMetaInit... ")
 		rootMetaInit(&e)
 		root = rootInit(&e)
 	}
+	dprintf("done\n")
 
+	dprintf("format: initializing superblock... ")
 	superInit(label, root, venti.ZeroScore)
+	dprintf("done\n")
+
+	dprintf("format: freeing disk structure... ")
 	diskFree(disk)
+	dprintf("done\n")
 
 	if score == "" {
+		dprintf("format: populating top-level fs entries... ")
+
+		// suppress inner debug output
+		old := *Dflag
+		*Dflag = false
+
 		topLevel(argv[0])
+
+		*Dflag = old
+		dprintf("done\n")
 	}
 }
 

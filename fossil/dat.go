@@ -16,8 +16,8 @@ const (
 )
 
 const (
-	Nowaitlock = iota
-	Waitlock
+	Nowaitlock = false
+	Waitlock   = true
 )
 
 const (
@@ -117,7 +117,7 @@ const (
 type Block struct {
 	c     *Cache
 	ref   int
-	nlock int
+	nlock int32
 	//pc    uintptr /* pc that fetched this block from the cache */
 
 	lk *sync.Mutex
