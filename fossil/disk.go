@@ -158,20 +158,18 @@ func diskWriteRaw(disk *Disk, part int, addr uint32, buf []byte) error {
 }
 
 func diskQueue(disk *Disk, b *Block) {
-	var bp **Block
-	var bb *Block
-
 	disk.lk.Lock()
 	for disk.nqueue >= QueueSize {
 		disk.flow.Wait()
 	}
+	var bp **Block
 	if disk.cur == nil || b.addr > disk.cur.addr {
 		bp = &disk.cur
 	} else {
-
 		bp = &disk.next
 	}
 
+	var bb *Block
 	for bb = *bp; bb != nil; bb = *bp {
 		if b.addr < bb.addr {
 			break

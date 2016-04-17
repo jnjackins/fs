@@ -55,8 +55,6 @@ func archFree(a *Arch) {
 }
 
 func ventiSend(a *Arch, b *Block, data []byte) error {
-	var score venti.Score
-
 	if *Dflag {
 		fmt.Fprintf(os.Stderr, "ventiSend: sending %#x %v to venti\n", b.addr, &b.l)
 	}
@@ -64,6 +62,7 @@ func ventiSend(a *Arch, b *Block, data []byte) error {
 	if *Dflag {
 		fmt.Fprintf(os.Stderr, "ventiSend: truncate %d to %d\n", a.blockSize, n)
 	}
+	var score venti.Score
 	if err := a.z.Write(&score, vtType[b.l.typ], data[:n]); err != nil {
 		fmt.Fprintf(os.Stderr, "ventiSend: venti.Write block %#x failed: %v\n", b.addr, err)
 		return err
@@ -147,7 +146,6 @@ const (
 )
 
 func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
-	var ret int
 	var err error
 
 	p.nvisit++
@@ -174,6 +172,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 
 	data := &b.data
 	var w WalkPtr
+	var ret int
 	if b.l.state&BsVenti == 0 {
 		size := p.dsize
 		if b.l.typ != BtDir {
@@ -357,7 +356,6 @@ func archThread(a *Arch) {
 			superPack(&super, b.data)
 			blockDirty(b)
 		} else {
-
 			addr = super.current
 		}
 		blockPut(b)
