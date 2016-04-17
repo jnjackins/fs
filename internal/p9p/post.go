@@ -15,7 +15,6 @@ func PostService(fd int, name string, mtpt string) error {
 	if name == "" && mtpt == "" {
 		return errors.New("nothing to do")
 	}
-
 	if name != "" {
 		var network, addr string
 		if strings.Contains(name, "!") {

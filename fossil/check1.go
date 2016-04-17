@@ -46,7 +46,7 @@ func check(argv []string) {
 		vflag = flags.Bool("v", false, "Toggle verbose mode.")
 	)
 	flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s [-c cachesize] [-h host] file\n", argv0)
+		fmt.Fprintf(os.Stderr, "usage: %s [-f] [-c cachesize] [-h host] file\n", argv0)
 		flags.PrintDefaults()
 		os.Exit(1)
 	}

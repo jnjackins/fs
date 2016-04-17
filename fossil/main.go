@@ -21,8 +21,13 @@ func init() {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-D] subcommand ...\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-D] command [args ...]\n", os.Args[0])
+		fmt.Fprintln(os.Stderr, "\nOptions:")
 		flag.PrintDefaults()
+		fmt.Fprintln(os.Stderr, "\nCommands:")
+		fmt.Fprintln(os.Stderr, "\tcons [-c cmd] [-f partition] [-m %%]")
+		fmt.Fprintln(os.Stderr, "\tfmt  [-b blocksize] [-h host] [-l label] [-v score] [-y] file")
+		fmt.Fprintln(os.Stderr, "\tfsck [-f] [-c cachesize] [-h host] file")
 		os.Exit(1)
 	}
 
@@ -34,11 +39,11 @@ func main() {
 	argv0 = flag.Arg(0)
 	argv := flag.Args()[1:]
 	switch argv0 {
-	case "start":
+	case "cons":
 		start(argv)
-	case "format":
+	case "fmt":
 		format(argv)
-	case "check":
+	case "fsck":
 		check(argv)
 	default:
 		flag.Usage()

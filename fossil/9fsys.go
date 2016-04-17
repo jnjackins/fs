@@ -40,7 +40,7 @@ var sbox struct {
 	curfsys string
 }
 
-var FsysAll string = "all"
+const FsysAll = "all"
 
 var (
 	EFsysBusy      string = "fsys: '%s' busy"

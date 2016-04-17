@@ -293,11 +293,9 @@ func diskThread(disk *Disk) {
 		disk.cur = b.ionext
 		disk.lk.Unlock()
 
-		/*
-		 * no one should hold onto blocking in the
-		 * reading or writing state, so this lock should
-		 * not cause deadlock.
-		 */
+		// no one should hold onto blocking in the
+		// reading or writing state, so this lock should
+		// not cause deadlock.
 		if false {
 			fmt.Fprintf(os.Stderr, "fossil: diskThread: %d:%d %x\n", os.Getpid(), b.part, b.addr)
 		}

@@ -371,8 +371,8 @@ Exit:
 func checkLeak(chk *Fsck) {
 	var l Label
 
-	nfree := uint32(0)
-	nlost := uint32(0)
+	nfree := int64(0)
+	nlost := int64(0)
 
 	for a := uint32(0); a < uint32(chk.nblocks); a++ {
 		if err := readLabel(chk.cache, &l, a); err != nil {
@@ -410,8 +410,8 @@ func checkLeak(chk *Fsck) {
 	}
 
 	chk.printf("fsys blocks: total=%d used=%d(%.1f%%) free=%d(%.1f%%) lost=%d(%.1f%%)\n",
-		uint32(chk.nblocks),
-		uint32(chk.nblocks)-nfree-nlost, 100*float64((uint32(chk.nblocks)-nfree-nlost)/uint32(chk.nblocks)),
+		int64(chk.nblocks),
+		int64(chk.nblocks)-nfree-nlost, 100*float64(int64(chk.nblocks)-nfree-nlost)/float64(chk.nblocks),
 		nfree, 100*float64(nfree)/float64(chk.nblocks),
 		nlost, 100*float64(nlost)/float64(chk.nblocks))
 }
