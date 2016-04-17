@@ -311,8 +311,6 @@ func diskThread(disk *Disk) {
 		switch b.iostate {
 		default:
 			panic("abort")
-			fallthrough
-
 		case BioReading:
 			if err := diskReadRaw(disk, b.part, b.addr, b.data); err != nil {
 				fmt.Fprintf(os.Stderr, "fossil: diskReadRaw failed: %s: "+"score %v: part=%s block %d: %v\n", disk2file(disk), b.score, partname[b.part], b.addr, err)
@@ -348,11 +346,10 @@ func diskThread(disk *Disk) {
 		}
 	}
 
+Done:
 	if *Dflag {
 		fmt.Fprintf(os.Stderr, "diskThread done\n")
 	}
-
-Done:
 	disk.ref--
 	disk.die.Signal()
 	disk.lk.Unlock()

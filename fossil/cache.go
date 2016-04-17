@@ -431,8 +431,6 @@ func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, loc
 		switch b.iostate {
 		default:
 			panic("abort")
-			fallthrough
-
 		case BioEmpty,
 			BioLabel,
 			BioClean,
@@ -442,15 +440,12 @@ func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, loc
 				return nil, errors.New("miss")
 			}
 			return b, nil
-
 		case BioReading,
 			BioWriting:
 			b.ioready.Wait()
-
 		case BioVentiError:
 			blockPut(b)
 			return nil, fmt.Errorf("venti i/o error block %#.8x", addr)
-
 		case BioReadError:
 			blockPut(b)
 			return nil, fmt.Errorf("error reading block %#.8x", addr)
@@ -668,8 +663,6 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 	switch b.iostate {
 	default:
 		panic("abort")
-		fallthrough
-
 	case BioEmpty:
 		n, err := c.z.Read(score, vtType[typ], b.data[:c.size])
 		if err != nil {
@@ -685,14 +678,11 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 		venti.ZeroExtend(vtType[typ], b.data, n, c.size)
 		blockSetIOState(b, BioClean)
 		return b, nil
-
 	case BioClean:
 		return b, nil
-
 	case BioVentiError:
 		blockPut(b)
 		return nil, fmt.Errorf("venti i/o error or wrong score, block %v", score)
-
 	case BioReadError:
 		blockPut(b)
 		return nil, fmt.Errorf("error reading block %v", b.score)
@@ -1266,21 +1256,15 @@ func blockSetIOState(b *Block, iostate int) {
 	switch iostate {
 	default:
 		panic("abort")
-		fallthrough
-
 	case BioEmpty:
 		assert(b.uhead == nil)
-
 	case BioLabel:
 		assert(b.uhead == nil)
-
 	case BioClean:
 		bwatchDependency(b)
 
-		/*
-		 * If b->prior is set, it means a write just finished.
-		 * The prior list isn't needed anymore.
-		 */
+		// If b->prior is set, it means a write just finished.
+		// The prior list isn't needed anymore.
 		for p = b.prior; p != nil; p = q {
 			q = p.next
 			blistFree(c, p)
@@ -1288,11 +1272,9 @@ func blockSetIOState(b *Block, iostate int) {
 
 		b.prior = nil
 
-		/*
-		 * Freeing a block or just finished a write.
-		 * Move the blocks from the per-block unlink
-		 * queue to the cache unlink queue.
-		 */
+		// Freeing a block or just finished a write.
+		// Move the blocks from the per-block unlink
+		// queue to the cache unlink queue.
 		if b.iostate == BioDirty || b.iostate == BioWriting {
 
 			c.lk.Lock()
@@ -1317,10 +1299,8 @@ func blockSetIOState(b *Block, iostate int) {
 		assert(b.uhead == nil)
 		dowakeup = true
 
-		/*
-		 * Wrote out an old version of the block (see blockRollback).
-		 * Bump a version count, leave it dirty.
-		 */
+	// Wrote out an old version of the block (see blockRollback).
+	// Bump a version count, leave it dirty.
 	case BioDirty:
 		if b.iostate == BioWriting {
 			c.lk.Lock()
@@ -1330,12 +1310,10 @@ func blockSetIOState(b *Block, iostate int) {
 			dowakeup = true
 		}
 
-		/*
-		 * Adding block to disk queue.  Bump reference count.
-		 * diskThread decs the count later by calling blockPut.
-		 * This is here because we need to lock c->lk to
-		 * manipulate the ref count.
-		 */
+	// Adding block to disk queue.  Bump reference count.
+	// diskThread decs the count later by calling blockPut.
+	// This is here because we need to lock c->lk to
+	// manipulate the ref count.
 	case BioReading,
 		BioWriting:
 		c.lk.Lock()
@@ -1351,9 +1329,7 @@ func blockSetIOState(b *Block, iostate int) {
 	}
 	b.iostate = iostate
 
-	/*
-	 * Now that the state has changed, we can wake the waiters.
-	 */
+	// Now that the state has changed, we can wake the waiters.
 	if dowakeup {
 		b.ioready.Broadcast()
 	}
