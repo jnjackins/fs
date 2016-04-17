@@ -88,25 +88,25 @@ func sourceAlloc(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 
 	if e.psize < 256 || e.dsize < 256 {
 		pname = sourceName(p)
-		consPrintf("%s: %s %v: sourceAlloc: psize %ud or dsize %ud < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
+		consPrintf("%s: %s %v: sourceAlloc: psize %d or dsize %d < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
 		goto Bad
 	}
 
 	if int(e.depth) < sizeToDepth(e.size, int(e.psize), int(e.dsize)) {
 		pname = sourceName(p)
-		consPrintf("%s: %s %v: sourceAlloc: depth %ud size %llud "+"psize %ud dsize %ud\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
+		consPrintf("%s: %s %v: sourceAlloc: depth %d size %llud "+"psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
 		goto Bad
 	}
 
 	if (e.flags&venti.EntryLocal != 0) && e.tag == 0 {
 		pname = sourceName(p)
-		consPrintf("%s: %s %v: sourceAlloc: flags %#ux tag %#ux\n", fs.name, pname, e.score, e.flags, e.tag)
+		consPrintf("%s: %s %v: sourceAlloc: flags %#x tag %#x\n", fs.name, pname, e.score, e.flags, e.tag)
 		goto Bad
 	}
 
 	if int(e.dsize) > fs.blockSize || int(e.psize) > fs.blockSize {
 		pname = sourceName(p)
-		consPrintf("%s: %s %v: sourceAlloc: psize %ud or dsize %ud "+"> blocksize %ud\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
+		consPrintf("%s: %s %v: sourceAlloc: psize %d or dsize %d "+"> blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
 		goto Bad
 	}
 
@@ -176,7 +176,7 @@ func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
 	}
 
 	if mode == OReadWrite && b.l.epoch != fs.ehi {
-		consPrintf("sourceRoot: fs->ehi = %ud, b->l = %L\n", fs.ehi, &b.l)
+		consPrintf("sourceRoot: fs->ehi = %d, b->l = %L\n", fs.ehi, &b.l)
 		blockPut(b)
 		return nil, EBadRoot
 	}

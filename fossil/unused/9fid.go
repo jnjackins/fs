@@ -211,7 +211,7 @@ func fidGet(con *Con, fidno uint, flags int) *Fid {
 		if flags&FidFCreate != 0 {
 
 			con.fidlock.Unlock()
-			err = fmt.Errorf("%s: fid 0x%ud in use", argv0, fidno)
+			err = fmt.Errorf("%s: fid 0x%d in use", argv0, fidno)
 			return nil
 		}
 

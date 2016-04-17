@@ -259,7 +259,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 		}
 	} else if getBit(chk.amap, addr) == 0 {
 		if bb.l.state&BsClosed == 0 {
-			// errorf(chk, "walk: addr %#ux: block is not in active tree, not closed (%d)",
+			// errorf(chk, "walk: addr %#x: block is not in active tree, not closed (%d)",
 			// addr, bb->l.epochClose);
 			chk.close(chk, bb, epoch+1)
 			chk.nclose++
@@ -318,7 +318,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 			ep = epoch
 			if e.snap != 0 {
 				if e.snap >= epoch {
-					// errorf(chk, "bad snap in entry: %ux[%d] snap = %ud: epoch = %ud",
+					// errorf(chk, "bad snap in entry: %ux[%d] snap = %d: epoch = %d",
 					//	addr, i, e.snap, epoch);
 					setBit(chk.errmap, bb.addr)
 
@@ -403,7 +403,7 @@ func checkLeak(chk *Fsck) {
 		nlost++
 
 		//		warnf(chk, "unreachable block: addr %#x type %d tag %#x "
-		//			"state %s epoch %ud close %ud", a, l.type, l.tag,
+		//			"state %s epoch %d close %d", a, l.type, l.tag,
 		//			bsStr(l.state), l.epoch, l.epochClose);
 		b, err := cacheLocal(chk.cache, PartData, a, OReadOnly)
 		if err != nil {

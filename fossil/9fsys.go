@@ -739,21 +739,21 @@ func fsysBfree(fsys *Fsys, argv []string) error {
 		}
 		b, err := cacheLocal(fs.cache, PartData, uint32(addr), OReadOnly)
 		if err != nil {
-			consPrintf("loading %#ux: %v\n", addr, err)
+			consPrintf("loading %#x: %v\n", addr, err)
 			continue
 		}
 		l = b.l
 		if l.state == BsFree {
-			consPrintf("%#ux is already free\n", addr)
+			consPrintf("%#x is already free\n", addr)
 		} else {
-			consPrintf("label %#ux %ud %ud %ud %ud %#x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
+			consPrintf("label %#x %d %d %d %d %#x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
 			l.state = BsFree
 			l.typ = BtMax
 			l.tag = 0
 			l.epoch = 0
 			l.epochClose = 0
 			if err := blockSetLabel(b, &l, false); err != nil {
-				consPrintf("freeing %#ux: %v\n", addr, err)
+				consPrintf("freeing %#x: %v\n", addr, err)
 			}
 		}
 		blockPut(b)
@@ -842,7 +842,7 @@ func fsysClrep(fsys *Fsys, argv []string, ch int) error {
 			consPrintf("\toffset %d too large (>= %d)\n", i, max)
 			continue
 		}
-		consPrintf("\tblock %#ux %d %d %.*H\n", addr, offset*sz, sz, sz, b.data[offset*sz:])
+		consPrintf("\tblock %#x %d %d %.*H\n", addr, offset*sz, sz, sz, b.data[offset*sz:])
 		copy(b.data[offset*sz:], zero[:sz])
 	}
 
@@ -891,7 +891,7 @@ func fsysEsearch1(f *File, s string, elo uint32) int {
 				if err := fileGetSources(ff, &e, &ee); err != nil {
 					consPrintf("\tcannot get sources for %s/%s: %v\n", s, de.elem, err)
 				} else if e.snap != 0 && e.snap < elo {
-					consPrintf("\t%ud\tclri %s/%s\n", e.snap, s, de.elem)
+					consPrintf("\t%d\tclri %s/%s\n", e.snap, s, de.elem)
 					n++
 				}
 
@@ -976,7 +976,7 @@ func fsysEpoch(fsys *Fsys, argv []string) error {
 	fs = fsys.fs
 
 	fs.elk.RLock()
-	consPrintf("\tlow %ud hi %ud\n", fs.elo, fs.ehi)
+	consPrintf("\tlow %d hi %d\n", fs.elo, fs.ehi)
 	if low == ^uint32(0) {
 		fs.elk.RUnlock()
 		return nil
@@ -988,7 +988,7 @@ func fsysEpoch(fsys *Fsys, argv []string) error {
 	if n > 1 {
 		suff = "s"
 	}
-	consPrintf("\t%d snapshot%s found with epoch < %ud\n", n, suff, low)
+	consPrintf("\t%d snapshot%s found with epoch < %d\n", n, suff, low)
 	fs.elk.RUnlock()
 
 	/*
@@ -1011,8 +1011,8 @@ func fsysEpoch(fsys *Fsys, argv []string) error {
 		if force != 0 {
 			showForce = " -y"
 		}
-		consPrintf("\told: epoch%s %ud\n", showForce, old)
-		consPrintf("\tnew: epoch%s %ud\n", showForce, fs.elo)
+		consPrintf("\told: epoch%s %d\n", showForce, old)
+		consPrintf("\tnew: epoch%s %d\n", showForce, fs.elo)
 		if fs.elo < low {
 			consPrintf("\twarning: new low epoch < old low epoch\n")
 		}
@@ -1259,7 +1259,7 @@ func fsckClose(fsck *Fsck, b *Block, epoch uint32) {
 	}
 	l = b.l
 	if l.state == BsFree || (l.state&BsClosed != 0) {
-		consPrintf("%#ux is already closed\n", b.addr)
+		consPrintf("%#x is already closed\n", b.addr)
 		return
 	}
 
@@ -1272,7 +1272,7 @@ func fsckClose(fsck *Fsck, b *Block, epoch uint32) {
 	}
 
 	if err := blockSetLabel(b, &l, false); err != nil {
-		consPrintf("%#ux setlabel: %v\n", b.addr, err)
+		consPrintf("%#x setlabel: %v\n", b.addr, err)
 	}
 }
 

@@ -891,7 +891,7 @@ func rTwalk(m *Msg) int {
 	if t.fid != t.newfid {
 		nfid = fidGet(m.con, t.newfid, FidFWlock|FidFCreate)
 		if nfid == nil {
-			err = fmt.Errorf("%s: walk: newfid 0x%ud in use", argv0, t.newfid)
+			err = fmt.Errorf("%s: walk: newfid 0x%d in use", argv0, t.newfid)
 			fidPut(ofid)
 			return err
 		}
