@@ -365,7 +365,7 @@ func _fileOpen(fs *Fs, path string, partial bool) (*File, error) {
 			f = ff
 		}
 
-		if len(p) > 0 && p[0] == '/' {
+		if p[0] == '/' {
 			p = p[1:]
 		}
 		path = p
