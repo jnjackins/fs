@@ -365,7 +365,7 @@ func _fileOpen(fs *Fs, path string, partial bool) (*File, error) {
 			f = ff
 		}
 
-		if p[0] == '/' {
+		if len(p) > 0 && p[0] == '/' {
 			p = p[1:]
 		}
 		path = p
@@ -379,16 +379,14 @@ func fileOpen(fs *Fs, path string) (*File, error) {
 }
 
 func fileSetTmp(f *File, istmp int) {
-	var i int
 	var e Entry
 	var r *Source
 	var err error
 
-	for i = 0; i < 2; i++ {
+	for i := 0; i < 2; i++ {
 		if i == 0 {
 			r = f.source
 		} else {
-
 			r = f.msource
 		}
 		if r == nil {
@@ -402,7 +400,6 @@ func fileSetTmp(f *File, istmp int) {
 		if istmp != 0 {
 			e.flags |= venti.EntryNoArchive
 		} else {
-
 			e.flags &^= venti.EntryNoArchive
 		}
 		if err = sourceSetEntry(r, &e); err != nil {

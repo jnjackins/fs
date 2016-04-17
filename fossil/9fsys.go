@@ -576,7 +576,7 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 	if argc == 6 {
 		showOld = "old: "
 	}
-	consPrintf("%slabel %#ux %ud %ud %ud %ud %#x\n", showOld, addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
+	consPrintf("%slabel %#x %d %d %d %d %#x\n", showOld, addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
 
 	if argc == 6 {
 		if argv[1] != "-" {
@@ -595,7 +595,7 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 			l.tag = uint32(strtoul(argv[5], 0))
 		}
 
-		consPrintf("new: label %#ux %ud %ud %ud %ud %#x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
+		consPrintf("new: label %#x %d %d %d %d %#x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
 		bb, err := _blockSetLabel(b, &l)
 		if err != nil {
 			blockPut(b)
@@ -677,7 +677,7 @@ func fsysBlock(fsys *Fsys, argv []string) error {
 	if argc == 4 {
 		prefix = "old: "
 	}
-	consPrintf("\t%sblock %#ux %ud %ud %.*H\n", prefix, addr, offset, count, count, b.data[offset:])
+	consPrintf("\t%sblock %#x %d %d %.*H\n", prefix, addr, offset, count, count, b.data[offset:])
 
 	if argc == 4 {
 		s := argv[3]
@@ -704,7 +704,7 @@ func fsysBlock(fsys *Fsys, argv []string) error {
 		}
 
 		copy(b.data[offset:], buf)
-		consPrintf("\tnew: block %#ux %ud %ud %.*H\n", addr, offset, count, count, b.data[offset:])
+		consPrintf("\tnew: block %#x %d %d %.*H\n", addr, offset, count, count, b.data[offset:])
 		blockDirty(b)
 	}
 
@@ -783,7 +783,8 @@ func fsysDf(fsys *Fsys, argv []string) error {
 
 	fs = fsys.fs
 	cacheCountUsed(fs.cache, fs.elo, &used, &tot, &bsize)
-	consPrintf("\t%s: %,llud used + %,llud free = %,llud (%.1f%% used)\n", fsys.name, int64(used)*int64(bsize), int64(tot-used)*int64(bsize), int64(tot)*int64(bsize), used*100.0/tot)
+	consPrintf("\t%s: %,d used + %,d free = %,d (%.1f%% used)\n",
+		fsys.name, int64(used)*int64(bsize), int64(tot-used)*int64(bsize), int64(tot)*int64(bsize), used*100.0/tot)
 	return nil
 }
 
@@ -1097,7 +1098,7 @@ func fsysPrintStat(prefix string, file string, de *DirEntry) {
 	if prefix == "" {
 		prefix = ""
 	}
-	consPrintf("%sstat %q %q %q %q %s %llud\n", prefix, file, de.elem, de.uid, de.gid, fsysModeString(de.mode), de.size)
+	consPrintf("%sstat %q %q %q %q %s %d\n", prefix, file, de.elem, de.uid, de.gid, fsysModeString(de.mode), de.size)
 }
 
 func fsysStat(fsys *Fsys, argv []string) error {
@@ -1488,25 +1489,33 @@ func freemem() uint32 {
 }
 
 func fsysOpen(name string, argv []string) error {
-	var host string
-	var ncache int
-	var usage string = "usage: fsys main open [-A -P -V -W -r] [-c ncache]"
+	argv = fixFlags(argv)
 
-	ncache = 1000
-	noatimeupd := false
-	noventi := false
-	wstatallow := false
-	noperm := false
-	noauth := false
-	rflag := OReadWrite
+	var host string
+	var usage string = "usage: fsys main open [-APVWr] [-c ncache]"
 
 	flags := flag.NewFlagSet("open", flag.ContinueOnError)
+	var (
+		Aflag = flags.Bool("A", false, "run with no authentication")
+		Pflag = flags.Bool("P", false, "run with no permission checking")
+		Vflag = flags.Bool("V", false, "do not attempt to connect to a Venti server")
+		Wflag = flags.Bool("W", false, "allow wstat to make arbitrary changes to the user and group fields")
+		aflag = flags.Bool("a", false, "do not update file access times; primarily to avoid wear on flash memories")
+		rflag = flags.Bool("r", false, "open the file system read-only")
+		cflag = flags.Uint("c", 1000, "allocate an in-memory cache of `ncache` blocks")
+	)
 	if err := flags.Parse(argv[1:]); err != nil {
 		return fmt.Errorf(usage)
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc != 0 {
+
+	noventi := *Vflag
+	ncache := int(*cflag)
+	mode := OReadWrite
+	if *rflag {
+		mode = OReadOnly
+	}
+
+	if flags.NArg() != 0 {
 		return fmt.Errorf(usage)
 	}
 
@@ -1550,7 +1559,7 @@ func fsysOpen(name string, argv []string) error {
 		}
 	}
 
-	fsys.fs, err = fsOpen(fsys.dev, fsys.session, ncache, rflag)
+	fsys.fs, err = fsOpen(fsys.dev, fsys.session, ncache, mode)
 	if err != nil {
 		fsys.lock.Unlock()
 		fsysPut(fsys)
@@ -1558,10 +1567,10 @@ func fsysOpen(name string, argv []string) error {
 	}
 
 	fsys.fs.name = fsys.name /* for better error messages */
-	fsys.noauth = noauth
-	fsys.noperm = noperm
-	fsys.wstatallow = wstatallow
-	fsys.fs.noatimeupd = noatimeupd
+	fsys.noauth = *Aflag
+	fsys.noperm = *Pflag
+	fsys.wstatallow = *Wflag
+	fsys.fs.noatimeupd = *aflag
 	fsys.lock.Unlock()
 	fsysPut(fsys)
 

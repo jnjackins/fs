@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
+	"os"
 	"strconv"
 	"syscall"
 	"time"
@@ -102,5 +104,22 @@ func lrand() int {
 }
 
 func (b *Block) canLock() bool {
+	fmt.Fprintln(os.Stderr, "TODO canLock")
 	return false
+}
+
+func fixFlags(argv []string) []string {
+	argv2 := make([]string, 0, len(argv))
+	for _, arg := range argv {
+		if arg[0] != '-' {
+			argv2 = append(argv2, arg)
+			continue
+		}
+		if len(arg) >= 2 {
+			for i := 1; i < len(arg); i++ {
+				argv2 = append(argv2, "-"+string(arg[i]))
+			}
+		}
+	}
+	return argv2
 }
