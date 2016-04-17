@@ -782,7 +782,11 @@ func fsysDf(fsys *Fsys, argv []string) error {
 	}
 
 	fs = fsys.fs
-	cacheCountUsed(fs.cache, fs.elo, &used, &tot, &bsize)
+	fs.elk.RLock()
+	elo := fs.elo
+	fs.elk.RUnlock()
+
+	cacheCountUsed(fs.cache, elo, &used, &tot, &bsize)
 	consPrintf("\t%s: %s used + %s free = %s (%.1f%% used)\n",
 		fsys.name,
 		fmtComma(int64(used)*int64(bsize)),
