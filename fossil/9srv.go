@@ -60,13 +60,11 @@ func srvFree(srv *Srv) {
 	if srv.prev != nil {
 		srv.prev.next = srv.next
 	} else {
-
 		srvbox.head = srv.next
 	}
 	if srv.next != nil {
 		srv.next.prev = srv.prev
 	} else {
-
 		srvbox.tail = srv.prev
 	}
 
@@ -76,10 +74,8 @@ func srvFree(srv *Srv) {
 }
 
 func srvAlloc(service string, mode int, fd int) (*Srv, error) {
-	var srv *Srv
-
 	srvbox.lock.Lock()
-	for srv = srvbox.head; srv != nil; srv = srv.next {
+	for srv := srvbox.head; srv != nil; srv = srv.next {
 		if srv.service != service {
 			continue
 		}
@@ -99,7 +95,6 @@ func srvAlloc(service string, mode int, fd int) (*Srv, error) {
 
 	var mntpnt string
 	// TODO: srvFd on plan9
-	var srvfd int
 	//srvfd = srvFd(service, mode, fd, &mntpnt)
 	err := p9p.PostService(fd, service, mntpnt)
 	if err != nil {
@@ -109,7 +104,8 @@ func srvAlloc(service string, mode int, fd int) (*Srv, error) {
 
 	syscall.Close(fd)
 
-	srv = &Srv{
+	var srvfd int
+	srv := &Srv{
 		srvfd:   srvfd,
 		service: service,
 		mntpnt:  mntpnt,
@@ -177,14 +173,13 @@ func cmdSrv(argv []string) error {
 	argc := flags.NArg()
 	argv = flags.Args()
 
-	var srv *Srv
 	switch argc {
 	default:
 		return usage
 
 	case 0:
 		srvbox.lock.RLock()
-		for srv = srvbox.head; srv != nil; srv = srv.next {
+		for srv := srvbox.head; srv != nil; srv = srv.next {
 			consPrintf("\t%s\t%d\n", srv.service, srv.srvfd)
 		}
 		srvbox.lock.RUnlock()
@@ -194,6 +189,7 @@ func cmdSrv(argv []string) error {
 			break
 		}
 		srvbox.lock.Lock()
+		var srv *Srv
 		for srv = srvbox.head; srv != nil; srv = srv.next {
 			if srv.service != argv[0] {
 				continue
@@ -217,6 +213,7 @@ func cmdSrv(argv []string) error {
 
 	var err error
 
+	var srv *Srv
 	srv, err = srvAlloc(argv[0], mode, fd[0])
 	if err != nil {
 		syscall.Close(fd[1])

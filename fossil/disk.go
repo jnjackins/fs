@@ -111,14 +111,14 @@ func partEnd(disk *Disk, part int) uint32 {
 }
 
 func diskReadRaw(disk *Disk, part int, addr uint32, buf []byte) error {
-	start := uint32(partStart(disk, part))
-	end := uint32(partEnd(disk, part))
+	start := partStart(disk, part)
+	end := partEnd(disk, part)
 
-	if uint32(addr) >= end-start {
+	if addr >= end-start {
 		return EBadAddr
 	}
 
-	offset := (int64(uint32(addr) + start)) * int64(disk.h.blockSize)
+	offset := (int64(addr + start)) * int64(disk.h.blockSize)
 	n := int(disk.h.blockSize)
 	for n > 0 {
 		nn, err := syscall.Pread(disk.fd, buf, offset)
@@ -137,14 +137,14 @@ func diskReadRaw(disk *Disk, part int, addr uint32, buf []byte) error {
 }
 
 func diskWriteRaw(disk *Disk, part int, addr uint32, buf []byte) error {
-	start := uint32(partStart(disk, part))
-	end := uint32(partEnd(disk, part))
+	start := partStart(disk, part)
+	end := partEnd(disk, part)
 
-	if uint32(addr) >= end-start {
+	if addr >= end-start {
 		return EBadAddr
 	}
 
-	offset := (int64(uint32(addr) + start)) * int64(disk.h.blockSize)
+	offset := (int64(addr + start)) * int64(disk.h.blockSize)
 	n, err := syscall.Pwrite(disk.fd, buf, offset)
 	if err != nil {
 		return err

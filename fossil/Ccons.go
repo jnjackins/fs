@@ -205,9 +205,7 @@ func qWrite(q *Q, p []byte) int {
 }
 
 func qAlloc() *Q {
-	var q *Q
-
-	q = &Q{
+	q := &Q{
 		lock: new(sync.Mutex),
 	}
 	q.full = sync.NewCond(q.lock)

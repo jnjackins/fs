@@ -98,9 +98,7 @@ func (chk *Fsck) check(fs *Fs) {
  * Then we can look for ones we missed -- those are leaks.
  */
 func checkEpochs(chk *Fsck) {
-	var nb uint
-
-	nb = uint(chk.nblocks)
+	nb := uint(chk.nblocks)
 	chk.amap = make([]uint8, nb/8+1)
 	chk.emap = make([]uint8, nb/8+1)
 	chk.xmap = make([]uint8, nb/8+1)
@@ -121,7 +119,6 @@ func checkEpochs(chk *Fsck) {
 
 func checkEpoch(chk *Fsck, epoch uint32) {
 	var a uint32
-	var e Entry
 	var l Label
 
 	chk.printf("checking epoch %d...\n", epoch)
@@ -159,6 +156,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	 * Second entry is link to previous epoch root,
 	 * just a convenience to help the search.
 	 */
+	var e Entry
 	if err := entryUnpack(&e, b.data, 0); err != nil {
 		errorf(chk, "could not unpack root block %#.8x: %v", a, err)
 		blockPut(b)
@@ -183,11 +181,6 @@ func checkEpoch(chk *Fsck, epoch uint32) {
  *	(too hard to check)
  */
 func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint32) bool {
-	var i int
-	var ep uint32
-	var e Entry
-	var tmp1 int
-
 	if b != nil && chk.walkdepth == 0 && chk.printblocks {
 		chk.printf("%v %d %#.8x %#.8x\n", b.score, b.l.typ, b.l.tag, b.l.epoch)
 	}
@@ -211,6 +204,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 
 	ret := false
 	addr := globalToLocal(score)
+	var tmp1 int
 	if addr == NilBlock {
 		ret = true
 		goto Exit
@@ -285,7 +279,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 	switch typ {
 	/* pointer block */
 	default:
-		for i = 0; i < chk.bsize/venti.ScoreSize; i++ {
+		for i := int(0); i < chk.bsize/venti.ScoreSize; i++ {
 			var score venti.Score
 			copy(score[:], bb.data[i*venti.ScoreSize:])
 			if !walkEpoch(chk, bb, &score, typ-1, tag, epoch) {
@@ -299,7 +293,9 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 		break
 
 	case BtDir:
-		for i = 0; i < chk.bsize/venti.EntrySize; i++ {
+		var e Entry
+		var ep uint32
+		for i := int(0); i < chk.bsize/venti.EntrySize; i++ {
 			if err := entryUnpack(&e, bb.data, i); err != nil {
 				//errorf(chk, "walk: could not unpack entry: %ux[%d]: %v", addr, i, err);
 				setBit(chk.errmap, bb.addr)
@@ -373,16 +369,12 @@ Exit:
  * aren't marked available but that we didn't visit.  They are lost.
  */
 func checkLeak(chk *Fsck) {
-
-	var a uint32
-	var nfree uint32
-	var nlost uint32
 	var l Label
 
-	nfree = 0
-	nlost = 0
+	nfree := uint32(0)
+	nlost := uint32(0)
 
-	for a = 0; a < uint32(chk.nblocks); a++ {
+	for a := uint32(0); a < uint32(chk.nblocks); a++ {
 		if err := readLabel(chk.cache, &l, a); err != nil {
 			errorf(chk, "could not read label: addr %#x %d %d: %v", a, l.typ, l.state, err)
 			continue
@@ -439,7 +431,7 @@ func openSource(chk *Fsck, s *Source, name string, bm []byte, offset uint32, gen
 
 	setBit(bm, offset)
 
-	r, err = sourceOpen(s, uint32(offset), OReadOnly, false)
+	r, err = sourceOpen(s, offset, OReadOnly, false)
 	if err != nil {
 		warnf(chk, "could not open source: %s -> %d: %v", name, offset, err)
 		goto Err
@@ -478,15 +470,9 @@ func (a MetaChunkSorter) Less(i, j int) bool { return a[i].offset < a[j].offset 
  * Fsck that MetaBlock has reasonable header, sorted entries,
  */
 func chkMetaBlock(mb *MetaBlock) bool {
-	var oo int
-	var o int
-	var n int
-	var i int
-	var p []byte
-
 	mc := make([]MetaChunk, mb.nindex)
-	p = mb.buf[MetaHeaderSize:]
-	for i = 0; i < mb.nindex; i++ {
+	p := mb.buf[MetaHeaderSize:]
+	for i := int(0); i < mb.nindex; i++ {
 		mc[i].offset = uint16(p[0])<<8 | uint16(p[1])
 		mc[i].size = uint16(p[2])<<8 | uint16(p[3])
 		mc[i].index = uint16(i)
@@ -496,11 +482,11 @@ func chkMetaBlock(mb *MetaBlock) bool {
 	sort.Sort(MetaChunkSorter(mc))
 
 	/* check block looks ok */
-	oo = MetaHeaderSize + mb.maxindex*MetaIndexSize
+	oo := MetaHeaderSize + mb.maxindex*MetaIndexSize
 
-	o = oo
-	n = 0
-	for i = 0; i < mb.nindex; i++ {
+	o := oo
+	n := int(0)
+	for i := int(0); i < mb.nindex; i++ {
 		o = int(mc[i].offset)
 		n = int(mc[i].size)
 		if o < oo {
@@ -518,8 +504,8 @@ func chkMetaBlock(mb *MetaBlock) bool {
 Err:
 	if false {
 		fmt.Fprintf(os.Stderr, "metaChunks failed!\n")
-		oo = MetaHeaderSize + mb.maxindex*MetaIndexSize
-		for i = 0; i < mb.nindex; i++ {
+		oo := MetaHeaderSize + mb.maxindex*MetaIndexSize
+		for i := int(0); i < mb.nindex; i++ {
 			fmt.Fprintf(os.Stderr, "\t%d: %d %d\n", i, mc[i].offset, mc[i].offset+mc[i].size)
 			oo += int(mc[i].size)
 		}
@@ -531,20 +517,16 @@ Err:
 }
 
 func scanSource(chk *Fsck, name string, r *Source) {
-	var a uint32
-	var nb uint32
-	var o uint32
-	var e Entry
-
 	if !chk.useventi && globalToLocal(r.score) == NilBlock {
 		return
 	}
+	var e Entry
 	if err := sourceGetEntry(r, &e); err != nil {
 		errorf(chk, "could not get entry for %s", name)
 		return
 	}
 
-	a = globalToLocal(e.score)
+	a := globalToLocal(e.score)
 	if !chk.useventi && a == NilBlock {
 		return
 	}
@@ -553,9 +535,9 @@ func scanSource(chk *Fsck, name string, r *Source) {
 	}
 	setBit(chk.smap, a)
 
-	nb = uint32((sourceGetSize(r) + uint64(r.dsize) - 1) / uint64(r.dsize))
-	for o = 0; o < nb; o++ {
-		b, err := sourceBlock(r, uint32(o), OReadOnly)
+	nb := uint32((sourceGetSize(r) + uint64(r.dsize) - 1) / uint64(r.dsize))
+	for o := uint32(0); o < nb; o++ {
+		b, err := sourceBlock(r, o, OReadOnly)
 		if err != nil {
 			errorf(chk, "could not read block in data file %s", name)
 			continue
@@ -575,29 +557,20 @@ func scanSource(chk *Fsck, name string, r *Source) {
  */
 func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 	var a1, a2 uint32
-	var nb uint32
-	var o uint32
-	var s string
-	var nn string
-	var bm []byte
 	var b, bb *Block
-	var de DirEntry
 	var e1, e2 Entry
-	var me MetaEntry
-	var mb *MetaBlock
 	var r, mr *Source
-	var err error
 
 	if !chk.useventi && globalToLocal(source.score) == NilBlock && globalToLocal(meta.score) == NilBlock {
 		return
 	}
 
-	if err = sourceLock2(source, meta, OReadOnly); err != nil {
+	if err := sourceLock2(source, meta, OReadOnly); err != nil {
 		warnf(chk, "could not lock sources for %s: %v", name, err)
 		return
 	}
 
-	err = sourceGetEntry(source, &e1)
+	err := sourceGetEntry(source, &e1)
 	if err == nil {
 		err = sourceGetEntry(meta, &e2)
 	}
@@ -617,11 +590,16 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 	setBit(chk.smap, a1)
 	setBit(chk.smap, a2)
 
-	bm = make([]uint8, int(sourceGetDirSize(source)/8+1))
+	bm := make([]uint8, int(sourceGetDirSize(source)/8+1))
 
-	nb = uint32((sourceGetSize(meta) + uint64(meta.dsize) - 1) / uint64(meta.dsize))
-	for o = 0; o < nb; o++ {
-		b, err = sourceBlock(meta, uint32(o), OReadOnly)
+	nb := uint32((sourceGetSize(meta) + uint64(meta.dsize) - 1) / uint64(meta.dsize))
+	var de DirEntry
+	var mb *MetaBlock
+	var me MetaEntry
+	var nn string
+	var s string
+	for o := uint32(0); o < nb; o++ {
+		b, err = sourceBlock(meta, o, OReadOnly)
 		if err != nil {
 			errorf(chk, "could not read block in meta file: %s[%d]: %v", name, o, err)
 			continue
@@ -675,7 +653,7 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 				}
 			}
 			if de.mode&ModeDir == 0 {
-				r, err = openSource(chk, source, nn, bm, uint32(de.entry), uint32(de.gen), false, mb, i, b)
+				r, err = openSource(chk, source, nn, bm, de.entry, de.gen, false, mb, i, b)
 				if err == nil {
 					if err = sourceLock(r, OReadOnly); err != nil {
 						scanSource(chk, nn, r)
@@ -689,13 +667,13 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 				continue
 			}
 
-			r, err = openSource(chk, source, nn, bm, uint32(de.entry), uint32(de.gen), true, mb, i, b)
+			r, err = openSource(chk, source, nn, bm, de.entry, de.gen, true, mb, i, b)
 			if err != nil {
 				deCleanup(&de)
 				continue
 			}
 
-			mr, err = openSource(chk, source, nn, bm, uint32(de.mentry), uint32(de.mgen), false, mb, i, b)
+			mr, err = openSource(chk, source, nn, bm, de.mentry, de.mgen, false, mb, i, b)
 			if err != nil {
 				sourceClose(r)
 				deCleanup(&de)
@@ -716,17 +694,17 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		blockPut(b)
 	}
 
-	nb = uint32(sourceGetDirSize(source))
-	for o = 0; o < nb; o++ {
+	nb = sourceGetDirSize(source)
+	for o := uint32(0); o < nb; o++ {
 		if getBit(bm, o) != 0 {
 			continue
 		}
-		r, err = sourceOpen(source, uint32(o), OReadOnly, false)
+		r, err = sourceOpen(source, o, OReadOnly, false)
 		if err != nil {
 			continue
 		}
 		warnf(chk, "non referenced entry in source %s[%d]", name, o)
-		bb, err = sourceBlock(source, uint32(o)/(uint32(source.dsize)/venti.EntrySize), OReadOnly)
+		bb, err = sourceBlock(source, o/(uint32(source.dsize)/venti.EntrySize), OReadOnly)
 		if err == nil {
 			if bb.addr != NilBlock {
 				setBit(chk.errmap, bb.addr)

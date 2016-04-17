@@ -63,23 +63,21 @@ func fileFree(f *File) {
  * f->msource is unlocked
  */
 func dirLookup(f *File, elem string) (*File, error) {
-	var i int
-	var me MetaEntry
-	var mb *MetaBlock
-	var b *Block
-	var meta *Source
-	var ff *File
 	var bo, nb uint32
-	var err error
 
-	meta = f.msource
-	b = nil
-	if err = sourceLock(meta, -1); err != nil {
+	meta := f.msource
+	b := (*Block)(nil)
+	if err := sourceLock(meta, -1); err != nil {
 		return nil, err
 	}
 	nb = uint32((sourceGetSize(meta) + uint64(meta.dsize) - 1) / uint64(meta.dsize))
+	var err error
+	var ff *File
+	var i int
+	var mb *MetaBlock
+	var me MetaEntry
 	for bo = 0; bo < nb; bo++ {
-		b, err = sourceBlock(meta, uint32(bo), OReadOnly)
+		b, err = sourceBlock(meta, bo, OReadOnly)
 		if err != nil {
 			goto Err
 		}
@@ -113,28 +111,21 @@ Err:
 }
 
 func fileRoot(r *Source) (*File, error) {
-	var b *Block
-	var r0 *Source
-	var r1 *Source
-	var r2 *Source
-	var me MetaEntry
-	var mb *MetaBlock
-	var root *File
-	var mr *File
-	var fs *Fs
-	var err error
+	b := (*Block)(nil)
+	root := (*File)(nil)
+	mr := (*File)(nil)
+	r1 := (*Source)(nil)
+	r2 := (*Source)(nil)
 
-	b = nil
-	root = nil
-	mr = nil
-	r1 = nil
-	r2 = nil
-
-	fs = r.fs
-	if err = sourceLock(r, -1); err != nil {
+	fs := r.fs
+	if err := sourceLock(r, -1); err != nil {
 		return nil, err
 	}
+	var err error
+	var r0 *Source
 	r0, err = sourceOpen(r, 0, fs.mode, false)
+	var mb *MetaBlock
+	var me MetaEntry
 	if err != nil {
 		goto Err
 	}
@@ -209,14 +200,11 @@ Err:
 }
 
 func fileOpenSource(f *File, offset, gen uint32, dir bool, mode uint, issnapshot bool) (*Source, error) {
-	var rname string
-	var fname string
-	var r *Source
-	var err error
-
-	if err = sourceLock(f.source, int(mode)); err != nil {
+	if err := sourceLock(f.source, int(mode)); err != nil {
 		return nil, err
 	}
+	var err error
+	var r *Source
 	r, err = sourceOpen(f.source, offset, int(mode), issnapshot)
 	sourceUnlock(f.source)
 	if err != nil {
@@ -229,9 +217,9 @@ func fileOpenSource(f *File, offset, gen uint32, dir bool, mode uint, issnapshot
 
 	if r.dir != dir && r.mode != -1 {
 		/* this hasn't been as useful as we hoped it would be. */
-		rname = sourceName(r)
+		rname := sourceName(r)
 
-		fname = fileName(f)
+		fname := fileName(f)
 		consPrintf("%s: source %s for file %s: fileOpenSource: "+"dir mismatch %d %d\n", f.source.fs.name, rname, fname, r.dir, dir)
 
 		err = EBadMeta
@@ -246,9 +234,6 @@ Err:
 }
 
 func _fileWalk(f *File, elem string, partial bool) (*File, error) {
-	var ff *File
-	var err error
-
 	fileRAccess(f)
 
 	if elem[0] == 0 {
@@ -270,10 +255,12 @@ func _fileWalk(f *File, elem string, partial bool) (*File, error) {
 		return fileIncRef(f.up), nil
 	}
 
-	if err = fileLock(f); err != nil {
+	if err := fileLock(f); err != nil {
 		return nil, err
 	}
 
+	var err error
+	var ff *File
 	for ff = f.down; ff != nil; ff = ff.next {
 		if elem == ff.dir.elem && !ff.removed {
 			ff.ref++
@@ -316,7 +303,6 @@ func _fileWalk(f *File, elem string, partial bool) (*File, error) {
 
 	/* link in and up parent ref count */
 	if ff.source != nil {
-
 		ff.source.file = ff /* point back */
 	}
 	ff.next = f.down
@@ -405,15 +391,15 @@ func fileSetTmp(f *File, istmp int) {
 
 func fileCreate(f *File, elem string, mode uint32, uid string) (*File, error) {
 	var pr, r, mr *Source
-	var ff *File
-	var dir *DirEntry
-	var err error
-	var isdir bool
 
-	if err = fileLock(f); err != nil {
+	if err := fileLock(f); err != nil {
 		return nil, err
 	}
 
+	var dir *DirEntry
+	var err error
+	var ff *File
+	var isdir bool
 	for ff = f.down; ff != nil; ff = ff.next {
 		if elem == ff.dir.elem && !ff.removed {
 			ff = nil
@@ -535,15 +521,7 @@ Err1:
 }
 
 func fileRead(f *File, buf []byte, cnt int, offset int64) int {
-	var s *Source
-	var size uint64
-	var bn uint32
-	var off int
-	var dsize int
 	var n, nn int
-	var b *Block
-	var p []byte
-	var err error
 
 	if false {
 		fmt.Fprintf(os.Stderr, "fileRead: %s %d, %d\n", f.dir.elem, cnt, offset)
@@ -553,6 +531,14 @@ func fileRead(f *File, buf []byte, cnt int, offset int64) int {
 		return -1
 	}
 
+	var b *Block
+	var bn uint32
+	var dsize int
+	var err error
+	var off int
+	var p []byte
+	var s *Source
+	var size uint64
 	if offset < 0 {
 		err = EBadOffset
 		goto Err1
@@ -560,7 +546,7 @@ func fileRead(f *File, buf []byte, cnt int, offset int64) int {
 
 	fileRAccess(f)
 
-	if err = sourceLock(f.source, OReadOnly); err != nil {
+	if err := sourceLock(f.source, OReadOnly); err != nil {
 		goto Err1
 	}
 
@@ -579,7 +565,7 @@ func fileRead(f *File, buf []byte, cnt int, offset int64) int {
 	off = int(offset % int64(dsize))
 	p = buf
 	for cnt > 0 {
-		b, err = sourceBlock(s, uint32(bn), OReadOnly)
+		b, err = sourceBlock(s, bn, OReadOnly)
 		if err != nil {
 			goto Err
 		}
@@ -619,16 +605,14 @@ Err1:
  * Very sneaky.  Only used by flfmt.
  */
 func fileMapBlock(f *File, bn uint32, score *venti.Score, tag uint32) error {
-	var b *Block
-	var e Entry
-	var s *Source
-	var err error
-
-	if err = fileLock(f); err != nil {
+	if err := fileLock(f); err != nil {
 		return err
 	}
 
-	s = nil
+	s := (*Source)(nil)
+	var b *Block
+	var e Entry
+	var err error
 	if f.dir.mode&ModeDir != 0 {
 		err = ENotFile
 		goto Err
@@ -654,12 +638,11 @@ func fileMapBlock(f *File, bn uint32, score *venti.Score, tag uint32) error {
 	}
 	if b.l.typ == BtDir {
 		copy(e.score[:], score[:venti.ScoreSize])
-		assert(uint32(e.tag) == tag || e.tag == 0)
+		assert(e.tag == tag || e.tag == 0)
 		e.tag = tag
 		e.flags |= venti.EntryLocal
 		entryPack(&e, b.data, int(f.source.offset%uint32(f.source.epb)))
 	} else {
-
 		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:venti.ScoreSize])
 	}
 	blockDirty(b)
@@ -677,11 +660,10 @@ Err:
 }
 
 func fileSetSize(f *File, size uint64) error {
-	var err error
-
-	if err = fileLock(f); err != nil {
+	if err := fileLock(f); err != nil {
 		return err
 	}
+	var err error
 	if f.dir.mode&ModeDir != 0 {
 		err = ENotFile
 		goto Err
@@ -704,13 +686,11 @@ Err:
 }
 
 func fileWrite(f *File, buf []byte, cnt int, offset int64, uid string) (int, error) {
-	var err error
-
 	if false {
 		fmt.Fprintf(os.Stderr, "fileWrite: %s %d, %d\n", f.dir.elem, cnt, offset)
 	}
 
-	if err = fileLock(f); err != nil {
+	if err := fileLock(f); err != nil {
 		return -1, err
 	}
 	defer fileUnlock(f)
@@ -727,7 +707,7 @@ func fileWrite(f *File, buf []byte, cnt int, offset int64, uid string) (int, err
 
 	fileWAccess(f, uid)
 
-	if err = sourceLock(f.source, -1); err != nil {
+	if err := sourceLock(f.source, -1); err != nil {
 		return -1, err
 	}
 	s := f.source
@@ -744,6 +724,7 @@ func fileWrite(f *File, buf []byte, cnt int, offset int64, uid string) (int, err
 	p := buf
 	var b *Block
 	var ntotal int
+	var err error
 	for cnt > 0 {
 		n := cnt
 		if n > dsize-off {
@@ -771,7 +752,7 @@ func fileWrite(f *File, buf []byte, cnt int, offset int64, uid string) (int, err
 		blockPut(b)
 	}
 	if offset > eof {
-		if err = sourceSetSize(s, uint64(offset)); err != nil {
+		if err := sourceSetSize(s, uint64(offset)); err != nil {
 			return -1, err
 		}
 	}
@@ -800,12 +781,10 @@ func fileGetDir(f *File, dir *DirEntry) error {
 }
 
 func fileTruncate(f *File, uid string) error {
-	var err error
-
 	if fileIsDir(f) {
 		return ENotFile
 	}
-	if err = fileLock(f); err != nil {
+	if err := fileLock(f); err != nil {
 		return err
 	}
 	defer fileUnlock(f)
@@ -818,7 +797,7 @@ func fileTruncate(f *File, uid string) error {
 	}
 	defer sourceUnlock(f.source)
 
-	if err = sourceTruncate(f.source); err != nil {
+	if err := sourceTruncate(f.source); err != nil {
 		return err
 	}
 	fileWAccess(f, uid)
@@ -826,17 +805,12 @@ func fileTruncate(f *File, uid string) error {
 }
 
 func fileSetDir(f *File, dir *DirEntry, uid string) error {
-	var ff *File
-	var oelem string
-	var mask uint32
-	var err error
-
 	/* can not set permissions for the root */
 	if fileIsRoot(f) {
 		return ERoot
 	}
 
-	if err = fileLock(f); err != nil {
+	if err := fileLock(f); err != nil {
 		return err
 	}
 
@@ -848,15 +822,18 @@ func fileSetDir(f *File, dir *DirEntry, uid string) error {
 	fileMetaLock(f)
 
 	/* check new name does not already exist */
+	var err error
+	var mask uint32
+	var oelem string
 	if f.dir.elem != dir.elem {
-
-		for ff = f.up.down; ff != nil; ff = ff.next {
+		for ff := f.up.down; ff != nil; ff = ff.next {
 			if dir.elem == ff.dir.elem && !ff.removed {
 				err = EExists
 				goto Err
 			}
 		}
 
+		var ff *File
 		ff, err = dirLookup(f.up, dir.elem)
 		if err == nil {
 			fileDecRef(ff)
@@ -952,19 +929,15 @@ func fileGetId(f *File) uint64 {
 }
 
 func fileGetMcount(f *File) uint32 {
-	var mcount uint32
-
 	fileMetaLock(f)
-	mcount = f.dir.mcount
+	mcount := f.dir.mcount
 	fileMetaUnlock(f)
 	return mcount
 }
 
 func fileGetMode(f *File) uint32 {
-	var mode uint32
-
 	fileMetaLock(f)
-	mode = f.dir.mode
+	mode := f.dir.mode
 	fileMetaUnlock(f)
 	return mode
 }
@@ -1031,12 +1004,8 @@ func checkValidFileName(name string) error {
 }
 
 func fileMetaFlush(f *File, rec bool) int {
-	var p *File
-	var i int
-	var rv int
-
 	fileMetaLock(f)
-	rv = fileMetaFlush2(f, "")
+	rv := fileMetaFlush2(f, "")
 	fileMetaUnlock(f)
 
 	if !rec || !fileIsDir(f) {
@@ -1047,12 +1016,12 @@ func fileMetaFlush(f *File, rec bool) int {
 		return rv
 	}
 	nkids := 0
-	for p = f.down; p != nil; p = p.next {
+	for p := f.down; p != nil; p = p.next {
 		nkids++
 	}
 	kids := make([]*File, nkids)
-	i = 0
-	for p = f.down; p != nil; p = p.next {
+	i := int(0)
+	for p := f.down; p != nil; p = p.next {
 		kids[i] = p
 		i++
 		p.ref++
@@ -1060,7 +1029,7 @@ func fileMetaFlush(f *File, rec bool) int {
 
 	fileUnlock(f)
 
-	for i = 0; i < nkids; i++ {
+	for i := int(0); i < nkids; i++ {
 		rv |= fileMetaFlush(kids[i], true)
 		fileDecRef(kids[i])
 	}
@@ -1070,14 +1039,8 @@ func fileMetaFlush(f *File, rec bool) int {
 
 /* assumes metaLock is held */
 func fileMetaFlush2(f *File, oelem string) int {
-	var fp *File
-	var b *Block
-	var bb *Block
-	var mb *MetaBlock
 	var me, me2 MetaEntry
 	var i, n int
-	var boff uint32
-	var err error
 
 	if !f.dirty {
 		return 0
@@ -1089,17 +1052,22 @@ func fileMetaFlush2(f *File, oelem string) int {
 
 	//print("fileMetaFlush %s->%s\n", oelem, f->dir.elem);
 
-	fp = f.up
+	fp := f.up
 
-	if err = sourceLock(fp.msource, -1); err != nil {
+	if err := sourceLock(fp.msource, -1); err != nil {
 		return -1
 	}
 
 	/* can happen if source is clri'ed out from under us */
+	var b *Block
+	var bb *Block
+	var boff uint32
+	var err error
+	var mb *MetaBlock
 	if f.boff == NilBlock {
 		goto Err1
 	}
-	b, err = sourceBlock(fp.msource, uint32(f.boff), OReadWrite)
+	b, err = sourceBlock(fp.msource, f.boff, OReadWrite)
 	if err != nil {
 		goto Err1
 	}
@@ -1108,7 +1076,7 @@ func fileMetaFlush2(f *File, oelem string) int {
 	if err != nil {
 		goto Err
 	}
-	if err = mb.Search(oelem, &i, &me); err != nil {
+	if err := mb.Search(oelem, &i, &me); err != nil {
 		goto Err
 	}
 
@@ -1156,7 +1124,7 @@ func fileMetaFlush2(f *File, oelem string) int {
 	f.boff = boff
 
 	/* make sure deletion goes to disk after new entry */
-	bb, _ = sourceBlock(fp.msource, uint32(f.boff), OReadWrite)
+	bb, _ = sourceBlock(fp.msource, f.boff, OReadWrite)
 	mb.Delete(i)
 	mb.Pack()
 	blockDependency(b, bb, -1, nil, nil)
@@ -1182,17 +1150,16 @@ func fileMetaRemove(f *File, uid string) error {
 	var mb *MetaBlock
 	var me MetaEntry
 	var i int
-	var up *File
 	var err error
 
-	up = f.up
+	up := f.up
 
 	fileWAccess(up, uid)
 
 	fileMetaLock(f)
 
 	sourceLock(up.msource, OReadWrite)
-	b, err = sourceBlock(up.msource, uint32(f.boff), OReadWrite)
+	b, err = sourceBlock(up.msource, f.boff, OReadWrite)
 	if err != nil {
 		goto Err
 	}
@@ -1231,14 +1198,13 @@ Err:
 
 /* assume file is locked, assume f->msource is locked */
 func fileCheckEmpty(f *File) error {
-	var i uint
 	var b *Block
 	var mb *MetaBlock
 	var err error
 
 	r := f.msource
 	n := uint((sourceGetSize(r) + uint64(r.dsize) - 1) / uint64(r.dsize))
-	for i = 0; i < n; i++ {
+	for i := uint(0); i < n; i++ {
 		b, err = sourceBlock(r, uint32(i), OReadOnly)
 		if err != nil {
 			goto Err
@@ -1262,8 +1228,6 @@ Err:
 }
 
 func fileRemove(f *File, uid string) error {
-	var ff *File
-
 	/* can not remove the root */
 	if fileIsRoot(f) {
 		return ERoot
@@ -1292,7 +1256,7 @@ func fileRemove(f *File, uid string) error {
 		return fmt.Errorf("directory is not empty")
 	}
 
-	for ff = f.down; ff != nil; ff = ff.next {
+	for ff := f.down; ff != nil; ff = ff.next {
 		assert(ff.removed)
 	}
 
@@ -1346,10 +1310,6 @@ func fileIncRef(vf *File) *File {
 }
 
 func fileDecRef(f *File) bool {
-	var p *File
-	var q *File
-	var qq **File
-
 	if f.up == nil {
 		/* never linked in */
 		assert(f.ref == 1)
@@ -1369,8 +1329,9 @@ func fileDecRef(f *File) bool {
 
 	fileMetaFlush2(f, "")
 
-	p = f.up
-	qq = &p.down
+	p := f.up
+	qq := &p.down
+	var q *File
 	for q = *qq; q != nil; q = *qq {
 		if q == f {
 			break
@@ -1396,9 +1357,6 @@ func fileGetParent(f *File) *File {
 }
 
 func deeOpen(f *File) (*DirEntryEnum, error) {
-	var dee *DirEntryEnum
-	var p *File
-
 	if !fileIsDir(f) {
 		fileDecRef(f)
 		return nil, ENotDir
@@ -1408,12 +1366,12 @@ func deeOpen(f *File) (*DirEntryEnum, error) {
 	if err := fileLock(f); err != nil {
 		return nil, err
 	}
-	for p = f.down; p != nil; p = p.next {
+	for p := f.down; p != nil; p = p.next {
 		fileMetaFlush2(p, "")
 	}
 	fileUnlock(f)
 
-	dee = new(DirEntryEnum)
+	dee := new(DirEntryEnum)
 	dee.file = fileIncRef(f)
 
 	return dee, nil
@@ -1422,13 +1380,11 @@ func deeOpen(f *File) (*DirEntryEnum, error) {
 // TODO: return size
 func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	var b *Block
-	var bn uint32
 	var e Entry
-	var epb int
 	var err error
 
-	epb = s.dsize / venti.EntrySize
-	bn = elem / uint32(epb)
+	epb := s.dsize / venti.EntrySize
+	bn := elem / uint32(epb)
 	elem -= bn * uint32(epb)
 
 	b, err = sourceBlock(s, bn, OReadOnly)
@@ -1440,7 +1396,7 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	}
 
 	/* hanging entries are returned as zero size */
-	if e.flags&venti.EntryActive == 0 || uint32(e.gen) != gen {
+	if e.flags&venti.EntryActive == 0 || e.gen != gen {
 		*size = 0
 	} else {
 		*size = e.size
@@ -1454,31 +1410,26 @@ Err:
 }
 
 func deeFill(dee *DirEntryEnum) error {
-	var i int
-	var n int
-	var meta *Source
-	var source *Source
-	var mb *MetaBlock
-	var me MetaEntry
-	var f *File
-	var b *Block
-	var de *DirEntry
-	var err error
-
 	/* clean up first */
-	for i = dee.i; i < dee.n; i++ {
+	for i := dee.i; i < dee.n; i++ {
 		deCleanup(&dee.buf[i])
 	}
 	dee.buf = nil
 	dee.i = 0
 	dee.n = 0
 
-	f = dee.file
+	f := dee.file
 
-	source = f.source
-	meta = f.msource
+	source := f.source
+	meta := f.msource
 
-	b, err = sourceBlock(meta, uint32(dee.boff), OReadOnly)
+	var b *Block
+	var err error
+	b, err = sourceBlock(meta, dee.boff, OReadOnly)
+	var de *DirEntry
+	var mb *MetaBlock
+	var me MetaEntry
+	var n int
 	if err != nil {
 		goto Err
 	}
@@ -1490,7 +1441,7 @@ func deeFill(dee *DirEntryEnum) error {
 	n = mb.nindex
 	dee.buf = make([]DirEntry, n)
 
-	for i = 0; i < n; i++ {
+	for i := int(0); i < n; i++ {
 		de = &dee.buf[i]
 		mb.meUnpack(&me, i)
 		if err = mb.deUnpack(de, &me); err != nil {
@@ -1515,28 +1466,25 @@ Err:
 
 // TODO: better error strategy
 func deeRead(dee *DirEntryEnum, de *DirEntry) (int, error) {
-	var ret int
-	var f *File
-	var nb uint32
-	var err error
-
 	if dee == nil {
 		return -1, fmt.Errorf("cannot happen in deeRead")
 	}
 
-	f = dee.file
-	if err = fileRLock(f); err != nil {
+	f := dee.file
+	if err := fileRLock(f); err != nil {
 		return -1, err
 	}
 
+	var err error
 	if err = sourceLock2(f.source, f.msource, OReadOnly); err != nil {
 		fileRUnlock(f)
 		return -1, err
 	}
 
-	nb = uint32((sourceGetSize(f.msource) + uint64(f.msource.dsize) - 1) / uint64(f.msource.dsize))
+	nb := uint32((sourceGetSize(f.msource) + uint64(f.msource.dsize) - 1) / uint64(f.msource.dsize))
 
 	didread := false
+	var ret int
 	for dee.i >= dee.n {
 		if dee.boff >= nb {
 			ret = 0
@@ -1571,11 +1519,10 @@ Return:
 }
 
 func deeClose(dee *DirEntryEnum) {
-	var i int
 	if dee == nil {
 		return
 	}
-	for i = dee.i; i < dee.n; i++ {
+	for i := dee.i; i < dee.n; i++ {
 		deCleanup(&dee.buf[i])
 	}
 	fileDecRef(dee.file)
@@ -1590,11 +1537,7 @@ func fileMetaAlloc(f *File, dir *DirEntry, start uint32) uint32 {
 	var nb, bo uint32
 	var b, bb *Block
 	var i, n, nn, o int
-	var epb int
-	var me MetaEntry
-	var mb *MetaBlock
 	var s, ms *Source
-	var err error
 
 	s = f.source
 	ms = f.msource
@@ -1605,8 +1548,12 @@ func fileMetaAlloc(f *File, dir *DirEntry, start uint32) uint32 {
 	if start > nb {
 		start = nb
 	}
+	var epb int
+	var err error
+	var mb *MetaBlock
+	var me MetaEntry
 	for bo = start; bo < nb; bo++ {
-		b, err = sourceBlock(ms, uint32(bo), OReadWrite)
+		b, err = sourceBlock(ms, bo, OReadWrite)
 		if err != nil {
 			goto Err
 		}
@@ -1624,7 +1571,8 @@ func fileMetaAlloc(f *File, dir *DirEntry, start uint32) uint32 {
 
 	/* add block to meta file */
 	if b == nil {
-		b, err = sourceBlock(ms, uint32(bo), OReadWrite)
+		var err error
+		b, err = sourceBlock(ms, bo, OReadWrite)
 		if err != nil {
 			goto Err
 		}
@@ -1742,7 +1690,6 @@ func fileMetaUnlock(f *File) {
  * see fileMetaLock.
  */
 func fileRAccess(f *File) {
-
 	if f.mode == OReadOnly || f.fs.noatimeupd {
 		return
 	}
@@ -1780,19 +1727,18 @@ func fileWAccess(f *File, mid string) {
 }
 
 func getEntry(r *Source, e *Entry, checkepoch bool) error {
-	var b *Block
-	var err error
-
 	if r == nil {
 		*e = Entry{}
 		return nil
 	}
 
+	var b *Block
+	var err error
 	b, err = cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadOnly)
 	if err != nil {
 		return err
 	}
-	if err = entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	if err := entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
 		blockPut(b)
 		return err
 	}
@@ -1801,6 +1747,8 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 	blockPut(b)
 
 	if checkepoch {
+		var b *Block
+		var err error
 		b, err = cacheGlobal(r.fs.cache, e.score, EntryType(e), e.tag, OReadOnly)
 		if err == nil {
 			if b.l.epoch >= epoch {
@@ -1815,7 +1763,6 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 
 func setEntry(r *Source, e *Entry) error {
 	var b *Block
-	var oe Entry
 	var err error
 
 	b, err = cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadWrite)
@@ -1825,7 +1772,8 @@ func setEntry(r *Source, e *Entry) error {
 	if err != nil {
 		return err
 	}
-	if err = entryUnpack(&oe, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	var oe Entry
+	if err := entryUnpack(&oe, b.data, int(r.offset%uint32(r.epb))); err != nil {
 		blockPut(b)
 		return err
 	}
@@ -1843,12 +1791,12 @@ func setEntry(r *Source, e *Entry) error {
 /* assumes hold elk */
 func fileSnapshot(dst *File, src *File, epoch uint32, doarchive bool) error {
 	var e Entry
-	var ee Entry
 
 	/* add link to snapshot */
 	if err := getEntry(src.source, &e, true); err != nil {
 		return err
 	}
+	var ee Entry
 	if err := getEntry(src.msource, &ee, true); err != nil {
 		return err
 	}
@@ -1902,23 +1850,19 @@ func fileWalkSources(f *File) error {
 func fileName(f *File) string {
 	const root = "/"
 
-	var name string
-	var pname string
-	var p *File
-
 	if f == nil {
 		return "/**GOK**"
 	}
 
-	p = fileGetParent(f)
+	p := fileGetParent(f)
+	var name string
 	if p == f {
 		name = root
 	} else {
-		pname = fileName(p)
+		pname := fileName(p)
 		if pname == root {
 			name = fmt.Sprintf("/%s", f.dir.elem)
 		} else {
-
 			name = fmt.Sprintf("%s/%s", pname, f.dir.elem)
 		}
 	}

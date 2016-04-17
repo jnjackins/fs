@@ -112,8 +112,6 @@ func cmd9pTopen(f *plan9.Fcall, argv []string) error {
 }
 
 func cmd9pTwalk(f *plan9.Fcall, argv []string) error {
-	var i int
-
 	if len(argv) < 2 {
 		return fmt.Errorf("usage: Twalk tag fid newfid [name...]")
 	}
@@ -125,7 +123,7 @@ func cmd9pTwalk(f *plan9.Fcall, argv []string) error {
 		return fmt.Errorf("Twalk: too many names")
 	}
 
-	for i = 0; i < len(argv)-2; i++ {
+	for i := int(0); i < len(argv)-2; i++ {
 		f.Wname[i] = argv[2+i]
 	}
 
@@ -156,7 +154,7 @@ func cmd9pTauth(f *plan9.Fcall, argv []string) error {
 }
 
 func cmd9pTversion(f *plan9.Fcall, argv []string) error {
-	f.Msize = uint32(strtoul(argv[0], 0))
+	f.Msize = strtoul(argv[0], 0)
 	if f.Msize > cmdbox.con.msize {
 		return fmt.Errorf("msize too big")
 	}

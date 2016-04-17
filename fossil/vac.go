@@ -105,13 +105,11 @@ type MetaChunk struct {
 }
 
 func stringUnpack(s *string, p *[]byte, n *int) bool {
-	var nn int
-
 	if *n < 2 {
 		return false
 	}
 
-	nn = int(pack.U16GET(*p))
+	nn := int(pack.U16GET(*p))
 	*p = (*p)[2:]
 	*n -= 2
 	if nn > *n {
@@ -131,18 +129,16 @@ func stringPack(s string, p []byte) int {
 }
 
 func (mb *MetaBlock) Search(elem string, ri *int, me *MetaEntry) error {
-	var i int
-	var b int
-	var t int
-	var x int
 	if *Dflag {
 		fmt.Fprintf(os.Stderr, "mbSearch %s\n", elem)
 	}
 
 	/* binary search within block */
-	b = 0
+	b := int(0)
 
-	t = mb.nindex
+	t := mb.nindex
+	var i int
+	var x int
 	for b < t {
 		i = (b + t) >> 1
 		mb.meUnpack(me, i)
@@ -186,13 +182,6 @@ func InitMetaBlock(p []byte, maxSize int, nEntries int) *MetaBlock {
 }
 
 func UnpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
-	var magic uint32
-	var i int
-	var eo int
-	var en int
-	var omin int
-	var q []byte
-
 	mb := new(MetaBlock)
 
 	mb.maxsize = n
@@ -202,7 +191,11 @@ func UnpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 		return &MetaBlock{}, nil
 	}
 
-	magic = pack.U32GET(p)
+	magic := pack.U32GET(p)
+	var en int
+	var eo int
+	var omin int
+	var q []byte
 	if magic != MetaMagic && magic != MetaMagic-1 {
 		goto Err
 	}
@@ -223,7 +216,7 @@ func UnpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 	p = p[MetaHeaderSize:]
 
 	/* check the index table - ensures that meUnpack and meCmp never fail */
-	for i = 0; i < mb.nindex; i++ {
+	for i := int(0); i < mb.nindex; i++ {
 		eo = int(pack.U16GET(p))
 		en = int(pack.U16GET(p[2:]))
 		if eo < omin || eo+en > mb.size || en < 8 {
@@ -243,9 +236,7 @@ Err:
 }
 
 func (mb *MetaBlock) Pack() {
-	var p []byte
-
-	p = mb.buf
+	p := mb.buf
 
 	assert(mb.botch == false)
 
@@ -257,8 +248,6 @@ func (mb *MetaBlock) Pack() {
 }
 
 func (mb *MetaBlock) Delete(i int) {
-	var p []byte
-	var n int
 	var me MetaEntry
 
 	assert(i < mb.nindex)
@@ -273,8 +262,8 @@ func (mb *MetaBlock) Delete(i int) {
 		mb.free += int(me.size)
 	}
 
-	p = mb.buf[MetaHeaderSize+i*MetaIndexSize:]
-	n = (mb.nindex - i - 1) * MetaIndexSize
+	p := mb.buf[MetaHeaderSize+i*MetaIndexSize:]
+	n := (mb.nindex - i - 1) * MetaIndexSize
 	copy(p[:n], p[MetaIndexSize:])
 	for i = 0; i < MetaIndexSize; i++ {
 		p[n+i] = 0
@@ -283,7 +272,6 @@ func (mb *MetaBlock) Delete(i int) {
 }
 
 func (mb *MetaBlock) Insert(i int, me *MetaEntry) {
-	var p []byte
 	var o, n int
 
 	assert(mb.nindex < mb.maxindex)
@@ -297,7 +285,7 @@ func (mb *MetaBlock) Insert(i int, me *MetaEntry) {
 		mb.free -= n
 	}
 
-	p = mb.buf[MetaHeaderSize+i*MetaIndexSize:]
+	p := mb.buf[MetaHeaderSize+i*MetaIndexSize:]
 	n = (mb.nindex - i) * MetaIndexSize
 	copy(p[MetaIndexSize:], p[:n])
 	pack.U16PUT(p, uint16(me.offset))
@@ -335,15 +323,11 @@ func (mb *MetaBlock) Resize(me *MetaEntry, n int) bool {
 }
 
 func (mb *MetaBlock) meUnpack(me *MetaEntry, i int) {
-	var p []byte
-	var eo int
-	var en int
-
 	assert(i >= 0 && i < mb.nindex)
 
-	p = mb.buf[MetaHeaderSize+i*MetaIndexSize:]
-	eo = int(pack.U16GET(p))
-	en = int(pack.U16GET(p[2:]))
+	p := mb.buf[MetaHeaderSize+i*MetaIndexSize:]
+	eo := int(pack.U16GET(p))
+	en := int(pack.U16GET(p[2:]))
 
 	me.offset = eo
 	me.size = uint16(en)
@@ -354,14 +338,12 @@ func (mb *MetaBlock) meUnpack(me *MetaEntry, i int) {
 
 /* assumes a small amount of checking has been done in mbEntry */
 func (mb *MetaBlock) meCmp(me *MetaEntry, s string) int {
-	var n int
-
 	p := mb.buf[me.offset:]
 
 	/* skip magic & version */
 	p = p[6:]
 
-	n = int(pack.U16GET(p))
+	n := int(pack.U16GET(p))
 	p = p[2:]
 
 	if n > int(me.size-8) {
@@ -372,10 +354,10 @@ func (mb *MetaBlock) meCmp(me *MetaEntry, s string) int {
 		if s[0] == 0 {
 			return 1
 		}
-		if p[0] < byte(uint8(s[0])) {
+		if p[0] < s[0] {
 			return -1
 		}
-		if p[0] > byte(uint8(s[0])) {
+		if p[0] > s[0] {
 			return 1
 		}
 		p = p[1:]
@@ -398,13 +380,11 @@ func (mb *MetaBlock) meCmp(me *MetaEntry, s string) int {
  * the usual convention.
  */
 func (mb *MetaBlock) meCmpOld(me *MetaEntry, s string) int {
-	var n int
-
 	p := mb.buf[me.offset:]
 
 	/* skip magic & version */
 	p = p[6:]
-	n = int(pack.U16GET(p))
+	n := int(pack.U16GET(p))
 	p = p[2:]
 
 	if n > int(me.size-8) {
@@ -415,10 +395,10 @@ func (mb *MetaBlock) meCmpOld(me *MetaEntry, s string) int {
 		if s[0] == 0 {
 			return -1
 		}
-		if p[0] < byte(uint8(s[0])) {
+		if p[0] < s[0] {
 			return -1
 		}
-		if p[0] > byte(uint8(s[0])) {
+		if p[0] > s[0] {
 			return 0
 		}
 		p = p[1:]
@@ -430,15 +410,9 @@ func (mb *MetaBlock) meCmpOld(me *MetaEntry, s string) int {
 }
 
 func (mb *MetaBlock) metaChunks() ([]MetaChunk, error) {
-	var oo int
-	var o int
-	var n int
-	var i int
-	var p []byte
-
 	mc := make([]MetaChunk, mb.nindex)
-	p = mb.buf[MetaHeaderSize:]
-	for i = 0; i < mb.nindex; i++ {
+	p := mb.buf[MetaHeaderSize:]
+	for i := int(0); i < mb.nindex; i++ {
 		mc[i].offset = pack.U16GET(p)
 		mc[i].size = pack.U16GET(p[2:])
 		mc[i].index = uint16(i)
@@ -448,11 +422,11 @@ func (mb *MetaBlock) metaChunks() ([]MetaChunk, error) {
 	sort.Sort(MetaChunkSorter(mc))
 
 	/* check block looks ok */
-	oo = MetaHeaderSize + mb.maxindex*MetaIndexSize
+	oo := MetaHeaderSize + mb.maxindex*MetaIndexSize
 
-	o = oo
-	n = 0
-	for i = 0; i < mb.nindex; i++ {
+	o := oo
+	n := int(0)
+	for i := int(0); i < mb.nindex; i++ {
 		o = int(mc[i].offset)
 		n = int(mc[i].size)
 		if o < oo {
@@ -473,7 +447,7 @@ func (mb *MetaBlock) metaChunks() ([]MetaChunk, error) {
 Err:
 	fmt.Fprintf(os.Stderr, "metaChunks failed!\n")
 	oo = MetaHeaderSize + mb.maxindex*MetaIndexSize
-	for i = 0; i < mb.nindex; i++ {
+	for i := int(0); i < mb.nindex; i++ {
 		fmt.Fprintf(os.Stderr, "\t%d: %d %d\n", i, mc[i].offset, mc[i].offset+mc[i].size)
 		oo += int(mc[i].size)
 	}
@@ -483,14 +457,12 @@ Err:
 }
 
 func (mb *MetaBlock) Compact(mc []MetaChunk) {
-	var oo int
 	var o int
 	var n int
-	var i int
 
-	oo = MetaHeaderSize + mb.maxindex*MetaIndexSize
+	oo := MetaHeaderSize + mb.maxindex*MetaIndexSize
 
-	for i = 0; i < mb.nindex; i++ {
+	for i := int(0); i < mb.nindex; i++ {
 		o = int(mc[i].offset)
 		n = int(mc[i].size)
 		if o != oo {
@@ -548,11 +520,9 @@ func (mb *MetaBlock) Alloc(n int) (int, error) {
 }
 
 func deSize(dir *DirEntry) int {
-	var n int
-
 	/* constant part */
 
-	n = 4 + /* magic */
+	n := int(4 + /* magic */
 		2 + /* version */
 		4 + /* entry */
 		4 + /* guid */
@@ -564,7 +534,7 @@ func deSize(dir *DirEntry) int {
 		4 + /* ctime */
 		4 + /* atime */
 		4 + /* mode */
-		0
+		0)
 
 	/* strings */
 	n += 2 + len(dir.elem)

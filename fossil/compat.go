@@ -44,7 +44,7 @@ func strtoll(s string, base int) int64 {
 	if err != nil {
 		return 0
 	}
-	return int64(i)
+	return i
 }
 
 func strtoul(s string, base int) uint32 {
@@ -60,7 +60,7 @@ func strtoull(s string, base int) uint64 {
 	if err != nil {
 		return 0
 	}
-	return uint64(i)
+	return i
 }
 
 // TODO: remove

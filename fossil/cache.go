@@ -130,8 +130,6 @@ var vtType = [BtMax]int{
  * Allocate the memory cache.
  */
 func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
-	var bl *BList
-
 	c := &Cache{
 		lk:       new(sync.Mutex),
 		ref:      1,
@@ -171,6 +169,7 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	nbl := int(nblocks) * 4
 
 	c.nheap = int(nblocks)
+	var bl *BList
 	for i := 0; i < nbl; i++ {
 		bl = &BList{next: c.blfree}
 		c.blfree = bl
@@ -266,9 +265,6 @@ func cacheDump(c *Cache) {
 var cacheCheck_zero venti.Score
 
 func cacheCheck(c *Cache) {
-	var refed int
-	var b *Block
-
 	now := c.now
 
 	for i := uint32(0); i < uint32(c.nheap); i++ {
@@ -288,7 +284,8 @@ func cacheCheck(c *Cache) {
 		}
 	}
 
-	refed = 0
+	refed := int(0)
+	var b *Block
 	for i := 0; i < c.nblocks; i++ {
 		b = c.blocks[i]
 		if b.ref != 0 && b.heap == BadHeap {
@@ -324,15 +321,11 @@ func cacheCheck(c *Cache) {
  */
 /* called with c->lk held */
 func cacheBumpBlock(c *Cache) *Block {
-
-	var printed int
-	var b *Block
-
 	/*
 	 * locate the block with the oldest second to last use.
 	 * remove it from the heap, and fix up the heap.
 	 */
-	printed = 0
+	printed := int(0)
 
 	if c.nheap == 0 {
 		for c.nheap == 0 {
@@ -349,7 +342,7 @@ func cacheBumpBlock(c *Cache) *Block {
 		}
 	}
 
-	b = c.heap[0]
+	b := c.heap[0]
 	heapDel(b)
 
 	assert(b.heap == BadHeap)
@@ -387,8 +380,6 @@ func cacheBumpBlock(c *Cache) *Block {
  * look for a particular version of the block in the memory cache.
  */
 func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lockfailure *int) (*Block, error) {
-	var b *Block
-
 	h := addr % uint32(c.hashSize)
 
 	if lockfailure != nil {
@@ -400,6 +391,7 @@ func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, loc
 	 */
 	c.lk.Lock()
 
+	var b *Block
 	for b = c.heads[h]; b != nil; b = b.next {
 		if b.part == part && b.addr == addr {
 			break
@@ -697,14 +689,11 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 var lastAlloc uint32
 
 func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint32) (*Block, error) {
-	var fl *FreeList
 	var b *Block
-	var nwrap int
-	var lab Label
 	var err error
 
 	n := uint32(c.size / LabelSize)
-	fl = c.fl
+	fl := c.fl
 
 	fl.lk.Lock()
 	addr := fl.last
@@ -715,7 +704,8 @@ func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint3
 		return nil, err
 	}
 
-	nwrap = 0
+	nwrap := int(0)
+	var lab Label
 	for {
 		addr++
 		if addr >= fl.end {
@@ -777,7 +767,7 @@ Found:
 	lab.state = BsAlloc
 	lab.epoch = epoch
 	lab.epochClose = ^uint32(0)
-	if err = blockSetLabel(b, &lab, true); err != nil {
+	if err := blockSetLabel(b, &lab, true); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx4 %v\n", argv0, err)
 		blockPut(b)
 		return nil, err
@@ -803,10 +793,7 @@ func cacheDirty(c *Cache) int {
 }
 
 func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
-	var lab Label
-	var fl *FreeList
-
-	fl = c.fl
+	fl := c.fl
 	n := uint32(c.size / LabelSize)
 	*bsize = uint32(c.size)
 	fl.lk.Lock()
@@ -821,6 +808,7 @@ func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
 	var nused uint32
 	var addr uint32
 	var err error
+	var lab Label
 	for addr = 0; addr < fl.end; addr++ {
 		if addr%n == 0 {
 			blockPut(b)
@@ -938,7 +926,6 @@ func blockPut(b *Block) {
 			b.used = c.now
 			c.now++
 		} else {
-
 			b.used = c.heap[0].used
 		}
 		heapIns(b)
@@ -1010,9 +997,6 @@ func blockSetLabel(b *Block, l *Label, allocating bool) error {
  * can write a safer ``old'' version of the block if pressed.
  */
 func blockDependency(b *Block, bb *Block, index int, score []byte, e *Entry) {
-
-	var p *BList
-
 	if bb.iostate == BioClean {
 		return
 	}
@@ -1035,7 +1019,7 @@ func blockDependency(b *Block, bb *Block, index int, score []byte, e *Entry) {
 		panic("abort")
 	}
 
-	p = blistAlloc(bb)
+	p := blistAlloc(bb)
 	if p == nil {
 		return
 	}
@@ -1056,10 +1040,8 @@ func blockDependency(b *Block, bb *Block, index int, score []byte, e *Entry) {
 		 * we need to exclude the super block.
 		 */
 		if b.l.typ == BtDir && b.part == PartData {
-
 			entryPack(e, p.old.entry[:], 0)
 		} else {
-
 			copy(p.old.score[:], score[:])
 		}
 	}
@@ -1105,14 +1087,13 @@ func blockDirty(b *Block) error {
  * remains marked as dirty.)
  */
 func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
-	var super Super
-
 	/* easy case */
 	if b.prior == nil {
 		return b.data, false
 	}
 
 	copy(buf, b.data[:b.c.size])
+	var super Super
 	for p := b.prior; p != nil; p = p.next {
 		/*
 		 * we know p->index >= 0 because blockWrite has vetted this block for us.
@@ -1136,7 +1117,6 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
 		if b.l.typ == BtDir {
 			copy(buf[p.index*venti.EntrySize:], p.old.entry[:venti.EntrySize])
 		} else {
-
 			copy(buf[p.index*venti.ScoreSize:], p.old.score[:venti.ScoreSize])
 		}
 	}
@@ -1157,10 +1137,6 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
  *	Otherwise, bail.
  */
 func blockWrite(b *Block, waitlock bool) bool {
-	var lockfail int
-	var bb *Block
-	var err error
-
 	c := b.c
 
 	if b.iostate != BioDirty {
@@ -1172,6 +1148,9 @@ func blockWrite(b *Block, waitlock bool) bool {
 		dmap[i] = 0
 	}
 	pp := &b.prior
+	var bb *Block
+	var err error
+	var lockfail int
 	for p := *pp; p != nil; p = *pp {
 		if p.index >= 0 {
 			/* more recent dependency has succeeded; this one can go */
@@ -1242,15 +1221,11 @@ func blockWrite(b *Block, waitlock bool) bool {
  * switch statement (read comments there).
  */
 func blockSetIOState(b *Block, iostate int) {
-	var c *Cache
-	var p *BList
-	var q *BList
-
 	if false {
 		fmt.Fprintf(os.Stderr, "%s: iostate part=%d addr=%x %s->%s\n", argv0, b.part, b.addr, bioStr(b.iostate), bioStr(iostate))
 	}
 
-	c = b.c
+	c := b.c
 
 	dowakeup := false
 	switch iostate {
@@ -1265,7 +1240,8 @@ func blockSetIOState(b *Block, iostate int) {
 
 		// If b->prior is set, it means a write just finished.
 		// The prior list isn't needed anymore.
-		for p = b.prior; p != nil; p = q {
+		var q *BList
+		for p := b.prior; p != nil; p = q {
 			q = p.next
 			blistFree(c, p)
 		}
@@ -1276,7 +1252,6 @@ func blockSetIOState(b *Block, iostate int) {
 		// Move the blocks from the per-block unlink
 		// queue to the cache unlink queue.
 		if b.iostate == BioDirty || b.iostate == BioWriting {
-
 			c.lk.Lock()
 			c.ndirty--
 			b.iostate = iostate /* change here to keep in sync with ndirty */
@@ -1378,8 +1353,6 @@ func blockSetIOState(b *Block, iostate int) {
  * the copy gets written out.
  */
 func blockCopy(b *Block, tag, ehi, elo uint32) (*Block, error) {
-	var l Label
-
 	if (b.l.state&BsClosed != 0) || b.l.epoch >= ehi {
 		fmt.Fprintf(os.Stderr, "%s: blockCopy %#x %v but fs is [%d,%d]\n", argv0, b.addr, b.l, elo, ehi)
 	}
@@ -1397,9 +1370,8 @@ func blockCopy(b *Block, tag, ehi, elo uint32) (*Block, error) {
 	 * can't be holding onto lb when we call cacheAllocBlock.
 	 */
 	if b.l.state&BsCopied == 0 {
-
 		if b.part == PartData { /* not the superblock */
-			l = b.l
+			l := b.l
 			l.state |= BsCopied
 			lb, err := _blockSetLabel(b, &l)
 			if err != nil {
@@ -1438,13 +1410,10 @@ func blockCopy(b *Block, tag, ehi, elo uint32) (*Block, error) {
  * If b depends on bb, it doesn't anymore, so we remove bb from the prior list.
  */
 func blockRemoveLink(b *Block, addr uint32, typ int, tag uint32, recurse bool) {
-
 	var p *BList
-	var pp **BList
-	var bl BList
 
 	/* remove bb from prior list */
-	for pp = &b.prior; ; {
+	for pp := &b.prior; ; {
 		p = *pp
 		if p == nil {
 			break
@@ -1454,11 +1423,11 @@ func blockRemoveLink(b *Block, addr uint32, typ int, tag uint32, recurse bool) {
 			*pp = p.next
 			blistFree(b.c, p)
 		} else {
-
 			pp = &p.next
 		}
 	}
 
+	var bl BList
 	bl.part = PartData
 	bl.addr = addr
 	bl.typ = uint8(typ)
@@ -1473,7 +1442,6 @@ func blockRemoveLink(b *Block, addr uint32, typ int, tag uint32, recurse bool) {
 	if b.part == PartSuper && b.iostate == BioClean {
 		p = nil
 	} else {
-
 		p = blistAlloc(b)
 	}
 	if p == nil {
@@ -1492,7 +1460,6 @@ func blockRemoveLink(b *Block, addr uint32, typ int, tag uint32, recurse bool) {
 	if b.uhead == nil {
 		b.uhead = p
 	} else {
-
 		b.utail.next = p
 	}
 	b.utail = p
@@ -1502,12 +1469,6 @@ func blockRemoveLink(b *Block, addr uint32, typ int, tag uint32, recurse bool) {
  * Process removal of a single block and perhaps its children.
  */
 func doRemoveLink(c *Cache, p *BList) {
-
-	var i int
-	var n int
-	var l Label
-	var bl BList
-
 	recurse := p.recurse && p.typ != BtData && p.typ != BtDir
 
 	/*
@@ -1538,9 +1499,11 @@ func doRemoveLink(c *Cache, p *BList) {
 		return
 	}
 
+	var l Label
 	if recurse {
-		n = c.size / venti.ScoreSize
-		for i = 0; i < n; i++ {
+		n := c.size / venti.ScoreSize
+		var bl BList
+		for i := int(0); i < n; i++ {
 			var score venti.Score
 			copy(score[:], b.data[i*venti.ScoreSize:])
 			a := globalToLocal(&score)
@@ -1600,10 +1563,6 @@ func doRemoveLink(c *Cache, p *BList) {
  * If we can't find a BList, we write out b and return nil.
  */
 func blistAlloc(b *Block) *BList {
-
-	var c *Cache
-	var p *BList
-
 	if b.iostate != BioDirty {
 		/*
 				 * should not happen anymore -
@@ -1614,7 +1573,7 @@ func blistAlloc(b *Block) *BList {
 		return nil
 	}
 
-	c = b.c
+	c := b.c
 	c.lk.Lock()
 	if c.blfree == nil {
 		/*
@@ -1641,7 +1600,6 @@ func blistAlloc(b *Block) *BList {
 		 * so it can't deadlock like we can.)
 		 */
 		for c.blfree == nil {
-
 			c.flush.Signal()
 			c.blrend.Wait()
 			if c.blfree == nil {
@@ -1650,7 +1608,7 @@ func blistAlloc(b *Block) *BList {
 		}
 	}
 
-	p = c.blfree
+	p := c.blfree
 	c.blfree = p.next
 	c.lk.Unlock()
 	return p
@@ -1667,7 +1625,6 @@ func blistFree(c *Cache, bl *BList) {
 var bsStr_s string
 
 func bsStr(state int) string {
-
 	if state == BsFree {
 		return "Free"
 	}
@@ -1826,7 +1783,6 @@ func heapDel(b *Block) {
  * Called with c->lk held.
  */
 func heapIns(b *Block) {
-
 	assert(b.heap == BadHeap)
 	upHeap(b.c.nheap, b)
 	b.c.nheap++
@@ -1915,16 +1871,14 @@ func (a BAddrSorter) Less(i, j int) bool {
  * Scan the block list for dirty blocks; add them to the list c->baddr.
  */
 func flushFill(c *Cache) {
-	var i int
-	var ndirty int
-
 	c.lk.Lock()
 	if c.ndirty == 0 {
 		c.lk.Unlock()
 		return
 	}
 
-	ndirty = 0
+	ndirty := int(0)
+	var i int
 	for i = 0; i < c.nblocks; i++ {
 		p := &c.baddr[i]
 		b := c.blocks[i]

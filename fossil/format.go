@@ -142,12 +142,12 @@ func format(argv []string) {
 	dprintf("done\n")
 
 	var root uint32
-	var e Entry
 	if score != "" {
 		dprintf("format: ventiRoot... ")
 		root = ventiRoot(host, score)
 	} else {
 		dprintf("format: rootMetaInit... ")
+		var e Entry
 		rootMetaInit(&e)
 		root = rootInit(&e)
 	}
@@ -176,11 +176,6 @@ func format(argv []string) {
 }
 
 func partition(fd int, bsize int, h *Header) {
-	var nblock uint32
-	var ndata uint32
-	var nlabel uint32
-	var lpb uint32
-
 	if bsize%512 != 0 {
 		log.Fatalf("block size must be a multiple of 512 bytes")
 	}
@@ -191,9 +186,9 @@ func partition(fd int, bsize int, h *Header) {
 	*h = Header{}
 	h.blockSize = uint16(bsize)
 
-	lpb = uint32(bsize) / LabelSize
+	lpb := uint32(bsize) / LabelSize
 
-	nblock = uint32(devsize(fd) / int64(bsize))
+	nblock := uint32(devsize(fd) / int64(bsize))
 
 	/* sanity check */
 	if nblock < uint32((HeaderOffset*10)/bsize) {
@@ -202,8 +197,8 @@ func partition(fd int, bsize int, h *Header) {
 
 	h.super = (HeaderOffset + 2*uint32(bsize)) / uint32(bsize)
 	h.label = h.super + 1
-	ndata = uint32((uint64(lpb)) * uint64(nblock-h.label) / uint64(lpb+1))
-	nlabel = (ndata + lpb - 1) / lpb
+	ndata := uint32((uint64(lpb)) * uint64(nblock-h.label) / uint64(lpb+1))
+	nlabel := (ndata + lpb - 1) / lpb
 	h.data = h.label + nlabel
 	h.end = h.data + ndata
 }
@@ -234,10 +229,7 @@ func entryInit(e *Entry) {
 }
 
 func rootMetaInit(e *Entry) {
-	var de DirEntry
-	var me MetaEntry
-
-	de = DirEntry{}
+	de := DirEntry{}
 	de.elem = "root"
 	de.entry = 0
 	de.gen = 0
@@ -263,6 +255,7 @@ func rootMetaInit(e *Entry) {
 		buf[i] = 0
 	}
 	mb := InitMetaBlock(buf, bsize, bsize/100)
+	var me MetaEntry
 	me.size = uint16(deSize(&de))
 	o, err := mb.Alloc(int(me.size))
 	assert(err == nil)
@@ -308,7 +301,7 @@ func rootInit(e *Entry) uint32 {
 	e.tag = tag
 	localToGlobal(addr, e.score)
 
-	addr = uint32(blockAlloc(BtDir, RootTag))
+	addr = blockAlloc(BtDir, RootTag)
 	for i := 0; i < bsize; i++ {
 		buf[i] = 0
 	}
@@ -324,9 +317,8 @@ var blockAlloc_addr uint32
 
 func blockAlloc(typ int, tag uint32) uint32 {
 	var l Label
-	var lpb int
 
-	lpb = bsize / LabelSize
+	lpb := bsize / LabelSize
 
 	blockRead(PartLabel, blockAlloc_addr/uint32(lpb))
 	if err := labelUnpack(&l, buf, int(blockAlloc_addr%uint32(lpb))); err != nil {
@@ -348,12 +340,10 @@ func blockAlloc(typ int, tag uint32) uint32 {
 }
 
 func superInit(label string, root uint32, score *venti.Score) {
-	var s Super
-
 	for i := 0; i < bsize; i++ {
 		buf[i] = 0
 	}
-	s = Super{}
+	s := Super{}
 	s.version = SuperVersion
 	s.epochLow = 1
 	s.epochHigh = 1
@@ -445,13 +435,6 @@ func ventiRead(score *venti.Score, typ int) int {
 }
 
 func ventiRoot(host string, s string) uint32 {
-	var i int
-	var n int
-	var de DirEntry
-	var me MetaEntry
-	var e Entry
-	var root venti.Root
-
 	var score venti.Score
 	if err := parseScore(score[:], s); err != nil {
 		log.Fatalf("bad score '%s': %v", s, err)
@@ -467,17 +450,18 @@ func ventiRoot(host string, s string) uint32 {
 	addr := blockAlloc(BtDir, tag)
 
 	ventiRead(&score, venti.RootType)
+	var root venti.Root
 	if err := venti.RootUnpack(&root, buf); err != nil {
 		log.Fatalf("corrupted root: vtRootUnpack: %v", err)
 	}
-	n = ventiRead(root.Score, venti.DirType)
+	n := ventiRead(root.Score, venti.DirType)
 
 	/*
 	 * Fossil's vac archives start with an extra layer of source,
 	 * but vac's don't.
 	 */
+	var e Entry
 	if n <= 2*venti.EntrySize {
-
 		if err := entryUnpack(&e, buf, 0); err != nil {
 			log.Fatalf("bad root: top entry: %v", err)
 		}
@@ -487,7 +471,7 @@ func ventiRoot(host string, s string) uint32 {
 	/*
 	 * There should be three root sources (and nothing else) here.
 	 */
-	for i = 0; i < 3; i++ {
+	for i := int(0); i < 3; i++ {
 		err := entryUnpack(&e, buf, i)
 		if err != nil || e.flags&venti.EntryActive == 0 || e.psize < 256 || e.dsize < 256 {
 			log.Fatalf("bad root: entry %d", i)
@@ -510,8 +494,10 @@ func ventiRoot(host string, s string) uint32 {
 	if err != nil {
 		log.Fatalf("bad root: UnpackMetaBlock: %v", err)
 	}
+	var me MetaEntry
 	mb.meUnpack(&me, 0)
-	if err = mb.deUnpack(&de, &me); err != nil {
+	var de DirEntry
+	if err := mb.deUnpack(&de, &me); err != nil {
 		log.Fatalf("bad root: dirUnpack: %v", err)
 	}
 	if de.qidSpace == 0 {
@@ -540,9 +526,6 @@ func ventiRoot(host string, s string) uint32 {
 }
 
 func parseScore(score []byte, buf string) error {
-	var i int
-	var c int
-
 	for i := 0; i < venti.ScoreSize; i++ {
 		score[i] = 0
 	}
@@ -550,7 +533,8 @@ func parseScore(score []byte, buf string) error {
 	if len(buf) < venti.ScoreSize*2 {
 		return fmt.Errorf("short buffer: %d < %d", len(buf), venti.ScoreSize*2)
 	}
-	for i = 0; i < venti.ScoreSize*2; i++ {
+	var c int
+	for i := int(0); i < venti.ScoreSize*2; i++ {
 		if buf[i] >= '0' && buf[i] <= '9' {
 			c = int(buf[i]) - '0'
 		} else if buf[i] >= 'a' && buf[i] <= 'f' {

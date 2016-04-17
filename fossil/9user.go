@@ -80,8 +80,6 @@ func _userByUid(box *Ubox, uid string) (*User, error) {
 }
 
 func unameByUid(uid string) string {
-	var uname string
-
 	ubox.lock.RLock()
 	u, err := _userByUid(ubox.box, uid)
 	if err != nil {
@@ -89,17 +87,15 @@ func unameByUid(uid string) string {
 		return ""
 	}
 
-	uname = u.uname
+	uname := u.uname
 	ubox.lock.RUnlock()
 
 	return uname
 }
 
 func _userByUname(box *Ubox, uname string) (*User, error) {
-	var u *User
-
 	if box != nil {
-		for u = box.nhash[userHash(uname)]; u != nil; u = u.nhash {
+		for u := box.nhash[userHash(uname)]; u != nil; u = u.nhash {
 			if u.uname == uname {
 				return u, nil
 			}
@@ -110,8 +106,6 @@ func _userByUname(box *Ubox, uname string) (*User, error) {
 }
 
 func uidByUname(uname string) string {
-	var uid string
-
 	ubox.lock.RLock()
 	u, err := _userByUname(ubox.box, uname)
 	if err != nil {
@@ -119,7 +113,7 @@ func uidByUname(uname string) string {
 		return ""
 	}
 
-	uid = u.uid
+	uid := u.uid
 	ubox.lock.RUnlock()
 
 	return uid
@@ -127,7 +121,6 @@ func uidByUname(uname string) string {
 
 func _groupMember(box *Ubox, group string, member string, whenNoGroup bool) bool {
 	var g *User
-	var m *User
 	var err error
 
 	/*
@@ -139,6 +132,7 @@ func _groupMember(box *Ubox, group string, member string, whenNoGroup bool) bool
 	if err != nil {
 		return whenNoGroup
 	}
+	var m *User
 	m, err = _userByUname(box, member)
 	if m == nil {
 		return false
@@ -179,12 +173,11 @@ func groupWriteMember(uname string) bool {
 }
 
 func _groupRemMember(box *Ubox, g *User, member string) error {
-	var i int
-
 	if _, err := _userByUname(box, member); err != nil {
 		return err
 	}
 
+	var i int
 	for i = 0; i < len(g.group); i++ {
 		if g.group[i] == member {
 			break
@@ -229,6 +222,7 @@ func _groupAddMember(box *Ubox, g *User, member string) error {
 		return err
 	}
 	if _groupMember(box, g.uid, u.uname, false) {
+		var err error
 		if g.uname == member {
 			err = fmt.Errorf("uname: '%s' always in own group", member)
 		} else {
@@ -258,8 +252,6 @@ func groupMember(group string, member string) bool {
 }
 
 func groupLeader(group string, member string) bool {
-	var g *User
-
 	/*
 	 * Is 'member' the leader of 'group'?
 	 * Note that 'group' is a 'uid' and not a 'uname'.
@@ -272,6 +264,7 @@ func groupLeader(group string, member string) bool {
 	ubox.lock.RLock()
 	defer ubox.lock.RUnlock()
 
+	var g *User
 	g, err := _userByUid(ubox.box, group)
 	if err != nil {
 		return false
@@ -288,9 +281,7 @@ func groupLeader(group string, member string) bool {
 }
 
 func userAlloc(uid string, uname string) *User {
-	var u *User
-
-	u = new(User)
+	u := new(User)
 	u.uid = uid
 	u.uname = uname
 
@@ -317,11 +308,6 @@ func (u *User) String() string {
 }
 
 func usersFileWrite(box *Ubox) error {
-	var fs *Fs
-	var u *User
-	var dir *File
-	var file *File
-	var buf bytes.Buffer
 	var err error
 
 	fsys, err := fsysGet("main")
@@ -333,22 +319,25 @@ func usersFileWrite(box *Ubox) error {
 	fsysFsRlock(fsys)
 	defer fsysFsRUnlock(fsys)
 
-	fs = fsysGetFs(fsys)
+	fs := fsysGetFs(fsys)
 
 	/*
 	 * BUG:
 	 * 	the owner/group/permissions need to be thought out.
 	 */
 
+	var dir *File
 	dir, err = fileOpen(fs, "/active")
 	if err != nil {
 		return err
 	}
+	var file *File
 	file, err = fileWalk(dir, uidadm)
 	if err != nil {
 		file, err = fileCreate(dir, uidadm, ModeDir|0775, uidadm)
 	}
 	fileDecRef(dir)
+	var buf bytes.Buffer
 	if err != nil {
 		goto tidy
 	}
@@ -365,7 +354,7 @@ func usersFileWrite(box *Ubox) error {
 		goto tidy
 	}
 
-	for u = box.head; u != nil; u = u.next {
+	for u := box.head; u != nil; u = u.next {
 		buf.WriteString(fmt.Sprintf("%v\n", u))
 	}
 
@@ -380,10 +369,9 @@ tidy:
 }
 
 func uboxRemUser(box *Ubox, u *User) {
-	var h **User
 	var up *User
 
-	h = &box.ihash[userHash(u.uid)]
+	h := &box.ihash[userHash(u.uid)]
 	for up = *h; up != nil && up != u; up = up.ihash {
 		h = &up.ihash
 	}
@@ -412,10 +400,7 @@ func uboxRemUser(box *Ubox, u *User) {
 }
 
 func uboxAddUser(box *Ubox, u *User) {
-	var h **User
-	var up *User
-
-	h = &box.ihash[userHash(u.uid)]
+	h := &box.ihash[userHash(u.uid)]
 	u.ihash = *h
 	*h = u
 	box.length += len(u.uid)
@@ -426,7 +411,7 @@ func uboxAddUser(box *Ubox, u *User) {
 	box.length += len(u.uname)
 
 	h = &box.head
-	for up = *h; up != nil && up.uid < u.uid; up = up.next {
+	for up := *h; up != nil && up.uid < u.uid; up = up.next {
 		h = &up.next
 	}
 	u.next = *h
@@ -437,18 +422,14 @@ func uboxAddUser(box *Ubox, u *User) {
 }
 
 func uboxDump(box *Ubox) {
-	var u *User
-
 	consPrintf("nuser %d len = %d\n", box.nuser, box.length)
 
-	for u = box.head; u != nil; u = u.next {
+	for u := box.head; u != nil; u = u.next {
 		consPrintf("%U\n", u)
 	}
 }
 
 func uboxInit(users string) error {
-	var box *Ubox
-
 	/*
 	 * Strip out whitespace and comments.
 	 * Note that comments are pointless, they disappear
@@ -491,7 +472,7 @@ func uboxInit(users string) error {
 	/*
 	 * Everything is updated in a local Ubox until verified.
 	 */
-	box = new(Ubox)
+	box := new(Ubox)
 
 	/*
 	 * First pass - check format, check for duplicates
@@ -585,9 +566,6 @@ func uboxInit(users string) error {
 }
 
 func usersFileRead(path_ string) error {
-	var file *File
-	var size uint64
-
 	fsys, err := fsysGet("main")
 	if err != nil {
 		return err
@@ -598,8 +576,10 @@ func usersFileRead(path_ string) error {
 		path_ = "/active/adm/users"
 	}
 
+	var file *File
 	file, err = fileOpen(fsysGetFs(fsys), path_)
 	if err == nil {
+		var size uint64
 		if err := fileGetSize(file, &size); err == nil {
 			length := int(size)
 			buf := make([]byte, size)
@@ -617,13 +597,6 @@ func usersFileRead(path_ string) error {
 }
 
 func cmdUname(argv []string) error {
-	var u *User
-	var up *User
-	var d int
-	var i int
-	var p string
-	var uid string
-	var uname string
 	var createfmt string = "fsys main create /active/usr/%s %s %s d775"
 	var usage string = "usage: uname [-d] uname [uid|:uid|%%newname|=leader|+member|-member]"
 
@@ -645,13 +618,14 @@ func cmdUname(argv []string) error {
 		return nil
 	}
 
-	uname = argv[0]
+	uname := argv[0]
 	argc--
 	argv = argv[1:]
 
-	var err error
 	if argc == 0 {
 		ubox.lock.RLock()
+		var err error
+		var u *User
 		u, err = _userByUname(ubox.box, uname)
 		if u == nil {
 			ubox.lock.RUnlock()
@@ -666,7 +640,14 @@ func cmdUname(argv []string) error {
 	ubox.lock.Lock()
 	defer ubox.lock.Unlock()
 
+	var err error
+	var u *User
 	u, err = _userByUname(ubox.box, uname)
+	var d int
+	var i int
+	var p string
+	var uid string
+	var up *User
 	for {
 		tmp1 := argc
 		argc--
@@ -793,7 +774,7 @@ func cmdUname(argv []string) error {
 		argv = argv[1:]
 	}
 
-	if err = usersFileWrite(ubox.box); err != nil {
+	if err := usersFileWrite(ubox.box); err != nil {
 		return err
 	}
 
@@ -805,7 +786,6 @@ func cmdUname(argv []string) error {
 }
 
 func cmdUsers(argv []string) error {
-	var box *Ubox
 	var usage string = "usage: users [-d | -r file] [-w]"
 
 	flags := flag.NewFlagSet("wstat", flag.ContinueOnError)
@@ -837,7 +817,7 @@ func cmdUsers(argv []string) error {
 	}
 
 	ubox.lock.RLock()
-	box = ubox.box
+	box := ubox.box
 	consPrintf("\tnuser %d len %d\n", box.nuser, box.length)
 
 	var err error

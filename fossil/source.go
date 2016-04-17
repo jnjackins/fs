@@ -47,11 +47,6 @@ func sourceIsLocked(r *Source) bool {
 
 func sourceAlloc(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapshot bool) (*Source, error) {
 	var epb int
-	var epoch uint32
-	var pname string
-	var r *Source
-	var e Entry
-	var err error
 
 	assert(p == nil || sourceIsLocked(p))
 
@@ -59,10 +54,12 @@ func sourceAlloc(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 		assert(offset == 0)
 		epb = 1
 	} else {
-
 		epb = p.dsize / venti.EntrySize
 	}
 
+	var e Entry
+	var epoch uint32
+	var r *Source
 	if b.l.typ != BtDir {
 		goto Bad
 	}
@@ -72,14 +69,14 @@ func sourceAlloc(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	 * can legitimately happen here. all the others
 	 * get prints.
 	 */
-	if err = entryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
-		pname = sourceName(p)
+	if err := entryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
+		pname := sourceName(p)
 		consPrintf("%s: %s %v: sourceAlloc: entryUnpack failed\n", fs.name, pname, b.score)
 		goto Bad
 	}
 
 	if e.flags&venti.EntryActive == 0 {
-		pname = sourceName(p)
+		pname := sourceName(p)
 		if false {
 			consPrintf("%s: %s %v: sourceAlloc: not active\n", fs.name, pname, e.score)
 		}
@@ -87,25 +84,25 @@ func sourceAlloc(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	}
 
 	if e.psize < 256 || e.dsize < 256 {
-		pname = sourceName(p)
+		pname := sourceName(p)
 		consPrintf("%s: %s %v: sourceAlloc: psize %d or dsize %d < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
 		goto Bad
 	}
 
 	if int(e.depth) < sizeToDepth(e.size, int(e.psize), int(e.dsize)) {
-		pname = sourceName(p)
+		pname := sourceName(p)
 		consPrintf("%s: %s %v: sourceAlloc: depth %d size %llud "+"psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
 		goto Bad
 	}
 
 	if (e.flags&venti.EntryLocal != 0) && e.tag == 0 {
-		pname = sourceName(p)
+		pname := sourceName(p)
 		consPrintf("%s: %s %v: sourceAlloc: flags %#x tag %#x\n", fs.name, pname, e.score, e.flags, e.tag)
 		goto Bad
 	}
 
 	if int(e.dsize) > fs.blockSize || int(e.psize) > fs.blockSize {
-		pname = sourceName(p)
+		pname := sourceName(p)
 		consPrintf("%s: %s %v: sourceAlloc: psize %d or dsize %d "+"> blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
 		goto Bad
 	}
@@ -166,7 +163,6 @@ Bad:
 }
 
 func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
-	var r *Source
 	var b *Block
 	var err error
 
@@ -181,16 +177,13 @@ func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
 		return nil, EBadRoot
 	}
 
+	var r *Source
 	r, err = sourceAlloc(fs, b, nil, 0, mode, false)
 	blockPut(b)
 	return r, err
 }
 
 func sourceOpen(r *Source, offset uint32, mode int, issnapshot bool) (*Source, error) {
-	var bn uint32
-	var b *Block
-	var err error
-
 	assert(r.b != nil)
 	if r.mode == OReadWrite {
 		assert(r.epoch == r.b.l.epoch)
@@ -199,8 +192,10 @@ func sourceOpen(r *Source, offset uint32, mode int, issnapshot bool) (*Source, e
 		return nil, ENotDir
 	}
 
-	bn = offset / (uint32(r.dsize) / venti.EntrySize)
+	bn := offset / (uint32(r.dsize) / venti.EntrySize)
 
+	var b *Block
+	var err error
 	b, err = sourceBlock(r, bn, mode)
 	if err != nil {
 		return nil, err
@@ -211,26 +206,16 @@ func sourceOpen(r *Source, offset uint32, mode int, issnapshot bool) (*Source, e
 }
 
 func sourceCreate(r *Source, dsize int, dir bool, offset uint32) (*Source, error) {
-	var i int
-	var epb int
-	var psize int
-	var bn uint32
-	var size uint32
-	var b *Block
-	var e Entry
-	var rr *Source
-	var err error
-
 	assert(r.b != nil)
 
 	if !r.dir {
 		return nil, ENotDir
 	}
 
-	epb = r.dsize / venti.EntrySize
-	psize = (dsize / venti.ScoreSize) * venti.ScoreSize
+	epb := r.dsize / venti.EntrySize
+	psize := (dsize / venti.ScoreSize) * venti.ScoreSize
 
-	size = sourceGetDirSize(r)
+	size := sourceGetDirSize(r)
 	if offset == 0 {
 		// look at a random block to see if we can find an empty entry
 		offset = uint32(rand.Intn(int(size + 1)))
@@ -238,9 +223,14 @@ func sourceCreate(r *Source, dsize int, dir bool, offset uint32) (*Source, error
 	}
 
 	/* try the given block and then try the last block */
+	var b *Block
+	var bn uint32
+	var e Entry
+	var err error
+	var i int
 	for {
 		bn = offset / uint32(epb)
-		b, err = sourceBlock(r, uint32(bn), OReadWrite)
+		b, err = sourceBlock(r, bn, OReadWrite)
 		if err != nil {
 			return nil, err
 		}
@@ -281,12 +271,13 @@ Found:
 
 	offset = bn*uint32(epb) + uint32(i)
 	if offset+1 > size {
-		if err = sourceSetDirSize(r, uint32(offset)+1); err != nil {
+		if err := sourceSetDirSize(r, offset+1); err != nil {
 			blockPut(b)
 			return nil, err
 		}
 	}
 
+	var rr *Source
 	rr, err = sourceAlloc(r.fs, b, r, offset, OReadWrite, false)
 	blockPut(b)
 	return rr, err
@@ -296,7 +287,6 @@ func sourceKill(r *Source, doremove bool) error {
 	var e Entry
 	var b *Block
 	var addr, tag uint32
-	var typ int
 	var err error
 
 	assert(r.b != nil)
@@ -316,7 +306,7 @@ func sourceKill(r *Source, doremove bool) error {
 	/* remember info on link we are removing */
 	addr = globalToLocal(e.score)
 
-	typ = EntryType(&e)
+	typ := EntryType(&e)
 	tag = e.tag
 
 	if doremove {
@@ -373,26 +363,23 @@ func sourceGetSize(r *Source) uint64 {
 }
 
 func sourceShrinkSize(r *Source, e *Entry, size uint64) error {
-	var i int
-	var typ int
-	var ppb int
-	var ptrsz uint64
-	var addr uint32
 	var b *Block
 	var err error
 
-	typ = EntryType(e)
+	typ := EntryType(e)
 	b, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
 
-	ptrsz = uint64(e.dsize)
-	ppb = int(e.psize) / venti.ScoreSize
-	for i = 0; i+1 < int(e.depth); i++ {
+	ptrsz := uint64(e.dsize)
+	ppb := int(e.psize) / venti.ScoreSize
+	for i := int(0); i+1 < int(e.depth); i++ {
 		ptrsz *= uint64(ppb)
 	}
 
+	var addr uint32
+	var i int
 	for typ&BtLevelMask != 0 {
 		if b.addr == NilBlock || b.l.epoch != r.fs.ehi {
 			/* not worth copying the block just so we can zero some of it */
@@ -454,11 +441,6 @@ func sourceShrinkSize(r *Source, e *Entry, size uint64) error {
 }
 
 func sourceSetSize(r *Source, size uint64) error {
-	var depth int
-	var e Entry
-	var b *Block
-	var err error
-
 	assert(r.b != nil)
 	if size == 0 {
 		return sourceTruncate(r)
@@ -468,6 +450,9 @@ func sourceSetSize(r *Source, size uint64) error {
 		return ETooBig
 	}
 
+	var b *Block
+	var e Entry
+	var err error
 	b, err = sourceLoad(r, &e)
 	if err != nil {
 		return err
@@ -479,15 +464,15 @@ func sourceSetSize(r *Source, size uint64) error {
 		return nil
 	}
 
-	depth = sizeToDepth(size, int(e.psize), int(e.dsize))
+	depth := sizeToDepth(size, int(e.psize), int(e.dsize))
 
 	if depth < int(e.depth) {
-		if err = sourceShrinkDepth(r, b, &e, depth); err != nil {
+		if err := sourceShrinkDepth(r, b, &e, depth); err != nil {
 			blockPut(b)
 			return err
 		}
 	} else if depth > int(e.depth) {
-		if err = sourceGrowDepth(r, b, &e, depth); err != nil {
+		if err := sourceGrowDepth(r, b, &e, depth); err != nil {
 			blockPut(b)
 			return err
 		}
@@ -506,27 +491,20 @@ func sourceSetSize(r *Source, size uint64) error {
 }
 
 func sourceSetDirSize(r *Source, ds uint32) error {
-	var size uint64
-	var epb int
-
 	assert(r.b != nil)
-	epb = r.dsize / venti.EntrySize
+	epb := r.dsize / venti.EntrySize
 
-	size = uint64(r.dsize) * (uint64(ds) / uint64(epb))
+	size := uint64(r.dsize) * (uint64(ds) / uint64(epb))
 	size += venti.EntrySize * (uint64(ds) % uint64(epb))
 	return sourceSetSize(r, size)
 }
 
 func sourceGetDirSize(r *Source) uint32 {
-	var ds uint32
-	var size uint64
-	var epb int
-
 	assert(r.b != nil)
-	epb = r.dsize / venti.EntrySize
+	epb := r.dsize / venti.EntrySize
 
-	size = sourceGetSize(r)
-	ds = uint32(uint64(epb) * (size / uint64(r.dsize)))
+	size := sourceGetSize(r)
+	ds := uint32(uint64(epb) * (size / uint64(r.dsize)))
 	ds += uint32((size % uint64(r.dsize)) / venti.EntrySize)
 	return ds
 }
@@ -562,13 +540,10 @@ func sourceSetEntry(r *Source, e *Entry) error {
 
 func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) {
 	var b *Block
-	var c *Cache
-	var addr uint32
 	var typ int
-	var oe Entry
 	var err error
 
-	c = fs.cache
+	c := fs.cache
 
 	if p.l.typ&BtLevelMask == 0 {
 		assert(p.l.typ == BtDir)
@@ -598,7 +573,7 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 		return b, nil
 	}
 
-	oe = *e
+	oe := *e
 
 	/*
 	 * Copy on write.
@@ -609,7 +584,7 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 		e.flags |= venti.EntryLocal
 	}
 
-	addr = b.addr
+	addr := b.addr
 	b, err = blockCopy(b, e.tag, fs.ehi, fs.elo)
 	if err != nil {
 		return nil, err
@@ -645,32 +620,29 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
  */
 func sourceGrowDepth(r *Source, p *Block, e *Entry, depth int) error {
 	var b *Block
-	var bb *Block
-	var tag uint32
-	var typ int
-	var oe Entry
 	var err error
 
 	assert(r.b != nil)
 	assert(depth <= venti.PointerDepth)
 
-	typ = EntryType(e)
+	typ := EntryType(e)
 	b, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
 
-	tag = e.tag
+	tag := e.tag
 	if tag == 0 {
 		tag = sourceTagGen()
 	}
 
-	oe = *e
+	oe := *e
 
 	/*
 	 * Keep adding layers until we get to the right depth
 	 * or an error occurs.
 	 */
+	var bb *Block
 	for int(e.depth) < depth {
 		bb, err = cacheAllocBlock(r.fs.cache, typ+1, tag, r.fs.ehi, r.fs.elo)
 		if err != nil {
@@ -704,22 +676,18 @@ func sourceGrowDepth(r *Source, p *Block, e *Entry, depth int) error {
 
 func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 	var b, nb, ob, rb *Block
-	var tag uint32
-	var typ int
-	var d int
-	var oe Entry
 	var err error
 
 	assert(r.b != nil)
 	assert(depth <= venti.PointerDepth)
 
-	typ = EntryType(e)
+	typ := EntryType(e)
 	rb, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
 
-	tag = e.tag
+	tag := e.tag
 	if tag == 0 {
 		tag = sourceTagGen()
 	}
@@ -728,7 +696,7 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 	 * Walk down to the new root block.
 	 * We may stop early, but something is better than nothing.
 	 */
-	oe = *e
+	oe := *e
 
 	ob = nil
 	b = rb
@@ -737,6 +705,7 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 	copy(score[:], b.data)
 
 	/* BUG: explain typ++.  i think it is a real bug */
+	var d int
 	for d = int(e.depth); d > depth; d-- {
 		nb, err = cacheGlobal(r.fs.cache, &score, typ-1, tag, OReadWrite)
 		if err != nil {
@@ -801,7 +770,6 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 		return nil
 	}
 	return errors.New("bad depth")
-
 }
 
 /*
@@ -810,39 +778,37 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
  * to 1 gives us the block that contains the pointer to bn.
  */
 func _sourceBlock(r *Source, bn uint32, mode int, early int, tag uint32) (*Block, error) {
-	var b *Block
-	var bb *Block
-	var index [venti.PointerDepth + 1]int
-	var e Entry
-	var i int
-	var np int
-	var m int
-	var err error
-
 	assert(r.b != nil)
 	assert(bn != NilBlock)
 
 	/* mode for intermediate block */
-	m = mode
+	m := mode
 
 	if m == OOverWrite {
 		m = OReadWrite
 	}
 
+	var b *Block
+	var e Entry
+	var err error
 	b, err = sourceLoad(r, &e)
 	if err != nil {
 		return nil, err
 	}
 	if r.issnapshot && (e.flags&venti.EntryNoArchive != 0) {
 		blockPut(b)
-		err = ENotArchived
+		err := ENotArchived
 		return nil, err
 	}
 
+	var bb *Block
+	var i int
+	var index [venti.PointerDepth + 1]int
+	var np int
 	if tag != 0 {
 		if e.tag == 0 {
 			e.tag = tag
-		} else if uint32(e.tag) != tag {
+		} else if e.tag != tag {
 			fmt.Fprintf(os.Stderr, "tag mismatch\n")
 			err = fmt.Errorf("tag mismatch")
 			goto Err
@@ -874,7 +840,7 @@ func _sourceBlock(r *Source, bn uint32, mode int, early int, tag uint32) (*Block
 
 	index[e.depth] = int(r.offset % uint32(r.epb))
 
-	for i = int(e.depth); i >= early; i-- {
+	for i := int(e.depth); i >= early; i-- {
 		bb, err = blockWalk(b, index[i], m, r.fs, &e)
 		if err != nil {
 			goto Err
@@ -930,10 +896,6 @@ func sourceClose(r *Source) {
  * snapshot file system (OReadOnly).
  */
 func sourceLoadBlock(r *Source, mode int) (*Block, error) {
-	var addr uint32
-	var b *Block
-	var err error
-
 	switch r.mode {
 	default:
 		assert(false)
@@ -951,6 +913,8 @@ func sourceLoadBlock(r *Source, mode int) (*Block, error) {
 		 */
 		//assert(r->epoch >= r->fs->elo);
 		if r.epoch == r.fs.ehi {
+			var b *Block
+			var err error
 			b, err = cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadWrite)
 			if err != nil {
 				return nil, err
@@ -960,10 +924,12 @@ func sourceLoadBlock(r *Source, mode int) (*Block, error) {
 		}
 
 		assert(r.parent != nil)
-		if err = sourceLock(r.parent, OReadWrite); err != nil {
+		if err := sourceLock(r.parent, OReadWrite); err != nil {
 			return nil, err
 		}
-		b, err = sourceBlock(r.parent, uint32(r.offset)/uint32(r.epb), OReadWrite)
+		var b *Block
+		var err error
+		b, err = sourceBlock(r.parent, r.offset/uint32(r.epb), OReadWrite)
 		sourceUnlock(r.parent)
 		if err != nil {
 			return nil, err
@@ -979,11 +945,13 @@ func sourceLoadBlock(r *Source, mode int) (*Block, error) {
 		return b, nil
 
 	case OReadOnly:
-		addr = globalToLocal(r.score)
+		addr := globalToLocal(r.score)
 		if addr == NilBlock {
 			return cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, mode)
 		}
 
+		var b *Block
+		var err error
 		b, err = cacheLocalData(r.fs.cache, addr, BtDir, r.tag, mode, r.scoreEpoch)
 		if err == nil {
 			return b, nil
@@ -999,10 +967,11 @@ func sourceLoadBlock(r *Source, mode int) (*Block, error) {
 		 * the archiver isn't going around deleting blocks.)
 		 */
 		if err == ELabelMismatch {
-			if err = sourceLock(r.parent, OReadOnly); err != nil {
+			if err := sourceLock(r.parent, OReadOnly); err != nil {
 				return nil, err
 			}
-			b, err = sourceBlock(r.parent, uint32(r.offset)/uint32(r.epb), OReadOnly)
+			var b *Block
+			b, err = sourceBlock(r.parent, r.offset/uint32(r.epb), OReadOnly)
 			sourceUnlock(r.parent)
 			if err == nil {
 				fmt.Fprintf(os.Stderr, "sourceAlloc: lost %v found %v\n", r.score, b.score)
@@ -1042,10 +1011,6 @@ func sourceLock(r *Source, mode int) error {
  * We also try to lock blocks in left-to-right order within the tree.
  */
 func sourceLock2(r *Source, rr *Source, mode int) error {
-	var b *Block
-	var bb *Block
-	var err error
-
 	if rr == nil {
 		return sourceLock(r, mode)
 	}
@@ -1054,6 +1019,9 @@ func sourceLock2(r *Source, rr *Source, mode int) error {
 		mode = r.mode
 	}
 
+	var b *Block
+	var bb *Block
+	var err error
 	if r.parent == rr.parent && r.offset/uint32(r.epb) == rr.offset/uint32(rr.epb) {
 		b, err = sourceLoadBlock(r, mode)
 		if err != nil {
@@ -1099,23 +1067,19 @@ func sourceLock2(r *Source, rr *Source, mode int) error {
 }
 
 func sourceUnlock(r *Source) {
-	var b *Block
-
 	if r.b == nil {
 		fmt.Fprintf(os.Stderr, "sourceUnlock: already unlocked\n")
 		panic("abort")
 	}
 
-	b = r.b
+	b := r.b
 	r.b = nil
 	blockPut(b)
 }
 
 func sourceLoad(r *Source, e *Entry) (*Block, error) {
-	var b *Block
-
 	assert(r.b != nil)
-	b = r.b
+	b := r.b
 	if err := entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
 		return nil, err
 	}
@@ -1128,11 +1092,10 @@ func sourceLoad(r *Source, e *Entry) (*Block, error) {
 }
 
 func sizeToDepth(s uint64, psize int, dsize int) int {
-	var np int
 	var d int
 
 	/* determine pointer depth */
-	np = psize / venti.ScoreSize
+	np := psize / venti.ScoreSize
 
 	s = (s + uint64(dsize) - 1) / uint64(dsize)
 	for d = 0; s > 1; d++ {

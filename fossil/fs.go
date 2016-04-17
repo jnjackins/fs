@@ -33,10 +33,6 @@ type Snap struct {
 }
 
 func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
-	var bs *Block
-	var super Super
-	var err error
-
 	var m int
 	switch mode {
 	default:
@@ -48,6 +44,7 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	}
 
 	var fd int
+	var err error
 	fd, err = syscall.Open(file, m, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %v", file, err)
@@ -75,6 +72,7 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 	var b *Block
 	b, err = cacheLocal(fs.cache, PartSuper, 0, mode)
+	var super Super
 	if err != nil {
 		goto Err
 	}
@@ -100,6 +98,7 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		if mode == OReadOnly || err != EBadRoot {
 			goto Err
 		}
+		var b *Block
 		b, err = cacheLocalData(fs.cache, super.active, BtDir, RootTag, OReadWrite, 0)
 		if err != nil {
 			err = fmt.Errorf("cacheLocalData: %v", err)
@@ -120,6 +119,7 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		var oscore venti.Score
 		localToGlobal(super.active, &oscore)
 		super.active = b.addr
+		var bs *Block
 		bs, err = cacheLocal(fs.cache, PartSuper, 0, OReadWrite)
 		if err != nil {
 			blockPut(b)
@@ -261,7 +261,6 @@ func superWrite(b *Block, super *Super, forceWrite int) {
  */
 func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 	var dir, f *File
-	var err error
 
 	if dstpath != "" {
 		elem := filepath.Base(dstpath)
@@ -269,6 +268,7 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		if p == "." {
 			p = "/"
 		}
+		var err error
 		dir, err = fileOpen(fs, p)
 		if err != nil {
 			return nil, err
@@ -280,6 +280,7 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		/*
 		 * a snapshot intended to be archived to venti.
 		 */
+		var err error
 		dir, err = fileOpen(fs, "/archive")
 		if err != nil {
 			return nil, err
@@ -321,6 +322,7 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		 * There may well be a better naming scheme.
 		 * (I'd have used hh:mm but ':' is reserved in Microsoft file systems.)
 		 */
+		var err error
 		dir, err = fileOpen(fs, "/snapshot")
 		if err != nil {
 			return nil, err
@@ -374,22 +376,19 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 }
 
 func fsNeedArch(fs *Fs, archMinute uint) bool {
-	var need bool
-	var f *File
-	var buf string
-	var err error
-
 	then := time.Now().Unix()
-	now := time.Unix(int64(then), 0).Local()
+	now := time.Unix(then, 0).Local()
 
 	/* back up to yesterday if necessary */
 	if uint(now.Hour()) < archMinute/60 || uint(now.Hour()) == archMinute/60 && uint(now.Minute()) < archMinute%60 {
 		now = time.Unix(then-86400, 0).Local()
 	}
 
-	buf = fmt.Sprintf("/archive/%d/%02d%02d", now.Year(), now.Month()+1, now.Day())
-	need = true
+	buf := fmt.Sprintf("/archive/%d/%02d%02d", now.Year(), now.Month()+1, now.Day())
+	need := bool(true)
 	fs.elk.RLock()
+	var err error
+	var f *File
 	f, err = fileOpen(fs, buf)
 	if err == nil {
 		need = false
@@ -401,17 +400,16 @@ func fsNeedArch(fs *Fs, archMinute uint) bool {
 }
 
 func fsEpochLow(fs *Fs, low uint32) error {
-	var bs *Block
-	var super Super
-	var err error
-
 	fs.elk.Lock()
 	if low > fs.ehi {
-		err = fmt.Errorf("bad low epoch (must be <= %d)", fs.ehi)
+		err := fmt.Errorf("bad low epoch (must be <= %d)", fs.ehi)
 		fs.elk.Unlock()
 		return err
 	}
 
+	var bs *Block
+	var err error
+	var super Super
 	bs, err = superGet(fs.cache, &super)
 	if err != nil {
 		fs.elk.Unlock()
@@ -428,12 +426,7 @@ func fsEpochLow(fs *Fs, low uint32) error {
 }
 
 func bumpEpoch(fs *Fs, doarchive bool) error {
-	var oldaddr uint32
 	var b *Block
-	var bs *Block
-	var e Entry
-	var r *Source
-	var super Super
 	var err error
 
 	/*
@@ -443,14 +436,14 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 * and any (human) debuggers, store a pointer
 	 * to the old root block in entry 1 of the new root block.
 	 */
-	r = fs.source
+	r := fs.source
 
 	b, err = cacheGlobal(fs.cache, r.score, BtDir, RootTag, OReadOnly)
 	if err != nil {
 		return err
 	}
 
-	e = Entry{
+	e := Entry{
 		flags: venti.EntryActive | venti.EntryLocal | venti.EntryDir,
 		tag:   RootTag,
 		snap:  b.l.epoch,
@@ -464,6 +457,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	}
 
 	if false {
+		var oldaddr uint32
 		fmt.Fprintf(os.Stderr, "%s: snapshot root from %d to %d\n", argv0, oldaddr, b.addr)
 	}
 	entryPack(&e, b.data, 1)
@@ -472,6 +466,8 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	/*
 	 * Update the superblock with the new root and epoch.
 	 */
+	var bs *Block
+	var super Super
 	bs, err = superGet(fs.cache, &super)
 	if err != nil {
 		return err
@@ -482,7 +478,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	r.epoch = fs.ehi
 
 	super.epochHigh = fs.ehi
-	oldaddr = super.active
+	oldaddr := super.active
 	super.active = b.addr
 	if doarchive {
 		super.next = oldaddr
@@ -521,17 +517,16 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 func saveQid(fs *Fs) error {
 	var b *Block
 	var super Super
-	var qidMax uint64
 	var err error
 
 	b, err = superGet(fs.cache, &super)
 	if err != nil {
 		return err
 	}
-	qidMax = super.qid
+	qidMax := super.qid
 	blockPut(b)
 
-	if err = fileSetQidSpace(fs.file, 0, qidMax); err != nil {
+	if err := fileSetQidSpace(fs.file, 0, qidMax); err != nil {
 		return err
 	}
 
@@ -540,7 +535,6 @@ func saveQid(fs *Fs) error {
 
 func fsSnapshot(fs *Fs, srcpath string, dstpath string, doarchive bool) error {
 	var src, dst *File
-	var err error
 
 	assert(fs.mode == OReadWrite)
 
@@ -560,6 +554,7 @@ func fsSnapshot(fs *Fs, srcpath string, dstpath string, doarchive bool) error {
 	if srcpath == "" {
 		srcpath = "/active"
 	}
+	var err error
 	src, err = fileOpen(fs, srcpath)
 	if err != nil {
 		goto Err
@@ -675,11 +670,11 @@ func fsVac(fs *Fs, name string, score *venti.Score) error {
 	}
 
 	var e, ee Entry
-	var de DirEntry
 	if err := fileGetSources(f, &e, &ee); err != nil {
 		fileDecRef(f)
 		return err
 	}
+	var de DirEntry
 	if err := fileGetDir(f, &de); err != nil {
 		fileDecRef(f)
 		return err
@@ -698,21 +693,11 @@ func vtWriteBlock(z *venti.Session, buf []byte, n uint, typ uint, score *venti.S
 }
 
 func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score *venti.Score) error {
-	var buf []byte
 	var i, o int
-	var n uint
-	var de DirEntry
-	var e Entry
-	var ee Entry
-	var eee Entry
-	var mb *MetaBlock
-	var me MetaEntry
-	var root venti.Root
-	var err error
 
-	e = *pe
-	ee = *pee
-	de = *pde
+	e := *pe
+	ee := *pee
+	de := *pde
 
 	if globalToLocal(e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && globalToLocal(ee.score) != NilBlock) {
 		return fmt.Errorf("can only vac paths already stored on venti")
@@ -721,19 +706,22 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 	/*
 	 * Build metadata source for root.
 	 */
-	n = uint(deSize(&de))
+	n := uint(deSize(&de))
 
+	var buf []byte
 	if n+MetaHeaderSize+MetaIndexSize > uint(len(buf)) {
-		err = fmt.Errorf("DirEntry too big")
+		err := fmt.Errorf("DirEntry too big")
 		return err
 	}
 
 	buf = make([]byte, 8192)
-	mb = InitMetaBlock(buf, int(n+MetaHeaderSize+MetaIndexSize), 1)
+	mb := InitMetaBlock(buf, int(n+MetaHeaderSize+MetaIndexSize), 1)
+	var err error
 	o, err = mb.Alloc(int(n))
 	if err != nil {
 		panic("abort")
 	}
+	var me MetaEntry
 	mb.Search(de.elem, &i, &me)
 	assert(me.offset == 0)
 	me.offset = o
@@ -742,8 +730,9 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 	mb.Insert(i, &me)
 	mb.Pack()
 
+	var eee Entry
 	eee.size = uint64(n) + MetaHeaderSize + MetaIndexSize
-	if err = vtWriteBlock(z, buf[:], uint(eee.size), venti.DataType, eee.score); err != nil {
+	if err := vtWriteBlock(z, buf[:], uint(eee.size), venti.DataType, eee.score); err != nil {
 		return err
 	}
 	eee.psize = 8192
@@ -759,8 +748,8 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 	entryPack(&eee, buf[:], 2)
 
 	n = venti.EntrySize * 3
-	root = venti.Root{}
-	if err = vtWriteBlock(z, buf[:], n, venti.DirType, root.Score); err != nil {
+	root := venti.Root{}
+	if err := vtWriteBlock(z, buf[:], n, venti.DirType, root.Score); err != nil {
 		return err
 	}
 
@@ -773,7 +762,7 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 	root.Name = de.elem
 	root.BlockSize = uint16(blockSize)
 	venti.RootPack(&root, buf[:])
-	if err = vtWriteBlock(z, buf[:], venti.RootSize, venti.RootType, score); err != nil {
+	if err := vtWriteBlock(z, buf[:], venti.RootSize, venti.RootType, score); err != nil {
 		return err
 	}
 
@@ -830,10 +819,8 @@ func fsNextQid(fs *Fs, qid *uint64) error {
 }
 
 func fsMetaFlush(fs *Fs) {
-	var rv int
-
 	fs.elk.RLock()
-	rv = fileMetaFlush(fs.file, true)
+	rv := fileMetaFlush(fs.file, true)
 	fs.elk.RUnlock()
 	if rv > 0 {
 		cacheFlush(fs.cache, false)
@@ -841,14 +828,7 @@ func fsMetaFlush(fs *Fs) {
 }
 
 func fsEsearch1(f *File, path_ string, savetime uint32, plo *uint32) int {
-	var n int
-	var r int
-	var de DirEntry
 	var dee *DirEntryEnum
-	var ff *File
-	var e Entry
-	var ee Entry
-	var t string
 	var err error
 
 	dee, err = deeOpen(f)
@@ -856,7 +836,13 @@ func fsEsearch1(f *File, path_ string, savetime uint32, plo *uint32) int {
 		return 0
 	}
 
-	n = 0
+	n := int(0)
+	var de DirEntry
+	var e Entry
+	var ee Entry
+	var ff *File
+	var r int
+	var t string
 	for {
 		r, err = deeRead(dee, &de)
 		if err != nil {
@@ -866,7 +852,7 @@ func fsEsearch1(f *File, path_ string, savetime uint32, plo *uint32) int {
 			ff, err = fileWalk(f, de.elem)
 			if err == nil {
 				if err = fileGetSources(ff, &e, &ee); err != nil {
-					if de.mtime >= uint32(savetime) && e.snap != 0 {
+					if de.mtime >= savetime && e.snap != 0 {
 						if e.snap < *plo {
 							*plo = e.snap
 						}
@@ -895,16 +881,15 @@ func fsEsearch1(f *File, path_ string, savetime uint32, plo *uint32) int {
 }
 
 func fsEsearch(fs *Fs, path_ string, savetime uint32, plo *uint32) int {
-	var n int
 	var f *File
-	var de DirEntry
 	var err error
 
 	f, err = fileOpen(fs, path_)
 	if err != nil {
 		return 0
 	}
-	if err = fileGetDir(f, &de); err != nil {
+	var de DirEntry
+	if err := fileGetDir(f, &de); err != nil {
 		fileDecRef(f)
 		return 0
 	}
@@ -916,14 +901,12 @@ func fsEsearch(fs *Fs, path_ string, savetime uint32, plo *uint32) int {
 	}
 
 	deCleanup(&de)
-	n = fsEsearch1(f, path_, savetime, plo)
+	n := fsEsearch1(f, path_, savetime, plo)
 	fileDecRef(f)
 	return n
 }
 
 func fsSnapshotCleanup(fs *Fs, age uint32) {
-	var lo uint32
-
 	/*
 	 * Find the best low epoch we can use,
 	 * given that we need to save all the unventied archives
@@ -931,7 +914,7 @@ func fsSnapshotCleanup(fs *Fs, age uint32) {
 	 */
 	fs.elk.RLock()
 
-	lo = fs.ehi
+	lo := fs.ehi
 	fsEsearch(fs, "/archive", 0, &lo)
 	fsEsearch(fs, "/snapshot", uint32(time.Now().Unix())-age*60, &lo)
 	fs.elk.RUnlock()
@@ -943,12 +926,7 @@ func fsSnapshotCleanup(fs *Fs, age uint32) {
 /* remove all snapshots that have expired */
 /* return number of directory entries remaining */
 func fsRsearch1(f *File, s string) int {
-	var n int
-	var r int
-	var de DirEntry
 	var dee *DirEntryEnum
-	var ff *File
-	var t string
 	var err error
 
 	dee, err = deeOpen(f)
@@ -956,7 +934,11 @@ func fsRsearch1(f *File, s string) int {
 		return 0
 	}
 
-	n = 0
+	n := int(0)
+	var de DirEntry
+	var ff *File
+	var r int
+	var t string
 	for {
 		r, err = deeRead(dee, &de)
 		if err != nil {
@@ -998,14 +980,14 @@ func fsRsearch1(f *File, s string) int {
 
 func fsRsearch(fs *Fs, path_ string) int {
 	var f *File
-	var de DirEntry
 	var err error
 
 	f, err = fileOpen(fs, path_)
 	if err != nil {
 		return 0
 	}
-	if err = fileGetDir(f, &de); err != nil {
+	var de DirEntry
+	if err := fileGetDir(f, &de); err != nil {
 		fileDecRef(f)
 		return 0
 	}
@@ -1029,8 +1011,6 @@ func fsSnapshotRemove(fs *Fs) {
 }
 
 func snapEvent(s *Snap) {
-	var need bool
-
 	now := uint32(time.Now().Unix()) / 60
 	s.lk.Lock()
 
@@ -1054,7 +1034,7 @@ func snapEvent(s *Snap) {
 	tm := time.Unix(int64(now)*60, 0).Local()
 	min := uint(tm.Hour())*60 + uint(tm.Minute())
 	if s.archMinute != ^uint(0) {
-		need = false
+		need := bool(false)
 		if min == s.archMinute && now != s.lastArch {
 			need = true
 		}

@@ -27,15 +27,13 @@ const (
 )
 
 func exclAlloc(fid *Fid) error {
-	var t uint32
-	var excl *Excl
 	var err error
 
 	assert(fid.excl == nil)
 
-	t = uint32(time.Now().Unix())
+	t := uint32(time.Now().Unix())
 	ebox.lock.Lock()
-	for excl = ebox.head; excl != nil; excl = excl.next {
+	for excl := ebox.head; excl != nil; excl = excl.next {
 		if excl.fsys != fid.fsys || excl.path != fid.qid.path {
 			continue
 		}
@@ -61,7 +59,7 @@ func exclAlloc(fid *Fid) error {
 	 * Not found or timed-out.
 	 * Alloc a new one and initialise.
 	 */
-	excl = new(Excl)
+	excl := new(Excl)
 
 	excl.fsys = fid.fsys
 	excl.path = fid.qid.path
@@ -83,17 +81,13 @@ func exclAlloc(fid *Fid) error {
 }
 
 func exclUpdate(fid *Fid) error {
-	var t uint32
-	var excl *Excl
-	var err error
+	excl := fid.excl
 
-	excl = fid.excl
-
-	t = uint32(time.Now().Unix())
+	t := uint32(time.Now().Unix())
 	ebox.lock.Lock()
 	if excl.time < t || excl.fsys != fid.fsys {
 		ebox.lock.Unlock()
-		err = fmt.Errorf("exclusive lock broken")
+		err := fmt.Errorf("exclusive lock broken")
 		return err
 	}
 
@@ -104,9 +98,7 @@ func exclUpdate(fid *Fid) error {
 }
 
 func exclFree(fid *Fid) {
-	var excl *Excl
-
-	excl = fid.excl
+	excl := fid.excl
 	if excl == nil {
 		return
 	}

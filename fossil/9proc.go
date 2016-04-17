@@ -79,13 +79,11 @@ func conFree(con *Con) {
 	if con.cprev != nil {
 		con.cprev.cnext = con.cnext
 	} else {
-
 		cbox.chead = con.cnext
 	}
 	if con.cnext != nil {
 		con.cnext.cprev = con.cprev
 	} else {
-
 		cbox.ctail = con.cprev
 	}
 	con.cnext = nil
@@ -154,20 +152,16 @@ func msgAlloc(con *Con) *Msg {
 }
 
 func msgMunlink(m *Msg) {
-	var con *Con
-
-	con = m.con
+	con := m.con
 
 	if m.mprev != nil {
 		m.mprev.mnext = m.mnext
 	} else {
-
 		con.mhead = m.mnext
 	}
 	if m.mnext != nil {
 		m.mnext.mprev = m.mprev
 	} else {
-
 		con.mtail = m.mprev
 	}
 	m.mnext = nil
@@ -175,11 +169,7 @@ func msgMunlink(m *Msg) {
 }
 
 func msgFlush(m *Msg) {
-	var con *Con
-	var flush *Msg
-	var old *Msg
-
-	con = m.con
+	con := m.con
 
 	if *Dflag {
 		fmt.Fprintf(os.Stderr, "msgFlush %v\n", &m.t)
@@ -199,6 +189,7 @@ func msgFlush(m *Msg) {
 		return
 	}
 
+	var old *Msg
 	for old = con.mhead; old != nil; old = old.mnext {
 		if old.t.Tag == m.t.Oldtag {
 			break
@@ -228,7 +219,6 @@ func msgFlush(m *Msg) {
 	 * pulling it off the queue.
 	 */
 	if old.state == MsgR || old.t.Type == plan9.Tflush {
-
 		old.state = MsgF
 		if *Dflag {
 			fmt.Fprintf(os.Stderr, "msgFlush: change %d from MsgR to MsgF\n", m.t.Oldtag)
@@ -249,9 +239,8 @@ func msgFlush(m *Msg) {
 	 * Msg.nowq, the only code to check it runs in this
 	 * process after this routine returns.
 	 */
-	flush = old.flush
+	flush := old.flush
 	if flush != nil {
-
 		if *Dflag {
 			fmt.Fprintf(os.Stderr, "msgFlush: remove %d from %d list\n", old.flush.t.Tag, old.t.Tag)
 		}
@@ -351,7 +340,6 @@ func msgProc() {
 			if con.whead == nil {
 				con.whead = m
 			} else {
-
 				con.wtail.rwnext = m
 			}
 			con.wtail = m
@@ -396,7 +384,6 @@ func msgRead(con *Con) {
 			m.mprev = con.mtail
 			con.mtail.mnext = m
 		} else {
-
 			con.mhead = m
 			m.mprev = nil
 		}
@@ -430,13 +417,12 @@ func msgRead(con *Con) {
 func msgWrite(con *Con) {
 	//vtThreadSetName("msgWrite")
 
-	var eof int
-	var n int
-	var flush *Msg
-	var m *Msg
-
 	go msgRead(con)
 
+	var eof int
+	var flush *Msg
+	var m *Msg
+	var n int
 	for {
 		// Wait for and pull a message off the write queue.
 		con.wlock.Lock()
@@ -642,16 +628,14 @@ func scmp(a *Fid, b *Fid) int {
 
 func fidMerge(a *Fid, b *Fid) *Fid {
 	var s *Fid
-	var l **Fid
 
-	l = &s
+	l := &s
 	for a != nil || b != nil {
 		if scmp(a, b) < 0 {
 			*l = a
 			l = &a.sort
 			a = a.sort
 		} else {
-
 			*l = b
 			l = &b.sort
 			b = b.sort
@@ -663,10 +647,6 @@ func fidMerge(a *Fid, b *Fid) *Fid {
 }
 
 func fidMergeSort(f *Fid) *Fid {
-	var delay int
-	var a *Fid
-	var b *Fid
-
 	if f == nil {
 		return nil
 	}
@@ -674,14 +654,13 @@ func fidMergeSort(f *Fid) *Fid {
 		return f
 	}
 
-	b = f
-	a = b
-	delay = 1
+	b := f
+	a := b
+	delay := int(1)
 	for a != nil && b != nil {
 		if delay != 0 { /* easy way to handle 2-element list */
 			delay = 0
 		} else {
-
 			a = a.sort
 		}
 		b = b.sort

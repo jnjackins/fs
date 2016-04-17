@@ -30,8 +30,8 @@ func labelPack(l *Label, p []byte, i int) {
 
 func labelUnpack(l *Label, p []byte, i int) error {
 	p = p[i*LabelSize:]
-	l.state = uint8(p[0])
-	l.typ = uint8(p[1])
+	l.state = p[0]
+	l.typ = p[1]
 	l.epoch = pack.U32GET(p[2:])
 	l.epochClose = pack.U32GET(p[6:])
 	l.tag = pack.U32GET(p[10:])
