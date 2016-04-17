@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -65,9 +66,9 @@ func conFree(con *Con) {
 	assert(con.nfid == 0)
 	assert(con.state == ConMoribund)
 
-	if con.fd >= 0 {
-		syscall.Close(con.fd)
-		con.fd = -1
+	if con.conn != nil {
+		con.conn.Close()
+		con.conn = nil
 	}
 
 	con.state = ConDead
@@ -359,7 +360,7 @@ func msgRead(con *Con) {
 
 		var err error
 		// TODO: use a reader to begin with
-		m.t, err = plan9.ReadFcall(con)
+		m.t, err = plan9.ReadFcall(con.conn)
 		if err == io.EOF {
 			m.t.Type = plan9.Tversion
 			m.t.Fid = ^uint32(0)
@@ -457,7 +458,7 @@ func msgWrite(con *Con) {
 				if err != nil {
 					panic("unexpected error")
 				}
-				if nn, err := syscall.Write(con.fd, buf); nn != n || err != nil {
+				if nn, err := con.conn.Write(buf); nn != n || err != nil {
 					eof = 1
 				}
 
@@ -477,9 +478,9 @@ func msgWrite(con *Con) {
 		con.mlock.Unlock()
 
 		con.lock.Lock()
-		if eof != 0 && con.fd >= 0 {
-			syscall.Close(con.fd)
-			con.fd = -1
+		if eof != 0 && con.conn != nil {
+			con.conn.Close()
+			con.conn = nil
 		}
 
 		if con.state == ConDown {
@@ -495,7 +496,7 @@ func msgWrite(con *Con) {
 	}
 }
 
-func conAlloc(fd int, name string, flags int) *Con {
+func conAlloc(conn net.Conn, name string, flags int) *Con {
 	cbox.alock.Lock()
 	for cbox.ahead == nil {
 		if cbox.ncon >= cbox.maxcon {
@@ -541,10 +542,7 @@ func conAlloc(fd int, name string, flags int) *Con {
 	assert(con.nfid == 0)
 
 	con.state = ConNew
-	con.fd = fd
-	if con.name != "" {
-		con.name = ""
-	}
+	con.conn = conn
 
 	if name != "" {
 		con.name = name

@@ -1,8 +1,8 @@
 package main
 
 import (
+	"net"
 	"sync"
-	"syscall"
 
 	"9fans.net/go/plan9"
 )
@@ -55,7 +55,7 @@ type Con struct {
 	remote    [128]byte /* immutable */
 	lock      *sync.Mutex
 	state     int
-	fd        int
+	conn      net.Conn
 	version   *Msg
 	msize     uint32 /* negotiated with Tversion */
 	rendez    *sync.Cond
@@ -77,10 +77,6 @@ type Con struct {
 	fhead     *Fid
 	ftail     *Fid
 	nfid      int
-}
-
-func (c *Con) Read(buf []byte) (int, error) {
-	return syscall.Read(c.fd, buf)
 }
 
 const ( /* Fid.flags and fidGet(..., flags) */

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"sync"
 	"syscall"
 
@@ -73,7 +74,7 @@ func srvFree(srv *Srv) {
 	}
 }
 
-func srvAlloc(service string, mode int, fd int) (*Srv, error) {
+func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 	srvbox.lock.Lock()
 	for srv := srvbox.head; srv != nil; srv = srv.next {
 		if srv.service != service {
@@ -88,27 +89,22 @@ func srvAlloc(service string, mode int, fd int) (*Srv, error) {
 			srvbox.lock.Unlock()
 			return nil, fmt.Errorf("srv: already serving '%s'", service)
 		}
-
 		srvFree(srv)
 		break
 	}
 
-	var mntpnt string
 	// TODO: srvFd on plan9
+	//var mntpnt string
 	//srvfd = srvFd(service, mode, fd, &mntpnt)
-	err := p9p.PostService(fd, service, mntpnt)
+	err := p9p.PostService(conn, service)
 	if err != nil {
 		srvbox.lock.Unlock()
 		return nil, fmt.Errorf("PostService: %v", err)
 	}
 
-	syscall.Close(fd)
-
-	var srvfd int
 	srv := &Srv{
-		srvfd:   srvfd,
+		//srvfd:   srvfd,
 		service: service,
-		mntpnt:  mntpnt,
 	}
 
 	if srvbox.tail != nil {
@@ -130,13 +126,12 @@ func cmdSrv(argv []string) error {
 
 	flags := flag.NewFlagSet("srv", flag.ContinueOnError)
 	var (
-		Aflag = flags.Bool("A", false, "A")
-		Iflag = flags.Bool("I", false, "I")
-		NFlag = flags.Bool("N", false, "N")
-		Pflag = flags.Bool("P", false, "P")
-		Wflag = flags.Bool("W", false, "W")
-		dflag = flags.Bool("d", false, "d")
-		pflag = flags.Bool("p", false, "p")
+		Aflag = flags.Bool("A", false, "run with no authentication")
+		Iflag = flags.Bool("I", false, "run with IP check")
+		NFlag = flags.Bool("N", false, "allow connections from \"none\"")
+		Pflag = flags.Bool("P", false, "run with no permission checking")
+		Wflag = flags.Bool("W", false, "allow wstat to make arbitrary changes to the user and group fields")
+		dflag = flags.Bool("d", false, "remove the named service")
 	)
 	flags.Usage = func() {
 	}
@@ -163,13 +158,7 @@ func cmdSrv(argv []string) error {
 		conflags |= ConWstatAllow
 		mode = 0600
 	}
-	if *pflag {
-		mode = 0600
-	}
 
-	if *pflag && (conflags&ConNoPermCheck != 0) {
-		return fmt.Errorf("srv: cannot use -P with -p")
-	}
 	argc := flags.NArg()
 	argv = flags.Args()
 
@@ -206,35 +195,17 @@ func cmdSrv(argv []string) error {
 		return nil
 	}
 
-	var fd [2]int
-	if err := syscall.Pipe(fd[:]); err != nil {
-		return fmt.Errorf("srv pipe: %v", err)
-	}
+	c1, c2 := net.Pipe()
 
-	var err error
-
-	var srv *Srv
-	srv, err = srvAlloc(argv[0], mode, fd[0])
+	srv, err := srvAlloc(argv[0], mode, c1)
 	if err != nil {
-		syscall.Close(fd[1])
-		syscall.Close(fd[0])
+		c1.Close()
+		c2.Close()
 		return fmt.Errorf("srvAlloc: %v", err)
 	}
 
-	if *pflag {
-		err = consOpen(fd[0], srv.srvfd)
-	} else {
-		conAlloc(fd[0], srv.mntpnt, conflags)
-	}
-
-	if err != nil {
-		syscall.Close(fd[0])
-		srvbox.lock.Lock()
-		srvFree(srv)
-		srvbox.lock.Unlock()
-	}
-
-	return err
+	conAlloc(c2, srv.mntpnt, conflags)
+	return nil
 }
 
 func srvInit() error {

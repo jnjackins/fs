@@ -608,9 +608,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	p = p[4:]
 	n -= 4
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got magic\n")
-	}
+	//fmt.Printf("deUnpack: got magic\n")
 
 	/* version */
 	if n < 2 {
@@ -623,18 +621,14 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	p = p[2:]
 	n -= 2
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got version\n")
-	}
+	//fmt.Printf("deUnpack: got version\n")
 
 	/* elem */
 	if !stringUnpack(&dir.elem, &p, &n) {
 		goto Err
 	}
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got elem\n")
-	}
+	//fmt.Printf("deUnpack: got elem\n")
 
 	/* entry  */
 	if n < 4 {
@@ -644,9 +638,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	p = p[4:]
 	n -= 4
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got entry\n")
-	}
+	//fmt.Printf("deUnpack: got entry\n")
 
 	if version < 9 {
 		dir.gen = 0
@@ -663,9 +655,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 		n -= 3 * 4
 	}
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got gen etc\n")
-	}
+	//fmt.Printf("deUnpack: got gen etc\n")
 
 	/* size is gotten from venti.Entry */
 	dir.size = 0
@@ -678,9 +668,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	p = p[8:]
 	n -= 8
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got qid\n")
-	}
+	//fmt.Printf("deUnpack: got qid\n")
 
 	/* skip replacement */
 	if version == 7 {
@@ -706,9 +694,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 		goto Err
 	}
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got ids\n")
-	}
+	//fmt.Printf("deUnpack: got ids\n")
 	if n < 5*4 {
 		goto Err
 	}
@@ -720,9 +706,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	p = p[5*4:]
 	n -= 5 * 4
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got times\n")
-	}
+	//fmt.Printf("deUnpack: got times\n")
 
 	/* optional meta data */
 	for n > 0 {
@@ -771,17 +755,13 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 		n -= nn
 	}
 
-	if *Dflag {
-		fmt.Printf("deUnpack: got options\n")
-	}
+	//fmt.Printf("deUnpack: got options\n")
 
 	if len(p) != len(mb.buf[me.offset+int(me.size):]) {
 		goto Err
 	}
 
-	if *Dflag {
-		fmt.Printf("deUnpack: correct size\n")
-	}
+	//fmt.Printf("deUnpack: correct size\n")
 	return nil
 
 Err:

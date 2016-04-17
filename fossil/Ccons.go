@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -25,14 +26,13 @@ type Q struct {
 }
 
 type Cons struct {
-	lock   *sync.Mutex
-	ref    int
-	closed bool
-	fd     int
-	srvfd  int
-	//ctlfd  int
-	iq *Q /* points to console.iq */
-	oq *Q /* points to console.oq */
+	lock    *sync.Mutex
+	ref     int
+	closed  bool
+	conn    io.ReadWriteCloser
+	srvConn io.ReadWriteCloser
+	iq      *Q /* points to console.iq */
+	oq      *Q /* points to console.oq */
 }
 
 var currfsysname string
@@ -63,19 +63,14 @@ func consClose(cons *Cons) {
 		return
 	}
 
-	//if cons.ctlfd != -1 {
-	//	syscall.Close(cons.ctlfd)
-	//	cons.srvfd = -1
-	//}
-
-	if cons.srvfd != -1 {
-		syscall.Close(cons.srvfd)
-		cons.srvfd = -1
+	if cons.srvConn != nil {
+		cons.srvConn.Close()
+		cons.srvConn = nil
 	}
 
-	if cons.fd != -1 {
-		syscall.Close(cons.fd)
-		cons.fd = -1
+	if cons.conn != nil {
+		cons.conn.Close()
+		cons.conn = nil
 	}
 
 	cons.lock.Unlock()
@@ -96,7 +91,7 @@ func consIProc(v interface{}) {
 		}
 		var n int
 		var err error
-		if n, err = syscall.Read(cons.fd, buf); err != nil {
+		if n, err = cons.conn.Read(buf); err != nil {
 			break
 		}
 		q.lock.Lock()
@@ -146,7 +141,7 @@ func consOProc(cons *Cons) {
 		if cons.closed {
 			break
 		}
-		if _, err := syscall.Write(cons.fd, buf[:n]); err != nil {
+		if _, err := cons.conn.Write(buf[:n]); err != nil {
 			break
 		}
 		q.lock.Lock()
@@ -156,30 +151,22 @@ func consOProc(cons *Cons) {
 	consClose(cons)
 }
 
-func consOpen(fd int, srvfd int) error {
+func consOpen(conn, srvConn io.ReadWriteCloser) error {
 	cons := &Cons{
-		lock:  new(sync.Mutex),
-		fd:    fd,
-		srvfd: srvfd,
-		//ctlfd: ctlfd,
-		iq: console.iq,
-		oq: console.oq,
+		lock:    new(sync.Mutex),
+		conn:    conn,
+		srvConn: srvConn,
+		iq:      console.iq,
+		oq:      console.oq,
 	}
-
 	console.nopens++
 
 	cons.lock.Lock()
 	cons.ref = 2
-
-	go consOProc(cons)
-
 	cons.lock.Unlock()
 
-	//if ctlfd >= 0 {
-	//	consIProc(cons)
-	//} else {
+	go consOProc(cons)
 	go consIProc(cons)
-	//}
 
 	return nil
 }
@@ -335,9 +322,9 @@ func consPrompt(prompt string) {
 
 func consTTY() error {
 	name := "/dev/tty"
-	fd, err := syscall.Open(name, syscall.O_RDWR, 0)
+	f, err := os.OpenFile(name, syscall.O_RDWR, 0)
 	if err != nil {
-		return fmt.Errorf("consTTY: open %s: %v", name, err)
+		return fmt.Errorf("consTTY: %v", err)
 	}
 
 	/*
@@ -365,8 +352,8 @@ func consTTY() error {
 		}
 	*/
 
-	if err := consOpen(fd, fd); err != nil {
-		syscall.Close(fd)
+	if err := consOpen(f, f); err != nil {
+		f.Close()
 		return fmt.Errorf("consTTY: consOpen failed: %v", err)
 	}
 
