@@ -6,11 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"strings"
 	"sync"
-	"syscall"
 
 	"9fans.net/go/plan9"
 )
@@ -549,19 +549,13 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 	} else {
 		con.name = "unknown"
 	}
-	con.remote = [128]byte{}
-	rfd, err := syscall.Open(fmt.Sprintf("%s/remote", con.name), 0, 0)
+	buf, err := ioutil.ReadFile(fmt.Sprintf("%s/remote", con.name))
 	if err == nil {
-		buf := make([]byte, 128)
-		n, err := syscall.Read(rfd, buf)
-		syscall.Close(rfd)
-		if err == nil {
-			i := bytes.IndexByte(buf[:n], '\n')
-			if i >= 0 {
-				buf = buf[:i]
-			}
-			copy(con.remote[:], buf)
+		i := bytes.IndexByte(buf, '\n')
+		if i >= 0 {
+			buf = buf[:i]
 		}
+		copy(con.remote[:], buf)
 	}
 
 	con.flags = flags

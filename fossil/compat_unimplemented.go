@@ -1,32 +1,5 @@
+// +build ignore
 package main
-
-// #include <sys/disk.h>
-import "C"
-
-import (
-	"syscall"
-	"unsafe"
-)
-
-func ioctl(fd, name, data uintptr) error {
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, name, data)
-	var err error = nil
-	if errno != 0 {
-		err = errno
-	}
-	return err
-}
-
-func devsize(fd int) int64 {
-	var bs uint64
-	var bc uint64
-	ioctl(uintptr(fd), C.DKIOCGETBLOCKSIZE, uintptr(unsafe.Pointer(&bs)))
-	ioctl(uintptr(fd), C.DKIOCGETBLOCKCOUNT, uintptr(unsafe.Pointer(&bc)))
-	if bs > 0 && bc > 0 {
-		return int64(bc * bs)
-	}
-	return 0
-}
 
 /*
 #elif defined(__FreeBSD__)
@@ -63,33 +36,6 @@ disksize(int fd, struct stat *st)
 	if(n >= lab.d_npartitions)
 		return 0;
 	return (vlong)lab.d_partitions[n].p_size * lab.d_secsize;
-}
-
-#elif defined(__linux__)
-#include <linux/hdreg.h>
-#include <linux/fs.h>
-#include <sys/ioctl.h>
-#undef major
-#define major(dev) ((int)(((dev) >> 8) & 0xff))
-static vlong
-disksize(int fd, struct stat *st)
-{
-	u64int u64;
-	long l;
-	struct hd_geometry geo;
-
-	memset(&geo, 0, sizeof geo);
-	l = 0;
-	u64 = 0;
-#ifdef BLKGETSIZE64
-	if(ioctl(fd, BLKGETSIZE64, &u64) >= 0)
-		return u64;
-#endif
-	if(ioctl(fd, BLKGETSIZE, &l) >= 0)
-		return l*512;
-	if(ioctl(fd, HDIO_GETGEO, &geo) >= 0)
-		return (vlong)geo.heads*geo.sectors*geo.cylinders*512;
-	return 0;
 }
 
 #else

@@ -20,8 +20,8 @@ type Disk struct {
 	lk  *sync.Mutex
 	ref int
 
-	fd int
-	h  Header
+	f *os.File
+	h Header
 
 	flow   *sync.Cond
 	starve *sync.Cond
@@ -43,9 +43,9 @@ var partname = []string{
 	PartVenti: "venti",
 }
 
-func diskAlloc(fd int) (*Disk, error) {
+func diskAlloc(f *os.File) (*Disk, error) {
 	buf := make([]byte, HeaderSize)
-	if _, err := syscall.Pread(fd, buf, HeaderOffset); err != nil {
+	if _, err := syscall.Pread(int(disk.f.Fd()), buf, HeaderOffset); err != nil {
 		return nil, fmt.Errorf("short read: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func diskAlloc(fd int) (*Disk, error) {
 
 	disk := &Disk{
 		lk:  new(sync.Mutex),
-		fd:  fd,
+		f:   f,
 		h:   h,
 		ref: 2,
 	}
@@ -81,7 +81,7 @@ func diskFree(disk *Disk) {
 		disk.die.Wait()
 	}
 	disk.lk.Unlock()
-	syscall.Close(disk.fd)
+	disk.f.Close()
 }
 
 func partStart(disk *Disk, part int) uint32 {
@@ -121,7 +121,7 @@ func diskReadRaw(disk *Disk, part int, addr uint32, buf []byte) error {
 	offset := (int64(addr + start)) * int64(disk.h.blockSize)
 	n := int(disk.h.blockSize)
 	for n > 0 {
-		nn, err := syscall.Pread(disk.fd, buf, offset)
+		nn, err := syscall.Pread(int(disk.f.Fd()), buf, offset)
 		if err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ func diskWriteRaw(disk *Disk, part int, addr uint32, buf []byte) error {
 	}
 
 	offset := (int64(addr + start)) * int64(disk.h.blockSize)
-	n, err := syscall.Pwrite(disk.fd, buf, offset)
+	n, err := syscall.Pwrite(int(disk.f.Fd()), buf, offset)
 	if err != nil {
 		return err
 	}
@@ -232,8 +232,8 @@ func diskFlush(disk *Disk) error {
 	}
 	disk.lk.Unlock()
 
-	var st syscall.Stat_t
-	if err := syscall.Fstat(disk.fd, &st); err != nil {
+	_, err := disk.f.Stat()
+	if err != nil {
 		return err
 	}
 	return nil

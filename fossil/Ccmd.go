@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -16,7 +17,7 @@ var cmdbox struct {
 	lock *sync.Mutex
 
 	con   *Con
-	confd [2]int
+	conns [2]net.Conn
 	tag   uint16
 }
 
@@ -232,14 +233,13 @@ func cmd9p(argv []string) error {
 		return fmt.Errorf("%s: error marshalling fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
-	if _, err := syscall.Write(cmdbox.confd[0], buf); err != nil {
+	if _, err := cmdbox.conns[0].Write(buf); err != nil {
 		return fmt.Errorf("%s: write error: %v", cmd9pTmsg[i].name, err)
 	}
 
 	consPrintf("\t-> %F\n", &t)
 
-	r := os.NewFile(uintptr(cmdbox.confd[0]), "confd0") // TODO: use readers in the first place
-	f, err := plan9.ReadFcall(r)
+	f, err := plan9.ReadFcall(cmdbox.conns[0])
 	if err != nil {
 		return fmt.Errorf("%s: error reading fcall: %v", cmd9pTmsg[i].name, err)
 	}
@@ -261,28 +261,27 @@ func cmdDot(argv []string) error {
 
 	fi, err := os.Stat(argv[0])
 	if err != nil {
-		return fmt.Errorf(". stat %s: %v", argv[0], err)
+		return fmt.Errorf(". %v", err)
 	}
 	length := fi.Size()
 
 	r := 1
 	if length != 0 {
 		// Read the whole file in.
-		fd, err := syscall.Open(argv[0], 0, 0)
+		f, err := os.Open(argv[0])
 		if err != nil {
-			return fmt.Errorf(". open %s: %v", argv[0], err)
+			return fmt.Errorf(". %v", err)
 		}
-		f := make([]byte, length)
-		_, err = syscall.Read(fd, f)
+		buf := make([]byte, length)
+		_, err = f.Read(buf)
 		if err != nil {
-			syscall.Close(fd)
-			return fmt.Errorf(". read %s: %v", argv[0], err)
+			f.Close()
+			return fmt.Errorf(". %v", err)
 		}
-
-		syscall.Close(fd)
+		f.Close()
 
 		// Call cliExec() for each line.
-		for _, line := range strings.Split(string(f), "\n") {
+		for _, line := range strings.Split(string(buf), "\n") {
 			if err := cliExec(line); err != nil {
 				r = 0
 				consPrintf("%s: %v\n", line, err)
@@ -386,8 +385,6 @@ func bind(name, old string, flags int) error {
 
 func cmdInit() error {
 	cmdbox.lock = new(sync.Mutex)
-	cmdbox.confd[1] = -1
-	cmdbox.confd[0] = cmdbox.confd[1]
 
 	cliAddCmd(".", cmdDot)
 	cliAddCmd("9p", cmd9p)
@@ -395,11 +392,11 @@ func cmdInit() error {
 	cliAddCmd("echo", cmdEcho)
 	cliAddCmd("bind", cmdBind)
 
-	if err := syscall.Pipe(cmdbox.confd[:]); err != nil {
-		return err
-	}
+	c1, c2 := net.Pipe()
+	cmdbox.conns[0] = c1
+	cmdbox.conns[1] = c2
 
-	//cmdbox.con = conAlloc(cmdbox.confd[1], "console", 0)
+	//cmdbox.con = conAlloc(cmdbox.conns[1], "console", 0)
 	//cmdbox.con.isconsole = true
 
 	return nil

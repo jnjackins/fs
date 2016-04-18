@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"syscall"
 )
 
 const (
@@ -322,7 +321,7 @@ func consPrompt(prompt string) {
 
 func consTTY() error {
 	name := "/dev/tty"
-	f, err := os.OpenFile(name, syscall.O_RDWR, 0)
+	f, err := os.OpenFile(name, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("consTTY: %v", err)
 	}

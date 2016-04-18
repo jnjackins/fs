@@ -5,10 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
-	"syscall"
 	"time"
-
-	"9fans.net/go/plan9"
 )
 
 func nsec() int64 {
@@ -63,7 +60,7 @@ func strtoull(s string, base int) uint64 {
 	return i
 }
 
-// TODO: remove
+// TODO: phase out
 func assert(cond bool) {
 	if !cond {
 		panic("assert")
@@ -77,28 +74,6 @@ func bool2int(v bool) int {
 	return 0
 }
 
-// TODO: this is OS specific
-func dirfstat(fd int) (*plan9.Dir, error) {
-	var stat syscall.Stat_t
-	err := syscall.Fstat(fd, &stat)
-	if err != nil {
-		return nil, err
-	}
-
-	var d plan9.Dir
-	d.Dev = uint32(stat.Dev)
-	d.Length = uint64(stat.Size)
-	d.Mode = plan9.Perm(stat.Mode)
-	atime, _ := stat.Atimespec.Unix()
-	d.Atime = uint32(atime)
-	mtime, _ := stat.Mtimespec.Unix()
-	d.Mtime = uint32(mtime)
-	d.Uid = strconv.Itoa(int(stat.Uid))
-	d.Gid = strconv.Itoa(int(stat.Gid))
-
-	return &d, nil
-}
-
 func lrand() int {
 	return rand.Intn(231)
 }
@@ -108,6 +83,7 @@ func (b *Block) canLock() bool {
 	return false
 }
 
+// fixFlags converts ["-abc", "-d"] to ["-a", "-b", "-c", "-d"]
 func fixFlags(argv []string) []string {
 	argv2 := make([]string, 0, len(argv))
 	for _, arg := range argv {
@@ -122,23 +98,4 @@ func fixFlags(argv []string) []string {
 		}
 	}
 	return argv2
-}
-
-func fmtComma(n int64) string {
-	in := strconv.FormatInt(n, 10)
-	out := make([]byte, len(in)+(len(in)-2+int(in[0]/'0'))/3)
-	if in[0] == '-' {
-		in, out[0] = in[1:], '-'
-	}
-
-	for i, j, k := len(in)-1, len(out)-1, 0; ; i, j = i-1, j-1 {
-		out[j] = in[i]
-		if i == 0 {
-			return string(out)
-		}
-		if k++; k == 3 {
-			j, k = j-1, 0
-			out[j] = ','
-		}
-	}
 }

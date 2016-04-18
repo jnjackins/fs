@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"sigint.ca/fs/venti"
@@ -43,17 +42,15 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		m = 2
 	}
 
-	var fd int
-	var err error
-	fd, err = syscall.Open(file, m, 0)
+	f, err := os.OpenFile(file, m, 0)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %v", file, err)
+		return nil, err
 	}
 
 	bwatchInit()
-	disk, err := diskAlloc(fd)
+	disk, err := diskAlloc(f)
 	if err != nil {
-		syscall.Close(fd)
+		f.Close()
 		return nil, fmt.Errorf("diskAlloc: %v", err)
 	}
 

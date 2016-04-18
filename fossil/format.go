@@ -89,12 +89,12 @@ func format(argv []string) {
 	}
 	argv = flags.Args()
 
-	fd, err := syscall.Open(argv[0], syscall.O_RDWR, 0)
+	f, err := os.OpenFile(argv[0], syscall.O_RDWR, 0)
 	if err != nil {
-		log.Fatalf("could not open file: %s: %v", argv[0], err)
+		log.Fatal(err)
 	}
 
-	if _, err = syscall.Pread(fd, buf, HeaderOffset); err != nil {
+	if _, err = syscall.Pread(int(f.Fd()), buf, HeaderOffset); err != nil {
 		log.Fatalf("could not read fs header block: %v", err)
 	}
 
@@ -106,26 +106,25 @@ func format(argv []string) {
 	}
 	dprintf("done\n")
 
-	d, err := dirfstat(fd)
-	if err != nil {
-		log.Fatalf("dirfstat: %v", err)
-	}
-
 	// TODO
-	if d.Type == 'M' && !force && !confirm("fs file is mounted via devmnt (is not a kernel device); are you sure?") {
-		return
-	}
+	//d, err := dirfstat(f)
+	//if err != nil {
+	//	log.Fatalf("dirfstat: %v", err)
+	//}
+	//if d.Type == 'M' && !force && !confirm("fs file is mounted via devmnt (is not a kernel device); are you sure?") {
+	//	return
+	//}
 
 	dprintf("format: partitioning... ")
-	partition(fd, bsize, &h)
+	partition(f, bsize, &h)
 	headerPack(&h, buf)
-	if _, err := syscall.Pwrite(fd, buf, HeaderOffset); err != nil {
+	if _, err := syscall.Pwrite(int(f.Fd()), buf, HeaderOffset); err != nil {
 		log.Fatalf("could not write fs header: %v", err)
 	}
 	dprintf("done\n")
 
 	dprintf("format: allocating disk structure... ")
-	disk, err = diskAlloc(fd)
+	disk, err = diskAlloc(f)
 	if err != nil {
 		log.Fatalf("could not open disk: %v", err)
 	}
@@ -175,7 +174,7 @@ func format(argv []string) {
 	}
 }
 
-func partition(fd int, bsize int, h *Header) {
+func partition(f *os.File, bsize int, h *Header) {
 	if bsize%512 != 0 {
 		log.Fatalf("block size must be a multiple of 512 bytes")
 	}
@@ -188,7 +187,7 @@ func partition(fd int, bsize int, h *Header) {
 
 	lpb := uint32(bsize) / LabelSize
 
-	nblock := uint32(devsize(fd) / int64(bsize))
+	nblock := uint32(devsize(int(f.Fd())) / int64(bsize))
 
 	/* sanity check */
 	if nblock < uint32((HeaderOffset*10)/bsize) {
