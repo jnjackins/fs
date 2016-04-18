@@ -42,28 +42,28 @@ func superPack(s *Super, p []byte) {
 	copy(p[54:], s.name[:])
 }
 
-func superUnpack(p []byte) (*Super, error) {
-	var s Super
+func superUnpack(s *Super, p []byte) error {
+	*s = Super{}
 	if pack.U32GET(p) != SuperMagic {
-		return nil, errors.New("bad magic")
+		return errors.New("bad magic")
 	}
 	s.version = pack.U16GET(p[4:])
 	if s.version != SuperVersion {
-		return nil, errors.New("bad version")
+		return errors.New("bad version")
 	}
 	s.epochLow = pack.U32GET(p[6:])
 	s.epochHigh = pack.U32GET(p[10:])
 	s.qid = pack.U64GET(p[14:])
 	if s.epochLow == 0 || s.epochLow > s.epochHigh {
-		return nil, errors.New("bad epoch")
+		return errors.New("bad epoch")
 	}
 	if s.qid == 0 {
-		return nil, errors.New("bad qid")
+		return errors.New("bad qid")
 	}
 	s.active = pack.U32GET(p[22:])
 	s.next = pack.U32GET(p[26:])
 	s.current = pack.U32GET(p[30:])
 	copy(s.last[:], p[34:][:venti.ScoreSize])
 	copy(s.name[:], p[54:])
-	return &s, nil
+	return nil
 }

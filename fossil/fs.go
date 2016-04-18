@@ -102,8 +102,8 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		fs.close()
 		return nil, err
 	}
-	var super *Super
-	if super, err = superUnpack(b.data); err != nil {
+	var super Super
+	if err = superUnpack(&super, b.data); err != nil {
 		blockPut(b)
 		fs.close()
 		return nil, fmt.Errorf("bad super block: %v", err)
@@ -156,7 +156,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 			return nil, fmt.Errorf("cacheLocal: %v", err)
 		}
 
-		superPack(super, bs.data)
+		superPack(&super, bs.data)
 		blockDependency(bs, b, 0, oscore[:], nil)
 		blockPut(b)
 		blockDirty(bs)
@@ -244,7 +244,7 @@ func superGet(c *Cache, super *Super) (*Block, error) {
 		return nil, err
 	}
 
-	if super, err = superUnpack(b.data); err != nil {
+	if err = superUnpack(super, b.data); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: superGet: superUnpack failed: %v\n", argv0, err)
 		blockPut(b)
 		return nil, err
@@ -703,7 +703,6 @@ func (fs *Fs) vac(name string, score *venti.Score) error {
 		fileDecRef(f)
 		return err
 	}
-
 	fileDecRef(f)
 
 	return mkVac(fs.z, uint(fs.blockSize), &e, &ee, &de, score)
