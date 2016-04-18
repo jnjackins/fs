@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+
 	"sigint.ca/fs/internal/pack"
 	"sigint.ca/fs/venti"
 )
@@ -40,29 +42,28 @@ func superPack(s *Super, p []byte) {
 	copy(p[54:], s.name[:])
 }
 
-func superUnpack(s *Super, p []byte) error {
-	*s = Super{}
+func superUnpack(p []byte) (*Super, error) {
+	var s Super
 	if pack.U32GET(p) != SuperMagic {
-		goto Err
+		return nil, errors.New("bad magic")
 	}
 	s.version = pack.U16GET(p[4:])
 	if s.version != SuperVersion {
-		goto Err
+		return nil, errors.New("bad version")
 	}
 	s.epochLow = pack.U32GET(p[6:])
 	s.epochHigh = pack.U32GET(p[10:])
 	s.qid = pack.U64GET(p[14:])
-	if s.epochLow == 0 || s.epochLow > s.epochHigh || s.qid == 0 {
-		goto Err
+	if s.epochLow == 0 || s.epochLow > s.epochHigh {
+		return nil, errors.New("bad epoch")
+	}
+	if s.qid == 0 {
+		return nil, errors.New("bad qid")
 	}
 	s.active = pack.U32GET(p[22:])
 	s.next = pack.U32GET(p[26:])
 	s.current = pack.U32GET(p[30:])
 	copy(s.last[:], p[34:][:venti.ScoreSize])
 	copy(s.name[:], p[54:])
-	return nil
-
-Err:
-	*s = Super{}
-	return EBadSuper
+	return &s, nil
 }

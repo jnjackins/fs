@@ -98,14 +98,15 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 	var b *Block
 	b, err = cacheLocal(fs.cache, PartSuper, 0, mode)
-	var super Super
 	if err != nil {
-		goto Err
+		fs.close()
+		return nil, err
 	}
-	if err = superUnpack(&super, b.data); err != nil {
+	var super *Super
+	if super, err = superUnpack(b.data); err != nil {
 		blockPut(b)
-		err = errors.New("bad super block")
-		goto Err
+		fs.close()
+		return nil, fmt.Errorf("bad super block: %v", err)
 	}
 
 	blockPut(b)
@@ -122,24 +123,26 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		 * Do the copy and try again.
 		 */
 		if mode == OReadOnly || err != EBadRoot {
-			goto Err
+			fs.close()
+			return nil, err
 		}
 		var b *Block
 		b, err = cacheLocalData(fs.cache, super.active, BtDir, RootTag, OReadWrite, 0)
 		if err != nil {
-			err = fmt.Errorf("cacheLocalData: %v", err)
-			goto Err
+			fs.close()
+			return nil, fmt.Errorf("cacheLocalData: %v", err)
 		}
 
 		if b.l.epoch == fs.ehi {
 			blockPut(b)
-			err = errors.New("bad root source block")
-			goto Err
+			fs.close()
+			return nil, errors.New("bad root source block")
 		}
 
 		b, err = blockCopy(b, RootTag, fs.ehi, fs.elo)
 		if err != nil {
-			goto Err
+			fs.close()
+			return nil, err
 		}
 
 		var oscore venti.Score
@@ -149,11 +152,11 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		bs, err = cacheLocal(fs.cache, PartSuper, 0, OReadWrite)
 		if err != nil {
 			blockPut(b)
-			err = fmt.Errorf("cacheLocal: %v", err)
-			goto Err
+			fs.close()
+			return nil, fmt.Errorf("cacheLocal: %v", err)
 		}
 
-		superPack(&super, bs.data)
+		superPack(super, bs.data)
 		blockDependency(bs, b, 0, oscore[:], nil)
 		blockPut(b)
 		blockDirty(bs)
@@ -161,8 +164,8 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		blockPut(bs)
 		fs.source, err = sourceRoot(fs, super.active, mode)
 		if err != nil {
-			err = fmt.Errorf("sourceRoot: %v", err)
-			goto Err
+			fs.close()
+			return nil, fmt.Errorf("sourceRoot: %v", err)
 		}
 	}
 
@@ -174,8 +177,8 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	fs.source.file = fs.file /* point back */
 	fs.elk.RUnlock()
 	if err != nil {
-		err = fmt.Errorf("fileRoot: %v", err)
-		goto Err
+		fs.close()
+		return nil, fmt.Errorf("fileRoot: %v", err)
 	}
 
 	//fmt.Fprintf(os.Stderr, "%s: got file root\n", argv0)
@@ -195,13 +198,6 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	}
 
 	return fs, nil
-
-Err:
-	fmt.Fprintf(os.Stderr, "%s: fsOpen error\n", argv0)
-	fs.close()
-
-	assert(err != nil)
-	return nil, err
 }
 
 func (fs *Fs) close() {
@@ -248,7 +244,7 @@ func superGet(c *Cache, super *Super) (*Block, error) {
 		return nil, err
 	}
 
-	if err := superUnpack(super, b.data); err != nil {
+	if super, err = superUnpack(b.data); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: superGet: superUnpack failed: %v\n", argv0, err)
 		blockPut(b)
 		return nil, err

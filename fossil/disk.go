@@ -344,7 +344,7 @@ func (d *Disk) startThread() {
 
 Done:
 	if *Dflag {
-		fmt.Fprintf(os.Stderr, "diskThread done\n")
+		fmt.Fprintf(os.Stderr, "diskThread exiting\n")
 	}
 	d.ref--
 	d.dieCond.Signal()

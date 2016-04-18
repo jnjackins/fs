@@ -1093,7 +1093,6 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
 	}
 
 	copy(buf, b.data[:b.c.size])
-	var super Super
 	for p := b.prior; p != nil; p = p.next {
 		/*
 		 * we know p->index >= 0 because blockWrite has vetted this block for us.
@@ -1102,18 +1101,16 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
 		assert(b.part == PartSuper || (b.part == PartData && b.l.typ != BtData))
 		if b.part == PartSuper {
 			assert(p.index == 0)
-			superUnpack(&super, buf)
+			super, _ := superUnpack(buf)
 			addr := globalToLocal(p.old.score)
 			if addr == NilBlock {
-				fmt.Fprintf(os.Stderr, "%s: rolling back super block: "+"bad replacement addr %v\n", argv0, p.old.score)
+				fmt.Fprintf(os.Stderr, "%s: rolling back super block: bad replacement addr %v\n", argv0, p.old.score)
 				panic("abort")
 			}
-
 			super.active = addr
-			superPack(&super, buf)
+			superPack(super, buf)
 			continue
 		}
-
 		if b.l.typ == BtDir {
 			copy(buf[p.index*venti.EntrySize:], p.old.entry[:venti.EntrySize])
 		} else {
