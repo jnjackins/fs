@@ -177,7 +177,9 @@ Err:
 
 func fsClose(fs *Fs) {
 	fs.elk.RLock()
-	fs.metaFlush.Stop()
+	if fs.metaFlush != nil {
+		fs.metaFlush.Stop()
+	}
 	snapClose(fs.snap)
 	if fs.file != nil {
 		fileMetaFlush(fs.file, false)
