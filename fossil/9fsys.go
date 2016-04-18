@@ -232,7 +232,7 @@ func fsysParseMode(s string) (uint32, bool) {
 func fsysGetRoot(fsys *Fsys, name string) *File {
 	assert(fsys != nil && fsys.fs != nil)
 
-	root := fsGetRoot(fsys.fs)
+	root := fsys.fs.getRoot()
 	if name == "" {
 		return root
 	}
@@ -321,7 +321,7 @@ func fsysVac(fsys *Fsys, argv []string) error {
 	}
 
 	var score venti.Score
-	if err := fsVac(fsys.fs, argv[0], &score); err != nil {
+	if err := fsys.fs.vac(argv[0], &score); err != nil {
 		return err
 	}
 
@@ -349,7 +349,7 @@ func fsysSnap(fsys *Fsys, argv []string) error {
 		return fmt.Errorf(usage)
 	}
 
-	return fsSnapshot(fsys.fs, *sflag, *dflag, *aflag)
+	return fsys.fs.snapshot(*sflag, *dflag, *aflag)
 }
 
 func fsysSnapClean(fsys *Fsys, argv []string) error {
@@ -371,7 +371,7 @@ func fsysSnapClean(fsys *Fsys, argv []string) error {
 		snapGetTimes(fsys.fs.snap, &arch, &snap, &life)
 	}
 
-	fsSnapshotCleanup(fsys.fs, life)
+	fsys.fs.snapshotCleanup(life)
 	return nil
 }
 
@@ -431,7 +431,7 @@ func fsysSync(fsys *Fsys, argv []string) error {
 	}
 
 	n := cacheDirty(fsys.fs.cache)
-	fsSync(fsys.fs)
+	fsys.fs.sync()
 	consPrintf("\t%s sync: wrote %d blocks\n", fsys.name, n)
 	return nil
 }
@@ -449,7 +449,7 @@ func fsysHalt(fsys *Fsys, argv []string) error {
 		return fmt.Errorf(usage)
 	}
 
-	fsHalt(fsys.fs)
+	fsys.fs.halt()
 	return nil
 }
 
@@ -470,7 +470,7 @@ func fsysUnhalt(fsys *Fsys, argv []string) error {
 		return fmt.Errorf("file system %s not halted", fsys.name)
 	}
 
-	fsUnhalt(fsys.fs)
+	fsys.fs.unhalt()
 	return nil
 }
 
@@ -1011,7 +1011,7 @@ func fsysEpoch(fsys *Fsys, argv []string) error {
 	}
 
 	old = fs.elo
-	if err := fsEpochLow(fs, low); err != nil {
+	if err := fs.epochLow(low); err != nil {
 		consPrintf("\tfsEpochLow: %v\n", err)
 	} else {
 		showForce := ""
@@ -1024,7 +1024,7 @@ func fsysEpoch(fsys *Fsys, argv []string) error {
 			consPrintf("\twarning: new low epoch < old low epoch\n")
 		}
 		if force != 0 && remove != 0 {
-			fsSnapshotRemove(fs)
+			fs.snapshotRemove()
 		}
 	}
 
@@ -1352,7 +1352,7 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 
 	halting := fsys.fs.halted
 	if halting {
-		fsHalt(fsys.fs)
+		fsys.fs.halt()
 	}
 	if fsys.fs.arch != nil {
 		var super Super
@@ -1374,7 +1374,7 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 
 Out:
 	if halting {
-		fsUnhalt(fsys.fs)
+		fsys.fs.unhalt()
 	}
 	return nil
 }
@@ -1557,7 +1557,7 @@ func fsysOpen(name string, argv []string) error {
 		}
 	}
 
-	fsys.fs, err = fsOpen(fsys.dev, fsys.session, ncache, mode)
+	fsys.fs, err = openFs(fsys.dev, fsys.session, ncache, mode)
 	if err != nil {
 		fsys.lock.Unlock()
 		fsysPut(fsys)

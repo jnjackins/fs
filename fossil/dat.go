@@ -2,7 +2,6 @@ package main
 
 import (
 	"sync"
-	"time"
 
 	"sigint.ca/fs/venti"
 )
@@ -34,34 +33,6 @@ const (
 	EnumTag        /* root of a dir listing */
 	UserTag = 32   /* all other tags should be >= UserTag */
 )
-
-type Fs struct {
-	arch       *Arch          /* immutable */
-	cache      *Cache         /* immutable */
-	mode       int            /* immutable */
-	noatimeupd bool           /* immutable */
-	blockSize  int            /* immutable */
-	z          *venti.Session /* immutable */
-	snap       *Snap          /* immutable */
-	/* immutable; copy here & Fsys to ease error reporting */
-	name      string
-	metaFlush *time.Ticker /* periodically flushes metadata cached in files */
-
-	/*
-	 * epoch lock.
-	 * Most operations on the fs require a read lock of elk, ensuring that
-	 * the current high and low epochs do not change under foot.
-	 * This lock is mostly acquired via a call to fileLock or fileRlock.
-	 * Deletion and creation of snapshots occurs under a write lock of elk,
-	 * ensuring no file operations are occurring concurrently.
-	 */
-	elk    *sync.RWMutex /* epoch lock */
-	ehi    uint32        /* epoch high */
-	elo    uint32        /* epoch low */
-	halted bool          /* epoch lock is held to halt (console initiated) */
-	source *Source       /* immutable: root of sources */
-	file   *File         /* immutable: root of files */
-}
 
 /*
  * contains a one block buffer

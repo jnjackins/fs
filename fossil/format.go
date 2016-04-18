@@ -365,12 +365,12 @@ func addFile(root *File, name string, mode uint) {
 
 func topLevel(name string, z *venti.Session) {
 	/* ok, now we can open as a fs */
-	fs, err := fsOpen(name, z, 100, OReadWrite)
+	fs, err := openFs(name, z, 100, OReadWrite)
 	if err != nil {
 		log.Fatalf("could not open file system: %v", err)
 	}
 	fs.elk.RLock()
-	root := fsGetRoot(fs)
+	root := fs.getRoot()
 	if root == nil {
 		log.Fatalf("could not open root")
 	}
@@ -379,7 +379,7 @@ func topLevel(name string, z *venti.Session) {
 	addFile(root, "snapshot", 0555)
 	fileDecRef(root)
 	fs.elk.RUnlock()
-	fsClose(fs)
+	fs.close()
 }
 
 func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ int) int {

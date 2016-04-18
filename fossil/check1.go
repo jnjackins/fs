@@ -79,7 +79,7 @@ func check(argv []string) {
 	fsck.clri = flclri
 
 	// Initialize file system.
-	fs, err := fsOpen(flags.Arg(0), z, csize, OReadOnly)
+	fs, err := openFs(flags.Arg(0), z, csize, OReadOnly)
 	if err != nil {
 		log.Fatalf("could not open file system: %v", err)
 	}

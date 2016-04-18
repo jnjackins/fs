@@ -113,7 +113,7 @@ func main(argc int, argv []string) {
 
 	fmt.Fprintf(os.Stderr, "total time = %d\n", uint32(time.Now().Unix())-t)
 
-	fsClose(fs)
+	fs.close()
 	vtDetach()
 	exits("")
 }

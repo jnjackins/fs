@@ -18,6 +18,35 @@ const (
 	OOverWrite = 2
 )
 
+type Fs struct {
+	arch       *Arch          /* immutable */
+	cache      *Cache         /* immutable */
+	mode       int            /* immutable */
+	noatimeupd bool           /* immutable */
+	blockSize  int            /* immutable */
+	z          *venti.Session /* immutable */
+	snap       *Snap          /* immutable */
+	/* immutable; copy here & Fsys to ease error reporting */
+	name string
+
+	metaFlushTicker *time.Ticker /* periodically flushes metadata cached in files */
+
+	/*
+	 * epoch lock.
+	 * Most operations on the fs require a read lock of elk, ensuring that
+	 * the current high and low epochs do not change under foot.
+	 * This lock is mostly acquired via a call to fileLock or fileRlock.
+	 * Deletion and creation of snapshots occurs under a write lock of elk,
+	 * ensuring no file operations are occurring concurrently.
+	 */
+	elk    *sync.RWMutex /* epoch lock */
+	ehi    uint32        /* epoch high */
+	elo    uint32        /* epoch low */
+	halted bool          /* epoch lock is held to halt (console initiated) */
+	source *Source       /* immutable: root of sources */
+	file   *File         /* immutable: root of files */
+}
+
 type Snap struct {
 	fs          *Fs
 	tick        *time.Ticker
@@ -31,7 +60,7 @@ type Snap struct {
 	ignore      uint
 }
 
-func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
+func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	var m int
 	switch mode {
 	default:
@@ -152,13 +181,13 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	//fmt.Fprintf(os.Stderr, "%s: got file root\n", argv0)
 
 	if mode == OReadWrite {
-		fs.metaFlush = time.NewTicker(1 * time.Second)
+		fs.metaFlushTicker = time.NewTicker(1 * time.Second)
 
 		// TODO: leakes goroutine? loop does not terminate when ticker
 		// is stopped
 		go func() {
-			for range fs.metaFlush.C {
-				fsMetaFlush(fs)
+			for range fs.metaFlushTicker.C {
+				fs.metaFlush()
 			}
 		}()
 
@@ -169,16 +198,16 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 Err:
 	fmt.Fprintf(os.Stderr, "%s: fsOpen error\n", argv0)
-	fsClose(fs)
+	fs.close()
 
 	assert(err != nil)
 	return nil, err
 }
 
-func fsClose(fs *Fs) {
+func (fs *Fs) close() {
 	fs.elk.RLock()
-	if fs.metaFlush != nil {
-		fs.metaFlush.Stop()
+	if fs.metaFlushTicker != nil {
+		fs.metaFlushTicker.Stop()
 	}
 	snapClose(fs.snap)
 	if fs.file != nil {
@@ -197,18 +226,18 @@ func fsClose(fs *Fs) {
 	fs.elk.RUnlock()
 }
 
-func fsRedial(fs *Fs, host string) error {
+func (fs *Fs) redial(host string) error {
 	fs.z.Close()
 	var err error
 	fs.z, err = venti.Dial(host, false)
 	return err
 }
 
-func fsGetRoot(fs *Fs) *File {
+func (fs *Fs) getRoot() *File {
 	return fileIncRef(fs.file)
 }
 
-func fsGetBlockSize(fs *Fs) int {
+func (fs *Fs) getBlockSize() int {
 	return fs.blockSize
 }
 
@@ -246,7 +275,7 @@ func superWrite(b *Block, super *Super, forceWrite int) {
 		 * it's okay that b might still be dirty.
 		 * that means it got written out but with an old root pointer,
 		 * but the other fields went out, and those are the ones
-		 * we really care about.  (specifically, epochHigh; see fsSnapshot).
+		 * we really care about.  (specifically, epochHigh; see fs.snapshot).
 		 */
 	}
 }
@@ -374,7 +403,7 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 	}
 }
 
-func fsNeedArch(fs *Fs, archMinute uint) bool {
+func (fs *Fs) needArch(archMinute uint) bool {
 	then := time.Now().Unix()
 	now := time.Unix(then, 0).Local()
 
@@ -398,7 +427,7 @@ func fsNeedArch(fs *Fs, archMinute uint) bool {
 	return need
 }
 
-func fsEpochLow(fs *Fs, low uint32) error {
+func (fs *Fs) epochLow(low uint32) error {
 	fs.elk.Lock()
 	if low > fs.ehi {
 		err := fmt.Errorf("bad low epoch (must be <= %d)", fs.ehi)
@@ -532,7 +561,7 @@ func saveQid(fs *Fs) error {
 	return nil
 }
 
-func fsSnapshot(fs *Fs, srcpath string, dstpath string, doarchive bool) error {
+func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	var src, dst *File
 
 	assert(fs.mode == OReadWrite)
@@ -649,7 +678,7 @@ func fsSnapshot(fs *Fs, srcpath string, dstpath string, doarchive bool) error {
 	return nil
 
 Err:
-	fmt.Fprintf(os.Stderr, "%s: fsSnapshot: %v\n", argv0, err)
+	fmt.Fprintf(os.Stderr, "%s: snapshot: %v\n", argv0, err)
 	if src != nil {
 		fileDecRef(src)
 	}
@@ -659,7 +688,7 @@ Err:
 	return err
 }
 
-func fsVac(fs *Fs, name string, score *venti.Score) error {
+func (fs *Fs) vac(name string, score *venti.Score) error {
 	fs.elk.RLock()
 	defer fs.elk.RUnlock()
 
@@ -768,7 +797,7 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 	return nil
 }
 
-func fsSync(fs *Fs) error {
+func (fs *Fs) sync() error {
 	fs.elk.Lock()
 	fileMetaFlush(fs.file, true)
 	cacheFlush(fs.cache, true)
@@ -776,7 +805,7 @@ func fsSync(fs *Fs) error {
 	return nil
 }
 
-func fsHalt(fs *Fs) error {
+func (fs *Fs) halt() error {
 	fs.elk.Lock()
 	fs.halted = true
 	fileMetaFlush(fs.file, true)
@@ -784,7 +813,7 @@ func fsHalt(fs *Fs) error {
 	return nil
 }
 
-func fsUnhalt(fs *Fs) error {
+func (fs *Fs) unhalt() error {
 	if !fs.halted {
 		return errors.New("not halted")
 	}
@@ -793,7 +822,7 @@ func fsUnhalt(fs *Fs) error {
 	return nil
 }
 
-func fsNextQid(fs *Fs, qid *uint64) error {
+func (fs *Fs) nextQid(qid *uint64) error {
 	var b *Block
 	var super Super
 	var err error
@@ -817,7 +846,7 @@ func fsNextQid(fs *Fs, qid *uint64) error {
 	return nil
 }
 
-func fsMetaFlush(fs *Fs) {
+func (fs *Fs) metaFlush() {
 	fs.elk.RLock()
 	rv := fileMetaFlush(fs.file, true)
 	fs.elk.RUnlock()
@@ -879,7 +908,7 @@ func fsEsearch1(f *File, path_ string, savetime uint32, plo *uint32) int {
 	return n
 }
 
-func fsEsearch(fs *Fs, path_ string, savetime uint32, plo *uint32) int {
+func (fs *Fs) esearch(path_ string, savetime uint32, plo *uint32) int {
 	var f *File
 	var err error
 
@@ -905,7 +934,7 @@ func fsEsearch(fs *Fs, path_ string, savetime uint32, plo *uint32) int {
 	return n
 }
 
-func fsSnapshotCleanup(fs *Fs, age uint32) {
+func (fs *Fs) snapshotCleanup(age uint32) {
 	/*
 	 * Find the best low epoch we can use,
 	 * given that we need to save all the unventied archives
@@ -914,12 +943,12 @@ func fsSnapshotCleanup(fs *Fs, age uint32) {
 	fs.elk.RLock()
 
 	lo := fs.ehi
-	fsEsearch(fs, "/archive", 0, &lo)
-	fsEsearch(fs, "/snapshot", uint32(time.Now().Unix())-age*60, &lo)
+	fs.esearch("/archive", 0, &lo)
+	fs.esearch("/snapshot", uint32(time.Now().Unix())-age*60, &lo)
 	fs.elk.RUnlock()
 
-	fsEpochLow(fs, lo)
-	fsSnapshotRemove(fs)
+	fs.epochLow(lo)
+	fs.snapshotRemove()
 }
 
 /* remove all snapshots that have expired */
@@ -977,7 +1006,7 @@ func fsRsearch1(f *File, s string) int {
 	return n
 }
 
-func fsRsearch(fs *Fs, path_ string) int {
+func (fs *Fs) rsearch(path_ string) int {
 	var f *File
 	var err error
 
@@ -1003,9 +1032,9 @@ func fsRsearch(fs *Fs, path_ string) int {
 	return 1
 }
 
-func fsSnapshotRemove(fs *Fs) {
+func (fs *Fs) snapshotRemove() {
 	fs.elk.RLock()
-	fsRsearch(fs, "/snapshot")
+	fs.rsearch("/snapshot")
 	fs.elk.RUnlock()
 }
 
@@ -1019,8 +1048,8 @@ func snapEvent(s *Snap) {
 	 * were down), we wait for the next one.
 	 */
 	if s.snapMinutes != ^uint(0) && s.snapMinutes != 0 && uint(now)%s.snapMinutes == 0 && now != s.lastSnap {
-		if err := fsSnapshot(s.fs, "", "", false); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: fsSnapshot snap: %v\n", argv0, err)
+		if err := s.fs.snapshot("", "", false); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: snap: %v\n", argv0, err)
 		}
 		s.lastSnap = now
 	}
@@ -1039,13 +1068,13 @@ func snapEvent(s *Snap) {
 		}
 		if s.lastArch == 0 {
 			s.lastArch = 1
-			if fsNeedArch(s.fs, s.archMinute) {
+			if s.fs.needArch(s.archMinute) {
 				need = true
 			}
 		}
 
 		if need {
-			fsSnapshot(s.fs, "", "", true)
+			s.fs.snapshot("", "", true)
 			s.lastArch = now
 		}
 	}
@@ -1059,7 +1088,7 @@ func snapEvent(s *Snap) {
 		snaplife = 24 * 60
 	}
 	if s.lastCleanup+snaplife < now {
-		fsSnapshotCleanup(s.fs, uint32(s.snapLife))
+		s.fs.snapshotCleanup(uint32(s.snapLife))
 		s.lastCleanup = now
 	}
 

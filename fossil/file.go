@@ -448,7 +448,7 @@ func fileCreate(f *File, elem string, mode uint32, uid string) (*File, error) {
 	}
 
 	dir.size = 0
-	if err = fsNextQid(f.fs, &dir.qid); err != nil {
+	if err = f.fs.nextQid(&dir.qid); err != nil {
 		goto Err
 	}
 	dir.uid = uid
