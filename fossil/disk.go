@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"sigint.ca/fs/venti"
 )
 
 const (
@@ -69,7 +71,6 @@ type Block struct {
 	iostate int
 	ioready *sync.Cond
 }
-
 
 /* disk partitions; keep in sync with []partname */
 const (
