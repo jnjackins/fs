@@ -187,7 +187,7 @@ func partition(f *os.File, bsize int, h *Header) {
 
 	lpb := uint32(bsize) / LabelSize
 
-	nblock := uint32(devsize(int(f.Fd())) / int64(bsize))
+	nblock := uint32(devsize(f.Fd()) / int64(bsize))
 
 	/* sanity check */
 	if nblock < uint32((HeaderOffset*10)/bsize) {
