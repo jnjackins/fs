@@ -88,13 +88,12 @@ func format(argv []string) {
 		log.Fatalf("could not read fs header block: %v", err)
 	}
 
-	dprintf("format: unpacking header... ")
+	dprintf("format: unpacking header\n")
 	var h Header
 	err = headerUnpack(&h, buf)
 	if err == nil && !force && !confirm("fs header block already exists; are you sure?") {
 		return
 	}
-	dprintf("done\n")
 
 	// TODO
 	//d, err := dirfstat(f)
@@ -105,22 +104,20 @@ func format(argv []string) {
 	//	return
 	//}
 
-	dprintf("format: partitioning... ")
+	dprintf("format: partitioning\n")
 	partition(f, bsize, &h)
 	headerPack(&h, buf)
 	if _, err := syscall.Pwrite(int(f.Fd()), buf, HeaderOffset); err != nil {
 		log.Fatalf("could not write fs header: %v", err)
 	}
-	dprintf("done\n")
 
-	dprintf("format: allocating disk structure... ")
+	dprintf("format: allocating disk structure\n")
 	disk, err := diskAlloc(f)
 	if err != nil {
 		log.Fatalf("could not open disk: %v", err)
 	}
-	dprintf("done\n")
 
-	dprintf("format: writing labels... ")
+	dprintf("format: writing labels\n")
 	// zero labels
 	// TODO: why?
 	for i := 0; i < bsize; i++ {
@@ -129,30 +126,26 @@ func format(argv []string) {
 	for bn := uint32(0); bn < disk.size(PartLabel); bn++ {
 		disk.blockWrite(PartLabel, bn)
 	}
-	dprintf("done\n")
 
 	var z *venti.Session
 	var root uint32
 	if score != "" {
-		dprintf("format: ventiRoot... ")
+		dprintf("format: ventiRoot\n")
 		z, root = disk.ventiRoot(host, score)
 	} else {
-		dprintf("format: rootMetaInit... ")
+		dprintf("format: rootMetaInit\n")
 		e := disk.rootMetaInit()
 		root = disk.rootInit(e)
 	}
-	dprintf("done\n")
 
-	dprintf("format: initializing superblock... ")
+	dprintf("format: initializing superblock\n")
 	disk.superInit(label, root, venti.ZeroScore)
-	dprintf("done\n")
 
-	dprintf("format: freeing disk structure... ")
+	dprintf("format: freeing disk structure\n")
 	disk.free()
-	dprintf("done\n")
 
 	if score == "" {
-		dprintf("format: populating top-level fs entries... ")
+		dprintf("format: populating top-level fs entries\n")
 
 		// suppress inner debug output
 		old := *Dflag
@@ -161,7 +154,6 @@ func format(argv []string) {
 		topLevel(argv[0], z)
 
 		*Dflag = old
-		dprintf("done\n")
 	}
 }
 
