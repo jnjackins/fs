@@ -60,6 +60,34 @@ func strtoull(s string, base int) uint64 {
 	return i
 }
 
+func unittoull(s string) uint64 {
+	if s == "" {
+		return badSize
+	}
+
+	var mul uint64
+	switch s[len(s)-1] {
+	case 'k', 'K':
+		mul = 1024
+		s = s[:len(s)-1]
+	case 'm', 'M':
+		mul = 1024 * 1024
+		s = s[:len(s)-1]
+	case 'g', 'G':
+		mul = 1024 * 1024 * 1024
+		s = s[:len(s)-1]
+	default:
+		mul = 1
+	}
+
+	n, err := strconv.ParseUint(s, 0, 64)
+	if err != nil {
+		return badSize
+	}
+
+	return n * mul
+}
+
 // TODO: phase out
 func assert(cond bool) {
 	if !cond {

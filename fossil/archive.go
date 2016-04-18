@@ -31,7 +31,7 @@ func archInit(c *Cache, disk *Disk, fs *Fs, z *venti.Session) *Arch {
 		c:         c,
 		z:         z,
 		fs:        fs,
-		blockSize: uint(diskBlockSize(disk)),
+		blockSize: uint(disk.blockSize()),
 		lk:        new(sync.Mutex),
 		ref:       2,
 	}

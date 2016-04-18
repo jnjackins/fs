@@ -23,10 +23,10 @@ type Disk struct {
 	f *os.File
 	h Header
 
-	flow   *sync.Cond
-	starve *sync.Cond
-	flush  *sync.Cond
-	die    *sync.Cond
+	flowCond   *sync.Cond
+	starveCond *sync.Cond
+	flushCond  *sync.Cond
+	dieCond    *sync.Cond
 
 	nqueue int
 
@@ -45,7 +45,7 @@ var partname = []string{
 
 func diskAlloc(f *os.File) (*Disk, error) {
 	buf := make([]byte, HeaderSize)
-	if _, err := syscall.Pread(int(disk.f.Fd()), buf, HeaderOffset); err != nil {
+	if _, err := syscall.Pread(int(f.Fd()), buf, HeaderOffset); err != nil {
 		return nil, fmt.Errorf("short read: %v", err)
 	}
 
@@ -60,68 +60,68 @@ func diskAlloc(f *os.File) (*Disk, error) {
 		h:   h,
 		ref: 2,
 	}
-	disk.starve = sync.NewCond(disk.lk)
-	disk.flow = sync.NewCond(disk.lk)
-	disk.flush = sync.NewCond(disk.lk)
+	disk.starveCond = sync.NewCond(disk.lk)
+	disk.flowCond = sync.NewCond(disk.lk)
+	disk.flushCond = sync.NewCond(disk.lk)
 
-	go diskThread(disk)
+	go disk.startThread()
 
 	return disk, nil
 }
 
-func diskFree(disk *Disk) {
-	diskFlush(disk)
+func (d *Disk) free() {
+	d.flush()
 
 	/* kill slave */
-	disk.lk.Lock()
+	d.lk.Lock()
 
-	disk.die = sync.NewCond(disk.lk)
-	disk.starve.Signal()
-	for disk.ref > 1 {
-		disk.die.Wait()
+	d.dieCond = sync.NewCond(d.lk)
+	d.starveCond.Signal()
+	for d.ref > 1 {
+		d.dieCond.Wait()
 	}
-	disk.lk.Unlock()
-	disk.f.Close()
+	d.lk.Unlock()
+	d.f.Close()
 }
 
-func partStart(disk *Disk, part int) uint32 {
+func (d *Disk) partStart(part int) uint32 {
 	switch part {
 	default:
 		panic("internal error")
 	case PartSuper:
-		return disk.h.super
+		return d.h.super
 	case PartLabel:
-		return disk.h.label
+		return d.h.label
 	case PartData:
-		return disk.h.data
+		return d.h.data
 	}
 }
 
-func partEnd(disk *Disk, part int) uint32 {
+func (d *Disk) partEnd(part int) uint32 {
 	switch part {
 	default:
 		panic("internal error")
 	case PartSuper:
-		return disk.h.super + 1
+		return d.h.super + 1
 	case PartLabel:
-		return disk.h.data
+		return d.h.data
 	case PartData:
-		return disk.h.end
+		return d.h.end
 	}
 }
 
-func diskReadRaw(disk *Disk, part int, addr uint32, buf []byte) error {
-	start := partStart(disk, part)
-	end := partEnd(disk, part)
+func (d *Disk) readRaw(part int, addr uint32, buf []byte) error {
+	start := d.partStart(part)
+	end := d.partEnd(part)
 
 	if addr >= end-start {
 		return EBadAddr
 	}
 
-	offset := (int64(addr + start)) * int64(disk.h.blockSize)
-	n := int(disk.h.blockSize)
+	offset := (int64(addr + start)) * int64(d.h.blockSize)
+	n := int(d.h.blockSize)
 	for n > 0 {
-		nn, err := syscall.Pread(int(disk.f.Fd()), buf, offset)
+		nn, err := syscall.Pread(int(d.f.Fd()), buf, offset)
 		if err != nil {
 			return err
 		}
@@ -136,37 +136,37 @@ func diskReadRaw(disk *Disk, part int, addr uint32, buf []byte) error {
 	return nil
 }
 
-func diskWriteRaw(disk *Disk, part int, addr uint32, buf []byte) error {
-	start := partStart(disk, part)
-	end := partEnd(disk, part)
+func (d *Disk) writeRaw(part int, addr uint32, buf []byte) error {
+	start := d.partStart(part)
+	end := d.partEnd(part)
 
 	if addr >= end-start {
 		return EBadAddr
 	}
 
-	offset := (int64(addr + start)) * int64(disk.h.blockSize)
-	n, err := syscall.Pwrite(int(disk.f.Fd()), buf, offset)
+	offset := (int64(addr + start)) * int64(d.h.blockSize)
+	n, err := syscall.Pwrite(int(d.f.Fd()), buf, offset)
 	if err != nil {
 		return err
 	}
 
-	if n < int(disk.h.blockSize) {
+	if n < int(d.h.blockSize) {
 		return fmt.Errorf("short write")
 	}
 
 	return nil
 }
 
-func diskQueue(disk *Disk, b *Block) {
-	disk.lk.Lock()
-	for disk.nqueue >= QueueSize {
-		disk.flow.Wait()
+func (d *Disk) queue(b *Block) {
+	d.lk.Lock()
+	for d.nqueue >= QueueSize {
+		d.flowCond.Wait()
 	}
 	var bp **Block
-	if disk.cur == nil || b.addr > disk.cur.addr {
-		bp = &disk.cur
+	if d.cur == nil || b.addr > d.cur.addr {
+		bp = &d.cur
 	} else {
-		bp = &disk.next
+		bp = &d.next
 	}
 
 	var bb *Block
@@ -179,28 +179,28 @@ func diskQueue(disk *Disk, b *Block) {
 
 	b.ionext = bb
 	*bp = b
-	if disk.nqueue == 0 {
-		disk.starve.Signal()
+	if d.nqueue == 0 {
+		d.starveCond.Signal()
 	}
-	disk.nqueue++
-	disk.lk.Unlock()
+	d.nqueue++
+	d.lk.Unlock()
 }
 
-func diskRead(disk *Disk, b *Block) {
+func (d *Disk) read(b *Block) {
 	assert(b.iostate == BioEmpty || b.iostate == BioLabel)
 	blockSetIOState(b, BioReading)
-	diskQueue(disk, b)
+	d.queue(b)
 }
 
-func diskWrite(disk *Disk, b *Block) {
+func (d *Disk) write(b *Block) {
 	nlock := atomic.LoadInt32(&b.nlock)
 	assert(nlock == 1)
 	assert(b.iostate == BioDirty)
 	blockSetIOState(b, BioWriting)
-	diskQueue(disk, b)
+	d.queue(b)
 }
 
-func diskWriteAndWait(disk *Disk, b *Block) {
+func (d *Disk) writeAndWait(b *Block) {
 	/*
 	 * If b->nlock > 1, the block is aliased within
 	 * a single thread.  That thread is us.
@@ -214,33 +214,33 @@ func diskWriteAndWait(disk *Disk, b *Block) {
 	if nlock > 1 {
 		atomic.StoreInt32(&b.nlock, 1)
 	}
-	diskWrite(disk, b)
+	d.write(b)
 	for b.iostate != BioClean {
 		b.ioready.Wait()
 	}
 	atomic.StoreInt32(&b.nlock, nlock)
 }
 
-func diskBlockSize(disk *Disk) int {
-	return int(disk.h.blockSize) /* immuttable */
+func (d *Disk) blockSize() int {
+	return int(d.h.blockSize) /* immuttable */
 }
 
-func diskFlush(disk *Disk) error {
-	disk.lk.Lock()
-	for disk.nqueue > 0 {
-		disk.flush.Wait()
+func (d *Disk) flush() error {
+	d.lk.Lock()
+	for d.nqueue > 0 {
+		d.flushCond.Wait()
 	}
-	disk.lk.Unlock()
+	d.lk.Unlock()
 
-	_, err := disk.f.Stat()
+	_, err := d.f.Stat()
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func diskSize(disk *Disk, part int) uint32 {
-	return partEnd(disk, part) - partStart(disk, part)
+func (d *Disk) size(part int) uint32 {
+	return d.partEnd(part) - d.partStart(part)
 }
 
 func disk2file(disk *Disk) string {
@@ -252,46 +252,46 @@ func disk2file(disk *Disk) string {
 	// }
 }
 
-func diskThread(disk *Disk) {
+func (d *Disk) startThread() {
 	//vtThreadSetName("disk")
 
 	var nio int
 	var t float64
-	disk.lk.Lock()
+	d.lk.Lock()
 	if Timing != 0 /*TypeKind(100016)*/ {
 		nio = 0
 		t = float64(-nsec())
 	}
 
 	for {
-		for disk.nqueue == 0 {
+		for d.nqueue == 0 {
 			if Timing != 0 /*TypeKind(100016)*/ {
 				t += float64(nsec())
 				if nio >= 10000 {
-					fmt.Fprintf(os.Stderr, "disk: io=%d at %.3fms\n", nio, t*1e-6/float64(nio))
+					fmt.Fprintf(os.Stderr, "d: io=%d at %.3fms\n", nio, t*1e-6/float64(nio))
 					nio = 0
 					t = 0
 				}
 			}
 
-			if disk.die != nil {
+			if d.dieCond != nil {
 				goto Done
 			}
-			disk.starve.Wait()
+			d.starveCond.Wait()
 			if Timing != 0 /*TypeKind(100016)*/ {
 				t -= float64(nsec())
 			}
 		}
-		assert(disk.cur != nil || disk.next != nil)
+		assert(d.cur != nil || d.next != nil)
 
-		if disk.cur == nil {
-			disk.cur = disk.next
-			disk.next = nil
+		if d.cur == nil {
+			d.cur = d.next
+			d.next = nil
 		}
 
-		b := disk.cur
-		disk.cur = b.ionext
-		disk.lk.Unlock()
+		b := d.cur
+		d.cur = b.ionext
+		d.lk.Unlock()
 
 		// no one should hold onto blocking in the
 		// reading or writing state, so this lock should
@@ -308,18 +308,18 @@ func diskThread(disk *Disk) {
 		default:
 			panic("abort")
 		case BioReading:
-			if err := diskReadRaw(disk, b.part, b.addr, b.data); err != nil {
-				fmt.Fprintf(os.Stderr, "fossil: diskReadRaw failed: %s: "+"score %v: part=%s block %d: %v\n", disk2file(disk), b.score, partname[b.part], b.addr, err)
+			if err := d.readRaw(b.part, b.addr, b.data); err != nil {
+				fmt.Fprintf(os.Stderr, "fossil: diskReadRaw failed: %s: "+"score %v: part=%s block %d: %v\n", disk2file(d), b.score, partname[b.part], b.addr, err)
 				blockSetIOState(b, BioReadError)
 			} else {
 				blockSetIOState(b, BioClean)
 			}
 		case BioWriting:
-			buf := make([]byte, disk.h.blockSize)
+			buf := make([]byte, d.h.blockSize)
 			p, dirty := blockRollback(b, buf)
-			if err := diskWriteRaw(disk, b.part, b.addr, p); err != nil {
+			if err := d.writeRaw(b.part, b.addr, p); err != nil {
 				fmt.Fprintf(os.Stderr, "fossil: diskWriteRaw failed: %s: score %v: date %s part=%s block %d: %v\n",
-					disk2file(disk), b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
+					disk2file(d), b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
 				break
 			}
 			if dirty {
@@ -329,13 +329,13 @@ func diskThread(disk *Disk) {
 			}
 		}
 		blockPut(b) /* remove extra reference, unlock */
-		disk.lk.Lock()
-		disk.nqueue--
-		if disk.nqueue == QueueSize-1 {
-			disk.flow.Signal()
+		d.lk.Lock()
+		d.nqueue--
+		if d.nqueue == QueueSize-1 {
+			d.flowCond.Signal()
 		}
-		if disk.nqueue == 0 {
-			disk.flush.Signal()
+		if d.nqueue == 0 {
+			d.flushCond.Signal()
 		}
 		if Timing != 0 /*TypeKind(100016)*/ {
 			nio++
@@ -346,7 +346,7 @@ Done:
 	if *Dflag {
 		fmt.Fprintf(os.Stderr, "diskThread done\n")
 	}
-	disk.ref--
-	disk.die.Signal()
-	disk.lk.Unlock()
+	d.ref--
+	d.dieCond.Signal()
+	d.lk.Unlock()
 }

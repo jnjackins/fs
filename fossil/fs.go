@@ -57,7 +57,7 @@ func fsOpen(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	fs := &Fs{
 		mode:      mode,
 		name:      file,
-		blockSize: diskBlockSize(disk),
+		blockSize: disk.blockSize(),
 		elk:       new(sync.RWMutex),
 		cache:     cacheAlloc(disk, z, uint(ncache), mode),
 		z:         z,

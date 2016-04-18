@@ -135,7 +135,7 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 		ref:      1,
 		disk:     disk,
 		z:        z,
-		size:     diskBlockSize(disk),
+		size:     disk.blockSize(),
 		nblocks:  int(nblocks),
 		hashSize: int(nblocks),
 		heads:    make([]*Block, nblocks),
@@ -185,7 +185,7 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 
 	c.maxdirty = int(float64(nblocks) * DirtyPercentage * 0.01)
 
-	c.fl = flAlloc(diskSize(disk, PartData))
+	c.fl = flAlloc(disk.size(PartData))
 
 	c.unlink = sync.NewCond(c.lk)
 	c.flush = sync.NewCond(c.lk)
@@ -233,7 +233,7 @@ func cacheFree(c *Cache) {
 		c.lk.Unlock()
 		for cacheFlushBlock(c) {
 		}
-		diskFlush(c.disk)
+		c.disk.flush()
 		c.lk.Lock()
 		if c.uhead == nil && c.ndirty == 0 {
 			break
@@ -248,7 +248,7 @@ func cacheFree(c *Cache) {
 		assert(c.blocks[i].ref == 0)
 	}
 
-	diskFree(c.disk)
+	c.disk.free()
 
 	/* don't close vtSession */
 }
@@ -547,7 +547,7 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 			}
 			fallthrough
 		case BioEmpty:
-			diskRead(c.disk, b)
+			c.disk.read(b)
 			b.ioready.Wait()
 		case BioClean,
 			BioDirty:
@@ -775,7 +775,7 @@ Found:
 
 	venti.ZeroExtend(vtType[typ], b.data, 0, c.size)
 	if false {
-		diskWrite(c.disk, b)
+		c.disk.write(b)
 	}
 
 	if false {
@@ -853,7 +853,7 @@ func flAlloc(end uint32) *FreeList {
 }
 
 func cacheLocalSize(c *Cache, part int) uint32 {
-	return diskSize(c.disk, part)
+	return c.disk.size(part)
 }
 
 /*
@@ -1211,7 +1211,7 @@ func blockWrite(b *Block, waitlock bool) bool {
 	 * This call to diskWrite is okay because blockWrite is only called
 	 * from the cache flush thread, which never double-locks a block.
 	 */
-	diskWrite(c.disk, b)
+	c.disk.write(b)
 	return true
 }
 
@@ -1583,7 +1583,7 @@ func blistAlloc(b *Block) *BList {
 		/* Block has no priors? Just write it. */
 		if b.prior == nil {
 			c.lk.Unlock()
-			diskWriteAndWait(c.disk, b)
+			c.disk.writeAndWait(b)
 			return nil
 		}
 
