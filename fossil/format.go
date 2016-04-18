@@ -65,6 +65,8 @@ func format(argv []string) {
 		}
 		bsize = int(tmp)
 	}
+	buf := make([]byte, bsize)
+
 	host := *hflag
 	label := "vfs"
 	if *lflag != "" {
@@ -83,7 +85,6 @@ func format(argv []string) {
 		log.Fatal(err)
 	}
 
-	buf := make([]byte, bsize)
 	if _, err = syscall.Pread(int(f.Fd()), buf, HeaderOffset); err != nil {
 		log.Fatalf("could not read fs header block: %v", err)
 	}
@@ -119,27 +120,24 @@ func format(argv []string) {
 
 	dprintf("format: writing labels\n")
 	// zero labels
-	// TODO: why?
-	for i := 0; i < bsize; i++ {
-		buf[i] = 0
-	}
+	memset(buf, 0)
 	for bn := uint32(0); bn < disk.size(PartLabel); bn++ {
-		disk.blockWrite(PartLabel, bn)
+		disk.blockWrite(PartLabel, bn, buf)
 	}
 
 	var z *venti.Session
 	var root uint32
 	if score != "" {
 		dprintf("format: ventiRoot\n")
-		z, root = disk.ventiRoot(host, score)
+		z, root = disk.ventiRoot(host, score, buf)
 	} else {
 		dprintf("format: rootMetaInit\n")
-		e := disk.rootMetaInit()
-		root = disk.rootInit(e)
+		e := disk.rootMetaInit(buf)
+		root = disk.rootInit(e, buf)
 	}
 
 	dprintf("format: initializing superblock\n")
-	disk.superInit(label, root, venti.ZeroScore)
+	disk.superInit(label, root, venti.ZeroScore, buf)
 
 	dprintf("format: freeing disk structure\n")
 	disk.free()
@@ -210,7 +208,7 @@ func (d *Disk) entryInit() *Entry {
 	return e
 }
 
-func (d *Disk) rootMetaInit() *Entry {
+func (d *Disk) rootMetaInit(buf []byte) *Entry {
 	bsize := d.blockSize()
 	de := DirEntry{
 		elem:   "root",
@@ -227,10 +225,10 @@ func (d *Disk) rootMetaInit() *Entry {
 	qid++
 
 	tag := formatTagGen()
-	addr := d.blockAlloc(BtData, tag)
+	addr := d.blockAlloc(BtData, tag, buf)
 
 	/* build up meta block */
-	buf := make([]byte, bsize)
+	memset(buf, 0)
 	mb := InitMetaBlock(buf, bsize, bsize/100)
 	var me MetaEntry
 	me.size = uint16(deSize(&de))
@@ -240,7 +238,7 @@ func (d *Disk) rootMetaInit() *Entry {
 	mb.dePack(&de, &me)
 	mb.Insert(0, &me)
 	mb.Pack()
-	d.blockWrite(PartData, addr)
+	d.blockWrite(PartData, addr, buf)
 	deCleanup(&de)
 
 	/* build up entry for meta block */
@@ -253,13 +251,13 @@ func (d *Disk) rootMetaInit() *Entry {
 	return e
 }
 
-func (d *Disk) rootInit(e *Entry) uint32 {
-	bsize := d.blockSize()
+func (d *Disk) rootInit(e *Entry, buf []byte) uint32 {
 	tag := formatTagGen()
-	addr := d.blockAlloc(BtDir, tag)
+
+	addr := d.blockAlloc(BtDir, tag, buf)
+	memset(buf, 0)
 
 	/* root meta data is in the third entry */
-	buf := make([]byte, bsize)
 	entryPack(e, buf, 2)
 
 	e = d.entryInit()
@@ -269,7 +267,7 @@ func (d *Disk) rootInit(e *Entry) uint32 {
 	e = d.entryInit()
 	entryPack(e, buf, 1)
 
-	d.blockWrite(PartData, addr)
+	d.blockWrite(PartData, addr, buf)
 
 	e = d.entryInit()
 	e.flags |= venti.EntryLocal | venti.EntryDir
@@ -277,13 +275,11 @@ func (d *Disk) rootInit(e *Entry) uint32 {
 	e.tag = tag
 	localToGlobal(addr, e.score)
 
-	addr = d.blockAlloc(BtDir, RootTag)
-	for i := 0; i < bsize; i++ {
-		buf[i] = 0
-	}
+	addr = d.blockAlloc(BtDir, RootTag, buf)
+	memset(buf, 0)
 	entryPack(e, buf, 0)
 
-	d.blockWrite(PartData, addr)
+	d.blockWrite(PartData, addr, buf)
 
 	return addr
 }
@@ -291,11 +287,10 @@ func (d *Disk) rootInit(e *Entry) uint32 {
 // static
 var blockAlloc_addr uint32
 
-func (d *Disk) blockAlloc(typ int, tag uint32) uint32 {
+func (d *Disk) blockAlloc(typ int, tag uint32, buf []byte) uint32 {
 	bsize := d.blockSize()
-	buf := make([]byte, bsize)
 	lpb := bsize / LabelSize
-	d.blockRead(PartLabel, blockAlloc_addr/uint32(lpb))
+	d.blockRead(PartLabel, blockAlloc_addr/uint32(lpb), buf)
 
 	var l Label
 	if err := labelUnpack(&l, buf, int(blockAlloc_addr%uint32(lpb))); err != nil {
@@ -310,38 +305,37 @@ func (d *Disk) blockAlloc(typ int, tag uint32) uint32 {
 	l.state = BsAlloc
 	l.tag = tag
 	labelPack(&l, buf, int(blockAlloc_addr%uint32(lpb)))
-	d.blockWrite(PartLabel, blockAlloc_addr/uint32(lpb))
+	d.blockWrite(PartLabel, blockAlloc_addr/uint32(lpb), buf)
 	tmp1 := blockAlloc_addr
 	blockAlloc_addr++
 	return tmp1
 }
 
-func (d *Disk) superInit(label string, root uint32, score *venti.Score) {
-	s := Super{}
-	s.version = SuperVersion
-	s.epochLow = 1
-	s.epochHigh = 1
-	s.qid = qid
-	s.active = root
-	s.next = NilBlock
-	s.current = NilBlock
+func (d *Disk) superInit(label string, root uint32, score *venti.Score, buf []byte) {
+	s := Super{
+		version:   SuperVersion,
+		epochLow:  1,
+		epochHigh: 1,
+		qid:       qid,
+		active:    root,
+		next:      NilBlock,
+		current:   NilBlock,
+	}
 	copy(s.name[:], []byte(label))
 	copy(s.last[:], score[:venti.ScoreSize])
 
-	buf := make([]byte, d.blockSize())
+	memset(buf, 0)
 	superPack(&s, buf)
-	d.blockWrite(PartSuper, 0)
+	d.blockWrite(PartSuper, 0, buf)
 }
 
-func (d *Disk) blockRead(part int, addr uint32) {
-	buf := make([]byte, d.blockSize())
+func (d *Disk) blockRead(part int, addr uint32, buf []byte) {
 	if err := d.readRaw(part, addr, buf); err != nil {
 		log.Fatalf("read failed: %v", err)
 	}
 }
 
-func (d *Disk) blockWrite(part int, addr uint32) {
-	buf := make([]byte, d.blockSize())
+func (d *Disk) blockWrite(part int, addr uint32, buf []byte) {
 	if err := d.writeRaw(part, addr, buf); err != nil {
 		log.Fatalf("write failed: %v", err)
 	}
@@ -374,8 +368,7 @@ func topLevel(name string, z *venti.Session) {
 	fs.close()
 }
 
-func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ int) int {
-	buf := make([]byte, d.blockSize())
+func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ int, buf []byte) int {
 	n, err := z.Read(score, typ, buf)
 	if err != nil {
 		log.Fatalf("ventiRead %v (%d) failed: %v", score, typ, err)
@@ -384,7 +377,7 @@ func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ int) int {
 	return n
 }
 
-func (d *Disk) ventiRoot(host string, s string) (*venti.Session, uint32) {
+func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uint32) {
 	var score venti.Score
 	if err := parseScore(score[:], s); err != nil {
 		log.Fatalf("bad score '%s': %v", s, err)
@@ -396,15 +389,14 @@ func (d *Disk) ventiRoot(host string, s string) (*venti.Session, uint32) {
 	}
 
 	tag := formatTagGen()
-	addr := d.blockAlloc(BtDir, tag)
+	addr := d.blockAlloc(BtDir, tag, buf)
 
-	d.ventiRead(z, &score, venti.RootType)
+	d.ventiRead(z, &score, venti.RootType, buf)
 	var root venti.Root
-	buf := make([]byte, d.blockSize())
 	if err := venti.RootUnpack(&root, buf); err != nil {
 		log.Fatalf("corrupted root: vtRootUnpack: %v", err)
 	}
-	n := d.ventiRead(z, root.Score, venti.DirType)
+	n := d.ventiRead(z, root.Score, venti.DirType, buf)
 
 	/*
 	 * Fossil's vac archives start with an extra layer of source,
@@ -415,7 +407,7 @@ func (d *Disk) ventiRoot(host string, s string) (*venti.Session, uint32) {
 		if err := entryUnpack(e, buf, 0); err != nil {
 			log.Fatalf("bad root: top entry: %v", err)
 		}
-		n = d.ventiRead(z, e.score, venti.DirType)
+		n = d.ventiRead(z, e.score, venti.DirType, buf)
 	}
 
 	/*
@@ -433,12 +425,12 @@ func (d *Disk) ventiRoot(host string, s string) (*venti.Session, uint32) {
 		log.Fatalf("bad root: entry count")
 	}
 
-	d.blockWrite(PartData, addr)
+	d.blockWrite(PartData, addr, buf)
 
 	/*
 	 * Maximum qid is recorded in root's msource, entry #2 (conveniently in e).
 	 */
-	d.ventiRead(z, e.score, venti.DataType)
+	d.ventiRead(z, e.score, venti.DataType, buf)
 
 	mb, err := UnpackMetaBlock(buf, d.blockSize())
 	if err != nil {
@@ -465,12 +457,10 @@ func (d *Disk) ventiRoot(host string, s string) (*venti.Session, uint32) {
 	e.tag = tag
 	localToGlobal(addr, e.score)
 
-	addr = d.blockAlloc(BtDir, RootTag)
-	for i := 0; i < d.blockSize(); i++ {
-		buf[i] = 0
-	}
+	addr = d.blockAlloc(BtDir, RootTag, buf)
+	memset(buf, 0)
 	entryPack(e, buf, 0)
-	d.blockWrite(PartData, addr)
+	d.blockWrite(PartData, addr, buf)
 
 	return z, addr
 }

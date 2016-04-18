@@ -403,6 +403,7 @@ func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, loc
 		return nil, errors.New("miss")
 	}
 
+	// TODO: revisit (canLock is broken)
 	if !waitlock && !b.canLock() {
 		*lockfailure = 1
 		c.lk.Unlock()

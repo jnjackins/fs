@@ -88,6 +88,12 @@ func unittoull(s string) uint64 {
 	return n * mul
 }
 
+func memset(buf []byte, c byte) {
+	for i := range buf {
+		buf[i] = 0
+	}
+}
+
 // TODO: phase out
 func assert(cond bool) {
 	if !cond {
