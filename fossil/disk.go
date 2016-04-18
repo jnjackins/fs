@@ -34,7 +34,52 @@ type Disk struct {
 	next *Block // blocks to do next scan
 }
 
-/* keep in sync with Part* enum in dat.h */
+type Block struct {
+	c     *Cache
+	ref   int
+	nlock int32
+	//pc    uintptr /* pc that fetched this block from the cache */
+
+	lk *sync.Mutex
+
+	part  int
+	addr  uint32
+	score *venti.Score
+	l     Label
+
+	dmap []byte
+
+	data []byte
+
+	/* the following is private; used by cache */
+	next *Block /* doubly linked hash chains */
+	prev **Block
+	heap uint32 /* index in heap table */
+	used uint32 /* last reference times */
+
+	vers uint32 /* version of dirty flag */
+
+	uhead *BList /* blocks to unlink when this block is written */
+	utail *BList
+
+	/* block ordering for cache -> disk */
+	prior *BList /* list of blocks before this one */
+
+	ionext  *Block
+	iostate int
+	ioready *sync.Cond
+}
+
+
+/* disk partitions; keep in sync with []partname */
+const (
+	PartError = iota
+	PartSuper
+	PartLabel
+	PartData
+	PartVenti /* fake partition */
+)
+
 var partname = []string{
 	PartError: "error",
 	PartSuper: "super",

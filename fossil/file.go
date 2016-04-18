@@ -1356,6 +1356,16 @@ func fileGetParent(f *File) *File {
 	return fileIncRef(f.up)
 }
 
+// contains a one block buffer
+// to avoid problems of the block changing underfoot
+// and to enable an interface that supports unget.
+type DirEntryEnum struct {
+	file *File
+	boff uint32 /* block offset */
+	i, n int
+	buf  []DirEntry
+}
+
 func deeOpen(f *File) (*DirEntryEnum, error) {
 	if !fileIsDir(f) {
 		fileDecRef(f)

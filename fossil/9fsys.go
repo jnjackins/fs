@@ -1247,8 +1247,15 @@ Err:
 	return err
 }
 
+const (
+	doClose = 1 << iota
+	doClre
+	doClri
+	doClrp
+)
+
 func fsckClri(fsck *Fsck, name string, mb *MetaBlock, i int, b *Block) {
-	if fsck.flags&DoClri == 0 {
+	if fsck.flags&doClri == 0 {
 		return
 	}
 
@@ -1258,7 +1265,7 @@ func fsckClri(fsck *Fsck, name string, mb *MetaBlock, i int, b *Block) {
 }
 
 func fsckClose(fsck *Fsck, b *Block, epoch uint32) {
-	if fsck.flags&DoClose == 0 {
+	if fsck.flags&doClose == 0 {
 		return
 	}
 	l := b.l
@@ -1280,7 +1287,7 @@ func fsckClose(fsck *Fsck, b *Block, epoch uint32) {
 }
 
 func fsckClre(fsck *Fsck, b *Block, offset int) {
-	if fsck.flags&DoClre == 0 {
+	if fsck.flags&doClre == 0 {
 		return
 	}
 	if offset < 0 || offset*venti.EntrySize >= fsck.bsize {
@@ -1294,7 +1301,7 @@ func fsckClre(fsck *Fsck, b *Block, offset int) {
 }
 
 func fsckClrp(fsck *Fsck, b *Block, offset int) {
-	if fsck.flags&DoClrp == 0 {
+	if fsck.flags&doClrp == 0 {
 		return
 	}
 	if offset < 0 || offset*venti.ScoreSize >= fsck.bsize {
@@ -1331,15 +1338,15 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 		} else if argv[i] == "pfile" {
 			fsck.printfiles = true
 		} else if argv[i] == "bclose" {
-			fsck.flags |= DoClose
+			fsck.flags |= doClose
 		} else if argv[i] == "clri" {
-			fsck.flags |= DoClri
+			fsck.flags |= doClri
 		} else if argv[i] == "clre" {
-			fsck.flags |= DoClre
+			fsck.flags |= doClre
 		} else if argv[i] == "clrp" {
-			fsck.flags |= DoClrp
+			fsck.flags |= doClrp
 		} else if argv[i] == "fix" {
-			fsck.flags |= DoClose | DoClri | DoClre | DoClrp
+			fsck.flags |= doClose | doClri | doClre | doClrp
 		} else if argv[i] == "venti" {
 			fsck.useventi = true
 		} else if argv[i] == "snapshot" {

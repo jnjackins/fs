@@ -1,11 +1,5 @@
 package main
 
-import (
-	"sync"
-
-	"sigint.ca/fs/venti"
-)
-
 /* tunable parameters - probably should not be constants */
 const (
 	/* don't allocate in block if more than this percentage full */
@@ -33,18 +27,6 @@ const (
 	EnumTag        /* root of a dir listing */
 	UserTag = 32   /* all other tags should be >= UserTag */
 )
-
-/*
- * contains a one block buffer
- * to avoid problems of the block changing underfoot
- * and to enable an interface that supports unget.
- */
-type DirEntryEnum struct {
-	file *File
-	boff uint32 /* block offset */
-	i, n int
-	buf  []DirEntry
-}
 
 /* Block states */
 const (
@@ -83,56 +65,4 @@ const (
 	BioReadError         /* error reading: assume disk always handles write errors */
 	BioVentiError        /* error reading from venti (probably disconnected) */
 	BioMax
-)
-
-type Block struct {
-	c     *Cache
-	ref   int
-	nlock int32
-	//pc    uintptr /* pc that fetched this block from the cache */
-
-	lk *sync.Mutex
-
-	part  int
-	addr  uint32
-	score *venti.Score
-	l     Label
-
-	dmap []byte
-
-	data []byte
-
-	/* the following is private; used by cache */
-	next *Block /* doubly linked hash chains */
-	prev **Block
-	heap uint32 /* index in heap table */
-	used uint32 /* last reference times */
-
-	vers uint32 /* version of dirty flag */
-
-	uhead *BList /* blocks to unlink when this block is written */
-	utail *BList
-
-	/* block ordering for cache -> disk */
-	prior *BList /* list of blocks before this one */
-
-	ionext  *Block
-	iostate int
-	ioready *sync.Cond
-}
-
-const (
-	DoClose = 1 << 0
-	DoClre  = 1 << 1
-	DoClri  = 1 << 2
-	DoClrp  = 1 << 3
-)
-
-/* disk partitions; keep in sync with partname[] in disk.c */
-const (
-	PartError = iota
-	PartSuper
-	PartLabel
-	PartData
-	PartVenti /* fake partition */
 )
