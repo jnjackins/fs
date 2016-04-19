@@ -520,21 +520,21 @@ Err1:
 	return nil, err
 }
 
-func fileRead(f *File, buf []byte, cnt int, offset int64) int {
+func fileRead(f *File, buf []byte, cnt int, offset int64) (int, error) {
 	var n, nn int
+	var err error
 
 	if false {
 		fmt.Fprintf(os.Stderr, "fileRead: %s %d, %d\n", f.dir.elem, cnt, offset)
 	}
 
-	if err := fileRLock(f); err != nil {
-		return -1
+	if err = fileRLock(f); err != nil {
+		return -1, err
 	}
 
 	var b *Block
 	var bn uint32
 	var dsize int
-	var err error
 	var off int
 	var p []byte
 	var s *Source
@@ -546,7 +546,7 @@ func fileRead(f *File, buf []byte, cnt int, offset int64) int {
 
 	fileRAccess(f)
 
-	if err := sourceLock(f.source, OReadOnly); err != nil {
+	if err = sourceLock(f.source, OReadOnly); err != nil {
 		goto Err1
 	}
 
@@ -590,14 +590,14 @@ func fileRead(f *File, buf []byte, cnt int, offset int64) int {
 
 	sourceUnlock(s)
 	fileRUnlock(f)
-	return len(buf) - len(p)
+	return len(buf) - len(p), nil
 
 Err:
 	sourceUnlock(s)
 
 Err1:
 	fileRUnlock(f)
-	return -1
+	return -1, err
 }
 
 /*

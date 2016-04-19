@@ -116,6 +116,7 @@ func auth_rpc(rpc *AuthRpc, verb string, a interface{}, na int) uint { panic("un
 func auth_getinfo(rpc *AuthRpc) (*AuthInfo, error)                   { panic("unimplemented") }
 func auth_freeAI(ai *AuthInfo)                                       { panic("unimplemented") }
 func auth_freerpc(rpc *AuthRpc)                                      { panic("unimplemented") }
+func auth_allocrpc(afd int) *AuthRpc                                 { panic("unimplemented") }
 
 func (b *Block) canLock() bool {
 	fmt.Fprintln(os.Stderr, "TODO canLock")

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"syscall"
+	"time"
 
 	"9fans.net/go/plan9"
 )
@@ -70,6 +72,727 @@ func permFile(file *File, fid *Fid, perm int) error {
 
 	deCleanup(&de)
 	return EPermission
+}
+
+func permFid(fid *Fid, p int) error {
+	return permFile(fid.file, fid, p)
+}
+
+func permParent(fid *Fid, p int) error {
+	parent := (*File)(fileGetParent(fid.file))
+	err := permFile(parent, fid, p)
+	fileDecRef(parent)
+
+	return err
+}
+
+func rTwstat(m *Msg) error {
+	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	if err != nil {
+		return err
+	}
+
+	uid := string("")
+	gid := string(uid)
+
+	var de DirEntry
+	var gl int
+	var oldmode uint32
+	var op int
+	var tsync int
+	var wstatallow int
+	var dir *plan9.Dir
+	if fid.uname == unamenone || (fid.qid.Type&plan9.QTAUTH != 0) {
+		err = EPermission
+		goto error0
+	}
+
+	if fileIsRoFs(fid.file) || !groupWriteMember(fid.uname) {
+		err = fmt.Errorf("read-only filesystem")
+		goto error0
+	}
+
+	if err = fileGetDir(fid.file, &de); err != nil {
+		goto error0
+	}
+
+	dir, err = plan9.UnmarshalDir(m.t.Stat)
+	if err != nil {
+		err = fmt.Errorf("wstat -- protocol botch: %v", err)
+		goto error
+	}
+
+	/*
+	 * Run through each of the (sub-)fields in the provided Dir
+	 * checking for validity and whether it's a default:
+	 * .type, .dev and .atime are completely ignored and not checked;
+	 * .qid.path, .qid.vers and .muid are checked for validity but
+	 * any attempt to change them is an error.
+	 * .qid.Type/.mode, .mtime, .name, .length, .uid and .gid can
+	 * possibly be changed.
+	 *
+	 * 'Op' flags there are changed fields, i.e. it's not a no-op.
+	 * 'Tsync' flags all fields are defaulted.
+	 */
+	tsync = 1
+
+	if dir.Qid.Path != ^uint64(0) {
+		if dir.Qid.Path != de.qid {
+			err = fmt.Errorf("wstat -- attempt to change qid.path")
+			goto error
+		}
+
+		tsync = 0
+	}
+
+	if dir.Qid.Vers != ^uint32(0) {
+		if dir.Qid.Vers != de.mcount {
+			err = fmt.Errorf("wstat -- attempt to change qid.vers")
+			goto error
+		}
+
+		tsync = 0
+	}
+
+	if dir.Muid != "" && dir.Muid[0] != '\x00' {
+		uid := string(uidByUname(dir.Muid))
+		if uid == "" {
+			err = fmt.Errorf("wstat -- unknown muid")
+			goto error
+		}
+
+		if uid != de.mid {
+			err = fmt.Errorf("wstat -- attempt to change muid")
+			goto error
+		}
+
+		uid = ""
+		tsync = 0
+	}
+
+	/*
+	 * Check .qid.Type and .mode agree if neither is defaulted.
+	 */
+	if dir.Qid.Type != ^uint8(0) && dir.Mode != ^plan9.Perm(0) {
+		if dir.Qid.Type != uint8((dir.Mode>>24)&0xFF) {
+			err = fmt.Errorf("wstat -- qid.Type/mode mismatch")
+			goto error
+		}
+	}
+
+	op = 0
+
+	oldmode = de.mode
+	if dir.Qid.Type != ^uint8(0) || dir.Mode != ^plan9.Perm(0) {
+		/*
+		 * .qid.Type or .mode isn't defaulted, check for unknown bits.
+		 */
+		if dir.Mode == ^plan9.Perm(0) {
+			dir.Mode = plan9.Perm(dir.Qid.Type)<<24 | plan9.Perm(de.mode&0777)
+		}
+		if dir.Mode&^(plan9.DMDIR|plan9.DMAPPEND|plan9.DMEXCL|plan9.DMTMP|0777) != 0 {
+			err = fmt.Errorf("wstat -- unknown bits in qid.Type/mode")
+			goto error
+		}
+
+		/*
+		 * Synthesise a mode to check against the current settings.
+		 */
+		mode := uint32(dir.Mode & 0777)
+
+		if dir.Mode&plan9.DMEXCL != 0 {
+			mode |= ModeExclusive
+		}
+		if dir.Mode&plan9.DMAPPEND != 0 {
+			mode |= ModeAppend
+		}
+		if dir.Mode&plan9.DMDIR != 0 {
+			mode |= ModeDir
+		}
+		if dir.Mode&plan9.DMTMP != 0 {
+			mode |= ModeTemporary
+		}
+
+		if (de.mode^mode)&ModeDir != 0 {
+			err = fmt.Errorf("wstat -- attempt to change directory bit")
+			goto error
+		}
+
+		if de.mode&(ModeAppend|ModeExclusive|ModeTemporary|0777) != mode {
+			de.mode &^= (ModeAppend | ModeExclusive | ModeTemporary | 0777)
+			de.mode |= mode
+			op = 1
+		}
+
+		tsync = 0
+	}
+
+	if dir.Mtime != ^uint32(0) {
+		if dir.Mtime != de.mtime {
+			de.mtime = dir.Mtime
+			op = 1
+		}
+
+		tsync = 0
+	}
+
+	if dir.Length != ^uint64(0) {
+		if uint64(dir.Length) != de.size {
+			/*
+			 * Cannot change length on append-only files.
+			 * If we're changing the append bit, it's okay.
+			 */
+			if de.mode&oldmode&ModeAppend != 0 {
+				err = fmt.Errorf("wstat -- attempt to change length of append-only file")
+				goto error
+			}
+
+			if de.mode&ModeDir != 0 {
+				err = fmt.Errorf("wstat -- attempt to change length of directory")
+				goto error
+			}
+
+			de.size = uint64(dir.Length)
+			op = 1
+		}
+
+		tsync = 0
+	}
+
+	/*
+	 * Check for permission to change .mode, .mtime or .length,
+	 * must be owner or leader of either group, for which test gid
+	 * is needed; permission checks on gid will be done later.
+	 */
+	if dir.Gid != "" {
+		gid = uidByUname(dir.Gid)
+		if gid == "" {
+			err = fmt.Errorf("wstat -- unknown gid")
+			goto error
+		}
+		tsync = 0
+	} else {
+		gid = de.gid
+	}
+
+	wstatallow = (bool2int(fsysWstatAllow(fid.fsys) || (m.con.flags&ConWstatAllow != 0)))
+
+	/*
+	 * 'Gl' counts whether neither, one or both groups are led.
+	 */
+	gl = bool2int(groupLeader(gid, fid.uname))
+
+	gl += bool2int(groupLeader(de.gid, fid.uname))
+
+	if op != 0 && wstatallow == 0 {
+		if fid.uid != de.uid && gl == 0 {
+			err = fmt.Errorf("wstat -- not owner or group leader")
+			goto error
+		}
+	}
+
+	/*
+	 * Check for permission to change group, must be
+	 * either owner and in new group or leader of both groups.
+	 * If gid is nil here then
+	 */
+	if gid != de.gid {
+		if wstatallow == 0 && (fid.uid != de.uid || !groupMember(gid, fid.uname)) && gl != 2 {
+			err = fmt.Errorf("wstat -- not owner and not group leaders")
+			goto error
+		}
+		de.gid = gid
+		op = 1
+		tsync = 0
+	}
+
+	/*
+	 * Rename.
+	 * Check .name is valid and different to the current.
+	 * If so, check write permission in parent.
+	 */
+	if dir.Name != "" && dir.Name[0] != '\x00' {
+		if err = checkValidFileName(dir.Name); err != nil {
+			goto error
+		}
+		if dir.Name != de.elem {
+			if err = permParent(fid, PermW); err != nil {
+				goto error
+			}
+			de.elem = dir.Name
+			op = 1
+		}
+
+		tsync = 0
+	}
+
+	/*
+	 * Check for permission to change owner - must be god.
+	 */
+	if dir.Uid != "" {
+		uid := string(uidByUname(dir.Uid))
+		if uid == "" {
+			err = fmt.Errorf("wstat -- unknown uid")
+			goto error
+		}
+		if uid != de.uid {
+			if wstatallow == 0 {
+				err = fmt.Errorf("wstat -- not owner")
+				goto error
+			}
+			if uid == uidnoworld {
+				err = EPermission
+				goto error
+			}
+			de.uid = uid
+			op = 1
+		}
+
+		tsync = 0
+	}
+
+	if op != 0 {
+		err = fileSetDir(fid.file, &de, fid.uid)
+	}
+
+	if tsync != 0 {
+		/*
+		 * All values were defaulted,
+		 * make the state of the file exactly what it
+		 * claims to be before returning...
+		 */
+	}
+
+error:
+	deCleanup(&de)
+
+error0:
+	fidPut(fid)
+	return err
+}
+
+func rTstat(m *Msg) error {
+	fid, err := fidGet(m.con, m.t.Fid, 0)
+	if err == nil {
+		return err
+	}
+	if fid.qid.Type&plan9.QTAUTH != 0 {
+		dir := &plan9.Dir{
+			Qid:   fid.qid,
+			Mode:  plan9.DMAUTH,
+			Atime: uint32(time.Now().Unix()),
+			Name:  "#¿",
+			Uid:   fid.uname,
+			Gid:   fid.uname,
+			Muid:  fid.uname,
+		}
+		dir.Mtime = dir.Atime
+
+		buf, err := dir.Bytes()
+		if err != nil {
+			err = fmt.Errorf("stat QTAUTH botch")
+			fidPut(fid)
+			return err
+		}
+		m.r.Stat = buf
+
+		fidPut(fid)
+		return nil
+	}
+
+	var de DirEntry
+	if err = fileGetDir(fid.file, &de); err != nil {
+		fidPut(fid)
+		return err
+	}
+
+	fidPut(fid)
+
+	// TODO: avoid this allocation
+	buf := make([]byte, int(m.con.msize))
+	dirDe2M(&de, buf)
+	m.r.Stat = buf
+	deCleanup(&de)
+
+	return nil
+}
+
+func _rTclunk(fid *Fid, remove int) error {
+	if fid.excl != nil {
+		exclFree(fid)
+	}
+
+	var err error
+	if remove != 0 && fid.qid.Type&plan9.QTAUTH == 0 {
+		err = permParent(fid, PermW)
+		if err == nil {
+			err = fileRemove(fid.file, fid.uid)
+		}
+	}
+
+	fidClunk(fid)
+
+	return err
+}
+
+func rTremove(m *Msg) error {
+	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	if err == nil {
+		return err
+	}
+	return _rTclunk(fid, 1)
+}
+
+func rTclunk(m *Msg) error {
+	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	if err == nil {
+		return err
+	}
+	_rTclunk(fid, (fid.open & FidORclose))
+
+	return nil
+}
+
+func rTwrite(m *Msg) error {
+	var count, n int
+
+	fid, err := fidGet(m.con, m.t.Fid, 0)
+	if err == nil {
+		return err
+	}
+	if fid.open&FidOWrite == 0 {
+		err = fmt.Errorf("fid not open for write")
+		goto error
+	}
+
+	count = int(m.t.Count)
+	if count < 0 || uint32(count) > m.con.msize-plan9.IOHDRSIZE {
+		err = fmt.Errorf("write count too big")
+		goto error
+	}
+
+	if m.t.Offset < 0 {
+		err = fmt.Errorf("write offset negative")
+		goto error
+	}
+
+	if fid.excl != nil {
+		if err = exclUpdate(fid); err != nil {
+			goto error
+		}
+	}
+
+	if fid.qid.Type&plan9.QTDIR != 0 {
+		err = fmt.Errorf("is a directory")
+		goto error
+	} else if fid.qid.Type&plan9.QTAUTH != 0 {
+		n = authWrite(fid, m.t.Data, count)
+	} else {
+		n, err = fileWrite(fid.file, m.t.Data, count, int64(m.t.Offset), fid.uid)
+	}
+	if n < 0 {
+		goto error
+	}
+
+	m.r.Count = uint32(n)
+
+	fidPut(fid)
+	return nil
+
+error:
+	fidPut(fid)
+	return err
+}
+
+func rTread(m *Msg) error {
+	var count, n int
+	var data []byte
+
+	fid, err := fidGet(m.con, m.t.Fid, 0)
+	if err == nil {
+		return err
+	}
+	if fid.open&FidORead == 0 {
+		err = fmt.Errorf("fid not open for read")
+		goto error
+	}
+
+	count = int(m.t.Count)
+	if count < 0 || uint32(count) > m.con.msize-plan9.IOHDRSIZE {
+		err = fmt.Errorf("read count too big")
+		goto error
+	}
+
+	if m.t.Offset < 0 {
+		err = fmt.Errorf("read offset negative")
+		goto error
+	}
+
+	if fid.excl != nil {
+		if err = exclUpdate(fid); err != nil {
+			goto error
+		}
+	}
+
+	// TODO: avoid this allocation
+	data = make([]byte, count)
+	if fid.qid.Type&plan9.QTDIR != 0 {
+		n, err = dirRead(fid, data, count, int64(m.t.Offset))
+	} else if fid.qid.Type&plan9.QTAUTH != 0 {
+		n, err = authRead(fid, data, count)
+	} else {
+		n, err = fileRead(fid.file, data, count, int64(m.t.Offset))
+	}
+	if err != nil {
+		goto error
+	}
+
+	m.r.Count = uint32(n)
+	m.r.Data = data
+
+	fidPut(fid)
+	return nil
+
+error:
+	fidPut(fid)
+	return err
+}
+
+func rTcreate(m *Msg) error {
+	var omode int
+	var mode, perm uint32
+	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	if err == nil {
+		return err
+	}
+	var file *File
+	var open int
+	if fid.open != 0 {
+		err = fmt.Errorf("fid open for I/O")
+		goto error
+	}
+
+	if fileIsRoFs(fid.file) || !groupWriteMember(fid.uname) {
+		err = fmt.Errorf("read-only filesystem")
+		goto error
+	}
+
+	if !fileIsDir(fid.file) {
+		err = fmt.Errorf("not a directory")
+		goto error
+	}
+
+	if err = permFid(fid, PermW); err != nil {
+		goto error
+	}
+	if err = checkValidFileName(m.t.Name); err != nil {
+		goto error
+	}
+	if fid.uid == uidnoworld {
+		err = EPermission
+		goto error
+	}
+
+	omode = int(m.t.Mode) & OMODE
+	open = 0
+
+	if omode == 0 || omode == 2 || omode == 3 {
+		open |= FidORead
+	}
+	if omode == 1 || omode == 2 {
+		open |= FidOWrite
+	}
+	if open&(FidOWrite|FidORead) == 0 {
+		err = fmt.Errorf("unknown mode")
+		goto error
+	}
+
+	if m.t.Perm&plan9.DMDIR != 0 {
+		if (m.t.Mode&(64|16) != 0) || (open&FidOWrite != 0) {
+			err = fmt.Errorf("illegal mode")
+			goto error
+		}
+
+		if m.t.Perm&plan9.DMAPPEND != 0 {
+			err = fmt.Errorf("illegal perm")
+			goto error
+		}
+	}
+
+	mode = fileGetMode(fid.file)
+	perm = uint32(m.t.Perm)
+	if m.t.Perm&plan9.DMDIR != 0 {
+		perm &= ^uint32(0777) | mode&0777
+	} else {
+		perm &= ^uint32(0666) | mode&0666
+	}
+	mode = uint32(perm) & 0777
+	if m.t.Perm&plan9.DMDIR != 0 {
+		mode |= ModeDir
+	}
+	if m.t.Perm&plan9.DMAPPEND != 0 {
+		mode |= ModeAppend
+	}
+	if m.t.Perm&plan9.DMEXCL != 0 {
+		mode |= ModeExclusive
+	}
+	if m.t.Perm&plan9.DMTMP != 0 {
+		mode |= ModeTemporary
+	}
+
+	file, err = fileCreate(fid.file, m.t.Name, mode, fid.uid)
+	if err != nil {
+		fidPut(fid)
+		return err
+	}
+
+	fileDecRef(fid.file)
+
+	fid.qid.Vers = fileGetMcount(file)
+	fid.qid.Path = fileGetId(file)
+	fid.file = file
+	mode = fileGetMode(fid.file)
+	if mode&ModeDir != 0 {
+		fid.qid.Type = plan9.QTDIR
+	} else {
+		fid.qid.Type = plan9.QTFILE
+	}
+	if mode&ModeAppend != 0 {
+		fid.qid.Type |= plan9.QTAPPEND
+	}
+	if mode&ModeExclusive != 0 {
+		fid.qid.Type |= plan9.QTEXCL
+		assert(exclAlloc(fid) == nil)
+	}
+
+	if m.t.Mode&plan9.ORCLOSE != 0 {
+		open |= FidORclose
+	}
+	fid.open = open
+
+	m.r.Qid = fid.qid
+	m.r.Iounit = m.con.msize - plan9.IOHDRSIZE
+
+	fidPut(fid)
+	return nil
+
+error:
+	fidPut(fid)
+	return err
+}
+
+func rTopen(m *Msg) error {
+	var open, omode, mode int
+	var isdir, rofs bool
+
+	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	if err == nil {
+		return err
+	}
+	if fid.open != 0 {
+		err = fmt.Errorf("fid open for I/O")
+		goto error
+	}
+
+	isdir = fileIsDir(fid.file)
+	rofs = fileIsRoFs(fid.file) || !groupWriteMember(fid.uname)
+
+	if m.t.Mode&64 != 0 {
+		if isdir {
+			err = fmt.Errorf("is a directory")
+			goto error
+		}
+
+		if rofs {
+			err = fmt.Errorf("read-only filesystem")
+			goto error
+		}
+
+		if err = permParent(fid, PermW); err != nil {
+			goto error
+		}
+
+		open |= FidORclose
+	}
+
+	omode = int(m.t.Mode) & OMODE
+	if omode == 0 || omode == 2 {
+		if err = permFid(fid, PermR); err != nil {
+			goto error
+		}
+		open |= FidORead
+	}
+
+	if omode == 1 || omode == 2 || (m.t.Mode&16 != 0) {
+		if isdir {
+			err = fmt.Errorf("is a directory")
+			goto error
+		}
+
+		if rofs {
+			err = fmt.Errorf("read-only filesystem")
+			goto error
+		}
+
+		if err = permFid(fid, PermW); err != nil {
+			goto error
+		}
+		open |= FidOWrite
+	}
+
+	if omode == 3 {
+		if isdir {
+			err = fmt.Errorf("is a directory")
+			goto error
+		}
+
+		if err = permFid(fid, PermX); err != nil {
+			goto error
+		}
+		open |= FidORead
+	}
+
+	if open&(FidOWrite|FidORead) == 0 {
+		err = fmt.Errorf("unknown mode")
+		goto error
+	}
+
+	mode = int(fileGetMode(fid.file))
+	if mode&ModeExclusive != 0 {
+		if err = exclAlloc(fid); err != nil {
+			goto error
+		}
+	}
+
+	/*
+	 * Everything checks out, try to commit any changes.
+	 */
+	if (m.t.Mode&16 != 0) && mode&ModeAppend == 0 {
+		if err = fileTruncate(fid.file, fid.uid); err != nil {
+			goto error
+		}
+	}
+
+	if isdir && fid.db != nil {
+		dirBufFree(fid.db)
+		fid.db = nil
+	}
+
+	fid.qid.Vers = fileGetMcount(fid.file)
+	m.r.Qid = fid.qid
+	m.r.Iounit = m.con.msize - plan9.IOHDRSIZE
+
+	fid.open = open
+
+	fidPut(fid)
+	return nil
+
+error:
+	if fid.excl != nil {
+		exclFree(fid)
+	}
+	fidPut(fid)
+	return err
 }
 
 func rTwalk(m *Msg) error {
@@ -224,6 +947,13 @@ Out:
 	return nil
 }
 
+func rTflush(m *Msg) error {
+	if m.t.Oldtag != ^uint16(0) {
+		msgFlush(m)
+	}
+	return nil
+}
+
 func parseAname(aname string) (fsname, path string) {
 	var s string
 	if aname != "" {
@@ -290,6 +1020,67 @@ func rTattach(m *Msg) error {
 	m.r.Qid = fid.qid
 
 	fidPut(fid)
+	return nil
+}
+
+func rTauth(m *Msg) error {
+	fsname, _ := parseAname(m.t.Aname)
+	fsys, err := fsysGet(fsname)
+	if err == nil {
+		return err
+	}
+
+	if fsysNoAuthCheck(fsys) || (m.con.flags&ConNoAuthCheck != 0) {
+		m.con.aok = 1
+		err = fmt.Errorf("authentication disabled")
+		fsysPut(fsys)
+		return err
+	}
+
+	if m.t.Uname == unamenone {
+		err = fmt.Errorf("user 'none' requires no authentication")
+		fsysPut(fsys)
+		return err
+	}
+
+	con := m.con
+	afid, err := fidGet(con, m.t.Afid, FidFWlock|FidFCreate)
+	if afid == nil {
+		fsysPut(fsys)
+		return err
+	}
+
+	afid.fsys = fsys
+
+	var afd int
+	afd, err = syscall.Open("/mnt/factotum/rpc", syscall.O_RDWR, 0)
+	if err != nil {
+		fidClunk(afid)
+		return err
+	}
+
+	afid.rpc = auth_allocrpc(afd)
+	if (afid.rpc) == nil {
+		syscall.Close(afd)
+		err = fmt.Errorf("can't auth_allocrpc")
+		fidClunk(afid)
+		return err
+	}
+
+	if auth_rpc(afid.rpc, "start", "proto=p9any role=server", 23) != ARok {
+		err = fmt.Errorf("can't auth_rpc")
+		fidClunk(afid)
+		return err
+	}
+
+	afid.open = FidOWrite | FidORead
+	afid.qid.Type = plan9.QTAUTH
+	afid.qid.Path = uint64(m.t.Afid)
+	afid.uname = m.t.Uname
+
+	m.r.Qid = afid.qid
+
+	fidPut(afid)
 	return nil
 }
 
@@ -360,16 +1151,16 @@ func rTversion(m *Msg) error {
 // from fcall.h
 var rFcall = [plan9.Tmax]func(*Msg) error{
 	plan9.Tversion: rTversion,
-	// Tauth:    rTauth,
-	plan9.Tattach: rTattach,
-	// Tflush:   rTflush,
-	plan9.Twalk: rTwalk,
-	// Topen:    rTopen,
-	// Tcreate:  rTcreate,
-	// Tread:    rTread,
-	// Twrite:   rTwrite,
-	// Tclunk:   rTclunk,
-	// Tremove:  rTremove,
-	// Tstat:    rTstat,
-	// Twstat:   rTwstat,
+	plan9.Tauth:    rTauth,
+	plan9.Tattach:  rTattach,
+	plan9.Tflush:   rTflush,
+	plan9.Twalk:    rTwalk,
+	plan9.Topen:    rTopen,
+	plan9.Tcreate:  rTcreate,
+	plan9.Tread:    rTread,
+	plan9.Twrite:   rTwrite,
+	plan9.Tclunk:   rTclunk,
+	plan9.Tremove:  rTremove,
+	plan9.Tstat:    rTstat,
+	plan9.Twstat:   rTwstat,
 }

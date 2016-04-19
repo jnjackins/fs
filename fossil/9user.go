@@ -583,7 +583,8 @@ func usersFileRead(path_ string) error {
 		if err := fileGetSize(file, &size); err == nil {
 			length := int(size)
 			buf := make([]byte, size)
-			if fileRead(file, buf, length, 0) == length {
+			var n int
+			if n, err = fileRead(file, buf, length, 0); n == length && err == nil {
 				err = uboxInit(string(buf))
 			}
 		}
