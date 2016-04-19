@@ -79,7 +79,7 @@ func permFid(fid *Fid, p int) error {
 }
 
 func permParent(fid *Fid, p int) error {
-	parent := (*File)(fileGetParent(fid.file))
+	parent := fileGetParent(fid.file)
 	err := permFile(parent, fid, p)
 	fileDecRef(parent)
 
@@ -93,7 +93,7 @@ func rTwstat(m *Msg) error {
 	}
 
 	uid := string("")
-	gid := string(uid)
+	gid := uid
 
 	var de DirEntry
 	var gl int
@@ -155,7 +155,7 @@ func rTwstat(m *Msg) error {
 	}
 
 	if dir.Muid != "" && dir.Muid[0] != '\x00' {
-		uid := string(uidByUname(dir.Muid))
+		uid := uidByUname(dir.Muid)
 		if uid == "" {
 			err = fmt.Errorf("wstat -- unknown muid")
 			goto error
@@ -237,7 +237,7 @@ func rTwstat(m *Msg) error {
 	}
 
 	if dir.Length != ^uint64(0) {
-		if uint64(dir.Length) != de.size {
+		if dir.Length != de.size {
 			/*
 			 * Cannot change length on append-only files.
 			 * If we're changing the append bit, it's okay.
@@ -252,7 +252,7 @@ func rTwstat(m *Msg) error {
 				goto error
 			}
 
-			de.size = uint64(dir.Length)
+			de.size = dir.Length
 			op = 1
 		}
 
@@ -330,7 +330,7 @@ func rTwstat(m *Msg) error {
 	 * Check for permission to change owner - must be god.
 	 */
 	if dir.Uid != "" {
-		uid := string(uidByUname(dir.Uid))
+		uid := uidByUname(dir.Uid)
 		if uid == "" {
 			err = fmt.Errorf("wstat -- unknown uid")
 			goto error
@@ -506,12 +506,12 @@ error:
 
 func rTread(m *Msg) error {
 	var count, n int
-	var data []byte
 
 	fid, err := fidGet(m.con, m.t.Fid, 0)
 	if err == nil {
 		return err
 	}
+	var data []byte
 	if fid.open&FidORead == 0 {
 		err = fmt.Errorf("fid not open for read")
 		goto error
@@ -559,7 +559,6 @@ error:
 }
 
 func rTcreate(m *Msg) error {
-	var omode int
 	var mode, perm uint32
 	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
 	if err == nil {
@@ -567,6 +566,7 @@ func rTcreate(m *Msg) error {
 	}
 	var file *File
 	var open int
+	var omode int
 	if fid.open != 0 {
 		err = fmt.Errorf("fid open for I/O")
 		goto error
@@ -626,7 +626,7 @@ func rTcreate(m *Msg) error {
 	} else {
 		perm &= ^uint32(0666) | mode&0666
 	}
-	mode = uint32(perm) & 0777
+	mode = perm & 0777
 	if m.t.Perm&plan9.DMDIR != 0 {
 		mode |= ModeDir
 	}
