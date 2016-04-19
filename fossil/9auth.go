@@ -42,9 +42,7 @@ type AuthInfo struct {
 }
 
 func authRead(afid *Fid, data []byte, count int) (int, error) {
-	var rpc *AuthRpc
-
-	rpc = afid.rpc
+	rpc := afid.rpc
 	if rpc == nil {
 		return -1, errors.New("not an auth fid")
 	}
@@ -85,7 +83,6 @@ func authRead(afid *Fid, data []byte, count int) (int, error) {
 	case ARphase:
 		return -1, errors.New("ARphase")
 	}
-	panic("not reached")
 }
 
 func authWrite(afid *Fid, data []byte, count int) int {
@@ -97,15 +94,12 @@ func authWrite(afid *Fid, data []byte, count int) int {
 }
 
 func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
-	var con *Con
-	var buf [1]uint8
-
 	/*
 	 * Can't lookup with FidWlock here as there may be
 	 * protocol to do. Use a separate lock to protect altering
 	 * the auth information inside afid.
 	 */
-	con = fid.con
+	con := fid.con
 
 	if t.Afid == ^uint32(0) {
 		/*
@@ -157,7 +151,6 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 	 * check uname and aname match.
 	 */
 	if afid.qid.Type&plan9.QTAUTH == 0 {
-
 		consPrintf("attach %s as %s: afid not an auth file\n", fsysGetName(fsys), fid.uname)
 		fidPut(afid)
 		return errors.New("bad authentication fid")
@@ -171,6 +164,7 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 
 	afid.alock.Lock()
 	if afid.cuname == "" {
+		var buf [1]uint8
 		n, err := authRead(afid, buf[:], 0)
 		if n != 0 || afid.cuname == "" {
 			afid.alock.Unlock()

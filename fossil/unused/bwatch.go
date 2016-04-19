@@ -54,11 +54,8 @@ var (
 )
 
 func hash(score venti.Score) uint {
-	var i uint
-	var h uint
-
-	h = 0
-	for i = 0; i < venti.ScoreSize; i++ {
+	h := uint(0)
+	for i := uint(0); i < venti.ScoreSize; i++ {
 		h = h*37 + uint(score[i])
 	}
 	return h % HashSize
@@ -68,13 +65,10 @@ func hash(score venti.Score) uint {
  * remove all dependencies with score as a parent
  */
 func _bwatchResetParent(score venti.Score) {
-
-	var w *WEntry
 	var next *WEntry
-	var h uint
 
-	h = hash(score)
-	for w = wmap.hparent[h]; w != nil; w = next {
+	h := uint(hash(score))
+	for w := (*WEntry)(wmap.hparent[h]); w != nil; w = next {
 		next = w.pnext
 		if bytes.Compare(w.p[:], score[:]) == 0 {
 			if w.pnext != nil {
@@ -101,13 +95,10 @@ func _bwatchResetParent(score venti.Score) {
  * and child
  */
 func _bwatchResetChild(score venti.Score) {
-
-	var w *WEntry
 	var next *WEntry
-	var h uint
 
-	h = hash(score)
-	for w = wmap.hchild[h]; w != nil; w = next {
+	h := uint(hash(score))
+	for w := (*WEntry)(wmap.hchild[h]); w != nil; w = next {
 		next = w.cnext
 		if bytes.Compare(w.c[:], score[:]) == 0 {
 			if w.pnext != nil {
@@ -116,7 +107,6 @@ func _bwatchResetChild(score venti.Score) {
 			if w.pprev != nil {
 				w.pprev.pnext = w.pnext
 			} else {
-
 				wmap.hparent[hash(w.p)] = w.pnext
 			}
 			if w.cnext != nil {
@@ -125,7 +115,6 @@ func _bwatchResetChild(score venti.Score) {
 			if w.cprev != nil {
 				w.cprev.cnext = w.cnext
 			} else {
-
 				wmap.hchild[h] = w.cnext
 			}
 		}
@@ -133,11 +122,8 @@ func _bwatchResetChild(score venti.Score) {
 }
 
 func parent(c venti.Score, off *int) []byte {
-	var w *WEntry
-	var h uint
-
-	h = hash(c)
-	for w = wmap.hchild[h]; w != nil; w = w.cnext {
+	h := uint(hash(c))
+	for w := (*WEntry)(wmap.hchild[h]); w != nil; w = w.cnext {
 		if bytes.Compare(w.c[:], c[:]) == 0 {
 			*off = w.off
 			return w.p[:]
@@ -148,14 +134,12 @@ func parent(c venti.Score, off *int) []byte {
 }
 
 func addChild(p [venti.EntrySize]uint8, c [venti.EntrySize]uint8, off int) {
-	var h uint
-
 	w := new(WEntry)
 	copy(w.p[:], p[:venti.ScoreSize])
 	copy(w.c[:], c[:venti.ScoreSize])
 	w.off = off
 
-	h = hash(w.p)
+	h := uint(hash(w.p))
 	w.pnext = wmap.hparent[h]
 	if w.pnext != nil {
 		w.pnext.pprev = w
@@ -199,11 +183,6 @@ func getWThread() *WThread {
  * Derive dependencies from the contents of b.
  */
 func bwatchDependency(b *Block) {
-	var i int
-	var epb int
-	var ppb int
-	var e Entry
-
 	if bwatchDisabled != 0 {
 		return
 	}
@@ -216,8 +195,9 @@ func bwatchDependency(b *Block) {
 		break
 
 	case BtDir:
-		epb = int(blockSize / venti.EntrySize)
-		for i = 0; i < epb; i++ {
+		epb := int(int(blockSize / venti.EntrySize))
+		var e Entry
+		for i := int(0); i < epb; i++ {
 			entryUnpack(&e, b.data, i)
 			if e.flags&venti.EntryActive == 0 {
 				continue
@@ -226,8 +206,8 @@ func bwatchDependency(b *Block) {
 		}
 
 	default:
-		ppb = int(blockSize / venti.ScoreSize)
-		for i = 0; i < ppb; i++ {
+		ppb := int(int(blockSize / venti.ScoreSize))
+		for i := int(0); i < ppb; i++ {
 			addChild(b.score, [venti.EntrySize]uint8(b.data[i*venti.ScoreSize:]), i)
 		}
 	}
@@ -236,10 +216,9 @@ func bwatchDependency(b *Block) {
 }
 
 func depth(s []byte) int {
-	var d int
 	var x int
 
-	d = -1
+	d := int(-1)
 	for s != nil {
 		d++
 		s = parent(venti.Score(s), &x)
@@ -249,26 +228,19 @@ func depth(s []byte) int {
 }
 
 func lockConflicts(xhave venti.Score, xwant venti.Score) bool {
-	var have []byte
-	var want []byte
-	var havedepth int
-	var wantdepth int
-	var havepos int
-	var wantpos int
+	have := []byte(xhave[:])
+	want := []byte(xwant[:])
 
-	have = xhave[:]
-	want = xwant[:]
-
-	havedepth = depth(have)
-	wantdepth = depth(want)
+	havedepth := int(depth(have))
+	wantdepth := int(depth(want))
 
 	/*
 	 * walk one or the other up until they're both
 	 * at the same level.
 	 */
-	havepos = -1
+	havepos := int(-1)
 
-	wantpos = -1
+	wantpos := int(-1)
 	have = xhave[:]
 	want = xwant[:]
 	for wantdepth > havedepth {
@@ -323,11 +295,8 @@ func lockConflicts(xhave venti.Score, xwant venti.Score) bool {
 }
 
 func stop() {
-	var fd int
-	var buf string
-
-	buf = fmt.Sprintf("#p/%d/ctl", os.Getpid())
-	fd = open(buf, 1)
+	buf := string(fmt.Sprintf("#p/%d/ctl", os.Getpid()))
+	fd := int(open(buf, 1))
 	write(fd, "stop", 4)
 	close(fd)
 }
@@ -338,10 +307,6 @@ func stop() {
  * locks for any of b's children.
  */
 func bwatchLock(b *Block) {
-
-	var i int
-	var w *WThread
-
 	if bwatchDisabled != 0 {
 		return
 	}
@@ -351,8 +316,8 @@ func bwatchLock(b *Block) {
 	}
 
 	wmap.lk.Lock()
-	w = getWThread()
-	for i = 0; uint(i) < w.nb; i++ {
+	w := (*WThread)(getWThread())
+	for i := int(0); uint(i) < w.nb; i++ {
 		if lockConflicts(w.b[i].score, b.score) != 0 {
 			fmt.Fprintf(os.Stderr, "%d: have block %v; shouldn't lock %v\n", w.pid, w.b[i].score, b.score)
 			stop()
@@ -373,10 +338,6 @@ func bwatchLock(b *Block) {
  * Note that the calling thread is about to unlock b.
  */
 func bwatchUnlock(b *Block) {
-
-	var i int
-	var w *WThread
-
 	if bwatchDisabled != 0 {
 		return
 	}
@@ -385,7 +346,8 @@ func bwatchUnlock(b *Block) {
 		return
 	}
 
-	w = getWThread()
+	w := (*WThread)(getWThread())
+	var i int
 	for i = 0; uint(i) < w.nb; i++ {
 		if w.b[i] == b {
 			break

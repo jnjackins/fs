@@ -72,12 +72,8 @@ func lstnListen(lstn *Lstn) {
 }
 
 func lstnAlloc(address string, flags int) (*Lstn, error) {
-	var afd int
-	var lstn *Lstn
-	var dir [NETPATHLEN]byte
-
 	lbox.lock.Lock()
-	for lstn = lbox.head; lstn != nil; lstn = lstn.next {
+	for lstn := (*Lstn)(lbox.head); lstn != nil; lstn = lstn.next {
 		if lstn.address != address {
 			continue
 		}
@@ -85,13 +81,14 @@ func lstnAlloc(address string, flags int) (*Lstn, error) {
 		return nil, fmt.Errorf("listen: already serving '%s'", address)
 	}
 
-	afd = announce(address, dir)
+	var dir [NETPATHLEN]byte
+	afd := int(announce(address, dir))
 	if afd < 0 {
 		lbox.lock.Unlock()
 		return nil, fmt.Errorf("listen: announce '%s': %r", address)
 	}
 
-	lstn = new(Lstn)
+	lstn := (*Lstn)(new(Lstn))
 	lstn.afd = afd
 	lstn.address = address
 	lstn.flags = flags
@@ -114,7 +111,6 @@ func lstnAlloc(address string, flags int) (*Lstn, error) {
 }
 
 func cmdLstn(argv []string) error {
-	var lstn *Lstn
 	var usage = errors.New("usage: listen [-dIN] [address]")
 
 	flags := flag.NewFlagSet("listen", flag.ContinueOnError)
@@ -143,7 +139,7 @@ func cmdLstn(argv []string) error {
 
 	case 0:
 		lbox.lock.RLock()
-		for lstn = lbox.head; lstn != nil; lstn = lstn.next {
+		for lstn := (*Lstn)(lbox.head); lstn != nil; lstn = lstn.next {
 			consPrintf("\t%s\t%s\n", lstn.address, lstn.dir)
 		}
 		lbox.lock.RUnlock()
@@ -157,6 +153,7 @@ func cmdLstn(argv []string) error {
 		}
 
 		lbox.lock.Lock()
+		var lstn *Lstn
 		for lstn = lbox.head; lstn != nil; lstn = lstn.next {
 			if lstn.address != argv[0] {
 				continue

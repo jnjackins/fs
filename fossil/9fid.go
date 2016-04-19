@@ -60,7 +60,6 @@ func fidLock(fid *Fid, flags int) {
 		fid.lock.Lock()
 		fid.flags = flags
 	} else {
-
 		fid.lock.RLock()
 	}
 
@@ -190,10 +189,9 @@ func fidFree(fid *Fid) {
 
 func fidUnHash(fid *Fid) {
 	var fp *Fid
-	var hash **Fid
 
 	assert(fid.ref == 0)
-	hash = &fid.con.fidhash[fid.fidno%NFidHash]
+	hash := &fid.con.fidhash[fid.fidno%NFidHash]
 	for fp = *hash; fp != nil; fp = fp.hash {
 		if fp == fid {
 			*hash = fp.hash
@@ -208,13 +206,11 @@ func fidUnHash(fid *Fid) {
 	if fid.prev != nil {
 		fid.prev.next = fid.next
 	} else {
-
 		fid.con.fhead = fid.next
 	}
 	if fid.next != nil {
 		fid.next.prev = fid.prev
 	} else {
-
 		fid.con.ftail = fid.prev
 	}
 	fid.next = nil
@@ -224,16 +220,13 @@ func fidUnHash(fid *Fid) {
 }
 
 func fidGet(con *Con, fidno uint32, flags int) (*Fid, error) {
-	var fid *Fid
-	var hash **Fid
-
 	if fidno == plan9.NOFID {
 		return nil, errors.New("fidno invalid")
 	}
 
-	hash = &con.fidhash[fidno%NFidHash]
+	hash := &con.fidhash[fidno%NFidHash]
 	con.fidlock.Lock()
-	for fid = *hash; fid != nil; fid = fid.hash {
+	for fid := *hash; fid != nil; fid = fid.hash {
 		if fid.fidno != fidno {
 			continue
 		}
@@ -260,7 +253,7 @@ func fidGet(con *Con, fidno uint32, flags int) (*Fid, error) {
 	}
 
 	if flags&FidFCreate != 0 {
-		fid = fidAlloc()
+		fid := fidAlloc()
 		if fid != nil {
 			assert(flags&FidFWlock != 0)
 			fid.con = con

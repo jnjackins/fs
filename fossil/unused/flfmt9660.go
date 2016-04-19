@@ -55,9 +55,7 @@ type Voldesc struct {
 }
 
 func dumpbootvol(a interface{}) {
-	var v *Voldesc
-
-	v = a.(*Voldesc)
+	v := (*Voldesc)(a.(*Voldesc))
 	fmt.Printf("magic %.2x %.5s %.2x %2x\n", v.magic[0], v.magic[1:], v.magic[6], v.magic[7])
 	if v.magic[0] == 0xFF {
 		return
@@ -105,16 +103,14 @@ type Cdir struct {
 }
 
 func Dfmt(fmt_ string) string {
-	var buf string
-	var c *Cdir
-
 	var tmp *Cdir
 	if sizeof(*Cdir) == 1 {
 		tmp = (func() { fmt_[0].args; (**Cdir)(fmt_[0].args) }())[-8]
 	} else {
 		tmp = tmp
 	}
-	c = tmp
+	c := (*Cdir)(tmp)
+	var buf string
 	if c.namelen == 1 && c.name[0] == '\x00' || c.name[0] == '\001' {
 		var tmp *C.char
 		if c.name[0] != 0 {
@@ -124,7 +120,6 @@ func Dfmt(fmt_ string) string {
 		}
 		buf = fmt.Sprintf(".%s dloc %v dlen %v", tmp, gc.Nconv(c.dloc, 0), gc.Nconv(c.dlen, 0))
 	} else {
-
 		buf = fmt.Sprintf("%v dloc %v dlen %v", c.namelen, gc.Tconv(c.name, 0), gc.Nconv(c.dloc, 0), gc.Nconv(c.dlen, 0))
 	}
 
@@ -145,13 +140,9 @@ func littleend() {
 }
 
 func big(a interface{}, n int) uint32 {
-	var p []byte
-	var v uint32
-	var i int
-
-	p = a.([]byte)
-	v = 0
-	for i = 0; i < n; i++ {
+	p := []byte(a.([]byte))
+	v := uint32(0)
+	for i := int(0); i < n; i++ {
 		v = v<<8 | uint32(p[0])
 		p = p[1:]
 	}
@@ -159,13 +150,9 @@ func big(a interface{}, n int) uint32 {
 }
 
 func little(a interface{}, n int) uint32 {
-	var p []byte
-	var v uint32
-	var i int
-
-	p = a.([]byte)
-	v = 0
-	for i = 0; i < n; i++ {
+	p := []byte(a.([]byte))
+	v := uint32(0)
+	for i := int(0); i < n; i++ {
 		v |= uint32(p[0]) << uint(i*8)
 		p = p[1:]
 	}
@@ -174,32 +161,27 @@ func little(a interface{}, n int) uint32 {
 
 /* numbers in big or little endian. */
 func BLfmt(fmt_ string) string {
-
-	var v uint32
-	var p []byte
-	var buf string
-
 	var tmp *uchar
 	if sizeof([]byte) == 1 {
 		tmp = (func() { fmt_[0].args; (*[]byte)(fmt_[0].args) }())[-8]
 	} else {
 		tmp = tmp
 	}
-	p = []byte(tmp)
+	p := []byte([]byte(tmp))
 
 	if fmt_[0].flags&FmtPrec == 0 {
 		fmt_ += "*BL*"
 		return ""
 	}
 
+	var v uint32
 	if fmt_[0].r == 'B' {
 		v = big(p, fmt_[0].prec)
 	} else {
-
 		v = little(p, fmt_[0].prec)
 	}
 
-	buf = fmt.Sprintf("0x%.*x", fmt_[0].prec*2, v)
+	buf := string(fmt.Sprintf("0x%.*x", fmt_[0].prec*2, v))
 	fmt_[0].flags &^= FmtPrec
 	fmt_ += buf
 	return ""
@@ -207,43 +189,36 @@ func BLfmt(fmt_ string) string {
 
 /* numbers in both little and big endian */
 func Nfmt(fmt_ string) string {
-
-	var buf string
-	var p []byte
-
 	var tmp *uchar
 	if sizeof([]byte) == 1 {
 		tmp = (func() { fmt_[0].args; (*[]byte)(fmt_[0].args) }())[-8]
 	} else {
 		tmp = tmp
 	}
-	p = []byte(tmp)
+	p := []byte([]byte(tmp))
 
-	buf = fmt.Sprintf("%v %v", fmt_[0].prec, ctxt.Line(p), fmt_[0].prec, gc.Bconv(p[fmt_[0].prec:], 0))
+	buf := string(fmt.Sprintf("%v %v", fmt_[0].prec, ctxt.Line(p), fmt_[0].prec, gc.Bconv(p[fmt_[0].prec:], 0)))
 	fmt_[0].flags &^= FmtPrec
 	fmt_ += buf
 	return ""
 }
 
 func asciiTfmt(fmt_ string) string {
-	var p string
-	var buf string
-	var i int
-
 	var tmp *C.char
 	if sizeof(string) == 1 {
 		tmp = (func() { fmt_[0].args; (*string)(fmt_[0].args) }())[-8]
 	} else {
 		tmp = tmp
 	}
-	p = string(tmp)
+	p := string(string(tmp))
+	var buf string
+	var i int
 	for i = 0; i < fmt_[0].prec; i++ {
 		buf[i] = p[0]
 		p = p[1:]
 	}
 	buf[i] = '\x00'
 	for p = buf[len(buf):]; p > buf && p[-1] == ' '; p-- {
-
 	}
 	p[0] = '\x00'
 	fmt_[0].flags &^= FmtPrec
@@ -256,8 +231,6 @@ func ascii() {
 }
 
 func runeTfmt(fmt_ string) string {
-	var buf [256]uint
-	var r *uint
 	var i int
 	var p []byte
 
@@ -268,12 +241,13 @@ func runeTfmt(fmt_ string) string {
 		tmp = tmp
 	}
 	p = []byte(tmp)
+	var buf [256]uint
 	for i = 0; i*2+2 <= fmt_[0].prec; (func() { i++; p = p[2:] })() {
 		buf[i] = uint(p[0])<<8 | uint(p[1])
 	}
 	buf[i] = '\x00'
+	var r *uint
 	for r = &buf[i:][0]; r > buf && r[-1] == ' '; r-- {
-
 	}
 	r[0] = '\x00'
 	fmt_[0].flags &^= FmtPrec
@@ -307,9 +281,6 @@ var root [2048]uint8
 var v *Voldesc
 
 func iso9660init(xfd int, xh *Header, xfile9660 string, xoff9660 int) {
-	var sect [2048]uint8
-	var sect2 [2048]uint8
-
 	fd = xfd
 	h = xh
 	file9660 = xfile9660
@@ -344,12 +315,14 @@ func iso9660init(xfd int, xh *Header, xfile9660 string, xoff9660 int) {
 	}
 
 	/* Read "same" block via CD image and via Fossil image */
+	var sect [2048]uint8
 	getsect(sect[:], int(startoff/Blocksize))
 
 	if seek(fd, int64(startoff)-int64(off9660), 0) < 0 {
 		log.Fatalf("cannot seek to first data sector on cd via fossil")
 	}
 	fmt.Fprintf(os.Stderr, "look for %d at %d\n", startoff, startoff-uint32(off9660))
+	var sect2 [2048]uint8
 	if readn(fd, sect2, Blocksize) != Blocksize {
 		log.Fatalf("cannot read first data sector on cd via fossil")
 	}
@@ -359,37 +332,31 @@ func iso9660init(xfd int, xh *Header, xfile9660 string, xoff9660 int) {
 }
 
 func iso9660labels(disk *Disk, buf []byte, write func(int, uint)) {
-	var sb uint32
-	var eb uint32
-	var bn uint32
-	var lb uint32
-	var llb uint32
-	var l Label
-	var lpb int
-	var sect [Blocksize]uint8
-
 	if diskReadRaw(disk, PartData, uint((startoff-fsoff)/uint32(h.blockSize)), buf) == 0 {
 		log.Fatalf("disk read failed: %v", err)
 	}
+	var sect [Blocksize]uint8
 	getsect(sect[:], int(startoff/Blocksize))
 	if memcmp(buf, sect, Blocksize) != 0 {
 		log.Fatalf("fsoff is wrong")
 	}
 
-	sb = (startoff - fsoff) / uint32(h.blockSize)
-	eb = (endoff - fsoff + uint32(h.blockSize) - 1) / uint32(h.blockSize)
+	sb := uint32((startoff - fsoff) / uint32(h.blockSize))
+	eb := uint32((endoff - fsoff + uint32(h.blockSize) - 1) / uint32(h.blockSize))
 
-	lpb = int(h.blockSize) / LabelSize
+	lpb := int(int(h.blockSize) / LabelSize)
 
 	/* for each reserved block, mark label */
-	llb = ^0
+	llb := uint32(^0)
 
+	var l Label
 	l.typ = BtData
 	l.state = BsAlloc
 	l.tag = Tag
 	l.epoch = 1
 	l.epochClose = ^uint(0)
-	for bn = sb; bn < eb; bn++ {
+	var lb uint32
+	for bn := uint32(sb); bn < eb; bn++ {
 		lb = bn / uint32(lpb)
 		if lb != llb {
 			if llb != ^0 {
@@ -410,9 +377,7 @@ func iso9660labels(disk *Disk, buf []byte, write func(int, uint)) {
 }
 
 func iso9660copy(fs *Fs) {
-	var root *File
-
-	root = fileOpen(fs, "/active")
+	root := (*File)(fileOpen(fs, "/active"))
 	iso9660copydir(fs, root, (*Cdir)(v.rootdir))
 	fileDecRef(root)
 	fs.elk.RUnlock()
@@ -427,7 +392,6 @@ func iso9660copy(fs *Fs) {
  * (Just an artifact of how mk9660 works.)
  */
 func iso9660start(c *Cdir) uint32 {
-
 	var sect [Blocksize]uint8
 
 	for c.flags&2 != 0 {
@@ -438,7 +402,6 @@ func iso9660start(c *Cdir) uint32 {
 
 		/* oops: might happen if leftmost directory is empty or leftmost file is zero length! */
 		if little(c.dloc, 4) == 0 {
-
 			log.Fatalf("error parsing cd image or unfortunate cd image")
 		}
 	}
@@ -447,18 +410,14 @@ func iso9660start(c *Cdir) uint32 {
 }
 
 func iso9660copydir(fs *Fs, dir *File, cd *Cdir) {
-	var off uint32
-	var end uint32
-	var len uint32
 	var sect [Blocksize]uint8
-	var esect []byte
 	var p []byte
 	var c *Cdir
 
-	len = little(cd.dlen, 4)
-	off = little(cd.dloc, 4) * Blocksize
-	end = off + len
-	esect = []byte(sect[Blocksize:])
+	len := uint32(little(cd.dlen, 4))
+	off := uint32(little(cd.dloc, 4) * Blocksize)
+	end := uint32(off + len)
+	esect := []byte([]byte(sect[Blocksize:]))
 
 	for ; off < end; off += Blocksize {
 		getsect(sect[:], int(off/Blocksize))
@@ -477,11 +436,8 @@ func iso9660copydir(fs *Fs, dir *File, cd *Cdir) {
 }
 
 func getname(pp *[]byte) string {
-	var p []byte
-	var l int
-
-	p = *pp
-	l = int(p[0])
+	p := []byte(*pp)
+	l := int(int(p[0]))
 	*pp = p[1+l:]
 	if l == 0 {
 		return ""
@@ -492,13 +448,9 @@ func getname(pp *[]byte) string {
 }
 
 func getcname(c *Cdir) string {
-	var up []byte
-	var p string
-	var q string
-
-	up = []byte(&c.namelen)
-	p = getname(&up)
-	for q = p; q[0] != 0; q = q[1:] {
+	up := []byte([]byte(&c.namelen))
+	p := string(getname(&up))
+	for q := string(p); q[0] != 0; q = q[1:] {
 		q[0] = byte(tolower(int(q[0])))
 	}
 	return p
@@ -507,22 +459,13 @@ func getcname(c *Cdir) string {
 var dmsize = [12]int8{31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 
 func getcdate(p []byte) uint32 {
-	var tm Tm
-	var y int
-	var M int
-	var d int
-	var h int
-	var m int
-	var s int
-	var tz int
-
-	y = int(p[0])
-	M = int(p[1])
-	d = int(p[2])
-	h = int(p[3])
-	m = int(p[4])
-	s = int(p[5])
-	tz = int(p[6])
+	y := int(int(p[0]))
+	M := int(int(p[1]))
+	d := int(int(p[2]))
+	h := int(int(p[3]))
+	m := int(int(p[4]))
+	s := int(int(p[5]))
+	tz := int(int(p[6]))
 
 	if y < 70 {
 		return err
@@ -543,7 +486,7 @@ func getcdate(p []byte) uint32 {
 		return err
 	}
 
-	tm = Tm{}
+	tm := Tm(Tm{})
 	tm.sec = s
 	tm.min = m
 	tm.hour = h
@@ -557,24 +500,13 @@ func getcdate(p []byte) uint32 {
 var ind int
 
 func iso9660copyfile(fs *Fs, dir *File, c *Cdir) {
-	var d Dir
-	var de DirEntry
-	var sysl int
-	var score venti.Score
-	var off uint32
-	var foff uint32
-	var len uint32
-	var mode uint32
-	var p []byte
-	var f *File
-
 	ind++
-	d = Dir{}
-	p = []byte(c.name[c.namelen:])
+	d := Dir(Dir{})
+	p := []byte([]byte(c.name[c.namelen:]))
 	if (uint64(p))&1 != 0 {
 		p = p[1:]
 	}
-	sysl = -cap([]byte(c)[c.len:]) + cap(p)
+	sysl := int(-cap([]byte(c)[c.len:]) + cap(p))
 	if sysl <= 0 {
 		log.Fatalf("missing plan9 directory entry on %d/%d/%.*s", c.namelen, c.name[0], c.namelen, c.name)
 	}
@@ -595,21 +527,21 @@ func iso9660copyfile(fs *Fs, dir *File, c *Cdir) {
 		fmt.Printf("%*scopy %s %s %s %o\n", ind*2, "", d.name, d.uid, d.gid, d.mode)
 	}
 
-	mode = d.mode & 0777
+	mode := uint32(d.mode & 0777)
 	if d.mode&0x80000000 != 0 {
 		mode |= ModeDir
 	}
-	f = fileCreate(dir, d.name, mode, d.uid)
+	f := (*File)(fileCreate(dir, d.name, mode, d.uid))
 	if f == nil {
 		log.Fatalf("could not create file '%s': %r", d.name)
 	}
 	if d.mode&0x80000000 != 0 {
 		iso9660copydir(fs, f, c)
 	} else {
-
-		len = little(c.dlen, 4)
-		off = little(c.dloc, 4) * Blocksize
-		for foff = 0; foff < len; foff += uint32(h.blockSize) {
+		len := uint32(little(c.dlen, 4))
+		off := uint32(little(c.dloc, 4) * Blocksize)
+		var score venti.Score
+		for foff := uint32(0); foff < len; foff += uint32(h.blockSize) {
 			localToGlobal(uint((off+foff-fsoff)/uint32(h.blockSize)), score)
 			if fileMapBlock(f, foff/uint32(h.blockSize), score, Tag) == 0 {
 				log.Fatalf("fileMapBlock: %R")
@@ -621,6 +553,7 @@ func iso9660copyfile(fs *Fs, dir *File, c *Cdir) {
 		}
 	}
 
+	var de DirEntry
 	if fileGetDir(f, &de) == 0 {
 		log.Fatalf("fileGetDir: %R")
 	}

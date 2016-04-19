@@ -8,7 +8,6 @@ import (
 var EPermission = errors.New("permission denied")
 
 func permFile(file *File, fid *Fid, perm int) int {
-	var u string
 	var de DirEntry
 
 	if fileGetDir(file, &de) == 0 {
@@ -19,16 +18,14 @@ func permFile(file *File, fid *Fid, perm int) int {
 	 * User none only gets other permissions.
 	 */
 	if fid.uname != unamenone {
-
 		/*
 		 * There is only one uid<->uname mapping
 		 * and it's already cached in the Fid, but
 		 * it might have changed during the lifetime
 		 * if this Fid.
 		 */
-		u = unameByUid(de.uid)
+		u := string(unameByUid(de.uid))
 		if u != "" {
-
 			if fid.uname == u && (uint32(perm<<6)&de.mode != 0) {
 				deCleanup(&de)
 				return nil
@@ -70,39 +67,30 @@ func permFid(fid *Fid, p int) int {
 }
 
 func permParent(fid *Fid, p int) int {
-	var r int
-	var parent *File
-
-	parent = fileGetParent(fid.file)
-	r = permFile(parent, fid, p)
+	parent := (*File)(fileGetParent(fid.file))
+	r := int(permFile(parent, fid, p))
 	fileDecRef(parent)
 
 	return r
 }
 
 func rTwstat(m *Msg) int {
-	var dir Dir
-	var fid *Fid
-	var mode uint32
-	var oldmode uint32
-	var de DirEntry
-	var gid string
-	var uid string
-	var gl int
-	var op int
-	var retval int
-	var tsync int
-	var wstatallow int
-
-	fid = fidGet(m.con, m.t.fid, FidFWlock)
+	fid := (*Fid)(fidGet(m.con, m.t.fid, FidFWlock))
 	if err == nil {
 		return err
 	}
 
-	uid = ""
-	gid = uid
-	retval = 0
+	uid := string("")
+	gid := string(uid)
+	retval := int(0)
 
+	var de DirEntry
+	var dir Dir
+	var gl int
+	var oldmode uint32
+	var op int
+	var tsync int
+	var wstatallow int
 	if fid.uname == unamenone || (fid.qid.typ&0x08 != 0) {
 		err = EPermission
 		goto error0
@@ -156,7 +144,7 @@ func rTwstat(m *Msg) int {
 	}
 
 	if dir.muid != "" && dir.muid[0] != '\x00' {
-		uid = uidByUname(dir.muid)
+		uid := string(uidByUname(dir.muid))
 		if uid == "" {
 			err = fmt.Errorf("wstat -- unknown muid")
 			goto error
@@ -175,7 +163,6 @@ func rTwstat(m *Msg) int {
 	 * Check .qid.type and .mode agree if neither is defaulted.
 	 */
 	if dir.qid.typ != uint8(^0) && dir.mode != ^0 {
-
 		if uint32(dir.qid.typ) != (dir.mode>>24)&0xFF {
 			err = fmt.Errorf("wstat -- qid.type/mode mismatch")
 			goto error
@@ -190,7 +177,6 @@ func rTwstat(m *Msg) int {
 		 * .qid.type or .mode isn't defaulted, check for unknown bits.
 		 */
 		if dir.mode == ^0 {
-
 			dir.mode = uint32(dir.qid.typ)<<24 | de.mode&0777
 		}
 		if dir.mode&^(0x80000000|0x40000000|0x20000000|0x04000000|0777) != 0 {
@@ -201,7 +187,7 @@ func rTwstat(m *Msg) int {
 		/*
 		 * Synthesise a mode to check against the current settings.
 		 */
-		mode = dir.mode & 0777
+		mode := uint32(dir.mode & 0777)
 
 		if dir.mode&0x20000000 != 0 {
 			mode |= ModeExclusive
@@ -246,7 +232,6 @@ func rTwstat(m *Msg) int {
 			 * If we're changing the append bit, it's okay.
 			 */
 			if de.mode&oldmode&ModeAppend != 0 {
-
 				err = fmt.Errorf("wstat -- attempt to change length of append-only file")
 				goto error
 			}
@@ -269,7 +254,6 @@ func rTwstat(m *Msg) int {
 	 * is needed; permission checks on gid will be done later.
 	 */
 	if dir.gid != "" && dir.gid[0] != '\x00' {
-
 		gid = uidByUname(dir.gid)
 		if gid == "" {
 			err = fmt.Errorf("wstat -- unknown gid")
@@ -278,7 +262,6 @@ func rTwstat(m *Msg) int {
 
 		tsync = 0
 	} else {
-
 		gid = de.gid
 	}
 
@@ -304,14 +287,13 @@ func rTwstat(m *Msg) int {
 	 * If gid is nil here then
 	 */
 	if gid != de.gid {
-
 		if wstatallow == 0 && (fid.uid != de.uid || groupMember(gid, fid.uname) == 0) && gl != 2 {
 			err = fmt.Errorf("wstat -- not owner and not group leaders")
 			goto error
 		}
 
 		de.gid = gid
-		gid = ""
+		gid := string("")
 		op = 1
 		tsync = 0
 	}
@@ -322,7 +304,6 @@ func rTwstat(m *Msg) int {
 	 * If so, check write permission in parent.
 	 */
 	if dir.name != "" && dir.name[0] != '\x00' {
-
 		if err = checkValidFileName(dir.name); err != nil {
 			goto error
 		}
@@ -341,8 +322,7 @@ func rTwstat(m *Msg) int {
 	 * Check for permission to change owner - must be god.
 	 */
 	if dir.uid != "" && dir.uid[0] != '\x00' {
-
-		uid = uidByUname(dir.uid)
+		uid := string(uidByUname(dir.uid))
 		if uid == "" {
 			err = fmt.Errorf("wstat -- unknown uid")
 			goto error
@@ -360,7 +340,7 @@ func rTwstat(m *Msg) int {
 			}
 
 			de.uid = uid
-			uid = ""
+			uid := string("")
 			op = 1
 		}
 
@@ -370,7 +350,6 @@ func rTwstat(m *Msg) int {
 	if op != 0 {
 		retval = fileSetDir(fid.file, &de, fid.uid)
 	} else {
-
 		retval = 1
 	}
 
@@ -392,16 +371,12 @@ error0:
 }
 
 func rTstat(m *Msg) int {
-	var dir Dir
-	var fid *Fid
-	var de DirEntry
-
-	fid = fidGet(m.con, m.t.fid, 0)
+	fid := (*Fid)(fidGet(m.con, m.t.fid, 0))
 	if err == nil {
 		return err
 	}
 	if fid.qid.typ&0x08 != 0 {
-		dir = Dir{}
+		dir := Dir(Dir{})
 		dir.qid = fid.qid
 		dir.mode = 0x08000000
 		dir.atime = uint32(time.Now().Unix())
@@ -425,6 +400,7 @@ func rTstat(m *Msg) int {
 		return nil
 	}
 
+	var de DirEntry
 	if fileGetDir(fid.file, &de) == 0 {
 		fidPut(fid)
 		return err
@@ -445,13 +421,11 @@ func rTstat(m *Msg) int {
 }
 
 func _rTclunk(fid *Fid, remove int) int {
-	var rok int
-
 	if fid.excl != nil {
 		exclFree(fid)
 	}
 
-	rok = 1
+	rok := int(1)
 	if remove != 0 && fid.qid.typ&0x08 == 0 {
 		rok = permParent(fid, PermW)
 		if rok > 0 {
@@ -465,9 +439,7 @@ func _rTclunk(fid *Fid, remove int) int {
 }
 
 func rTremove(m *Msg) int {
-	var fid *Fid
-
-	fid = fidGet(m.con, m.t.fid, FidFWlock)
+	fid := (*Fid)(fidGet(m.con, m.t.fid, FidFWlock))
 	if err == nil {
 		return err
 	}
@@ -475,9 +447,7 @@ func rTremove(m *Msg) int {
 }
 
 func rTclunk(m *Msg) int {
-	var fid *Fid
-
-	fid = fidGet(m.con, m.t.fid, FidFWlock)
+	fid := (*Fid)(fidGet(m.con, m.t.fid, FidFWlock))
 	if err == nil {
 		return err
 	}
@@ -487,14 +457,12 @@ func rTclunk(m *Msg) int {
 }
 
 func rTwrite(m *Msg) int {
-	var fid *Fid
-	var count int
-	var n int
-
-	fid = fidGet(m.con, m.t.fid, 0)
+	fid := (*Fid)(fidGet(m.con, m.t.fid, 0))
 	if err == nil {
 		return err
 	}
+	var count int
+	var n int
 	if fid.open&FidOWrite == 0 {
 		err = fmt.Errorf("fid not open for write")
 		goto error
@@ -521,7 +489,6 @@ func rTwrite(m *Msg) int {
 	} else if fid.qid.typ&0x08 != 0 {
 		n = authWrite(fid, m.t.data, count)
 	} else {
-
 		n = fileWrite(fid.file, m.t.data, count, m.t.offset, fid.uid)
 	}
 	if n < 0 {
@@ -539,15 +506,13 @@ error:
 }
 
 func rTread(m *Msg) int {
-	var fid *Fid
-	var data []byte
-	var count int
-	var n int
-
-	fid = fidGet(m.con, m.t.fid, 0)
+	fid := (*Fid)(fidGet(m.con, m.t.fid, 0))
 	if err == nil {
 		return err
 	}
+	var count int
+	var data []byte
+	var n int
 	if fid.open&FidORead == 0 {
 		err = fmt.Errorf("fid not open for read")
 		goto error
@@ -579,7 +544,6 @@ func rTread(m *Msg) int {
 	} else if fid.qid.typ&0x08 != 0 {
 		n = authRead(fid, data, count)
 	} else {
-
 		n = fileRead(fid.file, data, count, m.t.offset)
 	}
 	if n < 0 {
@@ -598,17 +562,15 @@ error:
 }
 
 func rTcreate(m *Msg) int {
-	var fid *Fid
+	fid := (*Fid)(fidGet(m.con, m.t.fid, FidFWlock))
+	if err == nil {
+		return err
+	}
 	var file *File
 	var mode uint32
 	var omode int
 	var open int
 	var perm int
-
-	fid = fidGet(m.con, m.t.fid, FidFWlock)
-	if err == nil {
-		return err
-	}
 	if fid.open != 0 {
 		err = fmt.Errorf("fid open for I/O")
 		goto error
@@ -666,7 +628,6 @@ func rTcreate(m *Msg) int {
 	if m.t.perm&0x80000000 != 0 {
 		perm &= int(^0777 | mode&0777)
 	} else {
-
 		perm &= int(^0666 | mode&0666)
 	}
 	mode = uint32(perm) & 0777
@@ -698,7 +659,6 @@ func rTcreate(m *Msg) int {
 	if mode&ModeDir != 0 {
 		fid.qid.typ = 0x80
 	} else {
-
 		fid.qid.typ = 0x00
 	}
 	if mode&ModeAppend != 0 {
@@ -726,17 +686,15 @@ error:
 }
 
 func rTopen(m *Msg) int {
-	var fid *Fid
+	fid := (*Fid)(fidGet(m.con, m.t.fid, FidFWlock))
+	if err == nil {
+		return err
+	}
 	var isdir int
 	var mode int
 	var omode int
 	var open int
 	var rofs int
-
-	fid = fidGet(m.con, m.t.fid, FidFWlock)
-	if err == nil {
-		return err
-	}
 	if fid.open != 0 {
 		err = fmt.Errorf("fid open for I/O")
 		goto error
@@ -815,7 +773,6 @@ func rTopen(m *Msg) int {
 	 * Everything checks out, try to commit any changes.
 	 */
 	if (m.t.mode&16 != 0) && mode&ModeAppend == 0 {
-
 		if fileTruncate(fid.file, fid.uid) == 0 {
 			goto error
 		}
@@ -844,22 +801,12 @@ error:
 }
 
 func rTwalk(m *Msg) int {
-	var qid Qid
-	var r *Fcall
-	var t *Fcall
-	var nwname int
 	var wlock int
-	var file *File
-	var nfile *File
-	var fid *Fid
-	var ofid *Fid
-	var nfid *Fid
 
-	t = &m.t
+	t := (*Fcall)(&m.t)
 	if t.fid == t.newfid {
 		wlock = FidFWlock
 	} else {
-
 		wlock = 0
 	}
 
@@ -868,9 +815,8 @@ func rTwalk(m *Msg) int {
 	 * current session and must not have been opened for I/O
 	 * by an open or create message.
 	 */
-	ofid = fidGet(m.con, t.fid, wlock)
+	ofid := (*Fid)(fidGet(m.con, t.fid, wlock))
 	if ofid == nil {
-
 		return err
 	}
 	if ofid.open != 0 {
@@ -886,8 +832,9 @@ func rTwalk(m *Msg) int {
 	 * simple 'clone' operation.
 	 * It's a no-op if newfid is the same as fid and t->nwname is 0.
 	 */
-	nfid = nil
+	nfid := (*Fid)(nil)
 
+	var fid *Fid
 	if t.fid != t.newfid {
 		nfid = fidGet(m.con, t.newfid, FidFWlock|FidFCreate)
 		if nfid == nil {
@@ -904,11 +851,10 @@ func rTwalk(m *Msg) int {
 		nfid.fsys = fsysIncRef(ofid.fsys)
 		fid = nfid
 	} else {
-
 		fid = ofid
 	}
 
-	r = &m.r
+	r := (*Fcall)(&m.r)
 	r.nwqid = 0
 
 	if t.nwname == 0 {
@@ -920,10 +866,12 @@ func rTwalk(m *Msg) int {
 		return nil
 	}
 
-	file = fid.file
+	file := (*File)(fid.file)
 	fileIncRef(file)
-	qid = fid.qid
+	qid := Qid(fid.qid)
 
+	var nfile *File
+	var nwname int
 	for nwname = 0; nwname < int(t.nwname); nwname++ {
 		/*
 		 * Walked elements must represent a directory and
@@ -933,7 +881,6 @@ func rTwalk(m *Msg) int {
 		 * to walk out of it.
 		 */
 		if qid.typ&0x80 == 0 {
-
 			err = fmt.Errorf("not a directory")
 			break
 		}
@@ -1028,7 +975,6 @@ func parseAname(aname string, fsname *string, path_ *string) {
 	if aname != "" && aname[0] != 0 {
 		s = aname
 	} else {
-
 		s = "main/active"
 	}
 	*fsname = s
@@ -1037,7 +983,6 @@ func parseAname(aname string, fsname *string, path_ *string) {
 		(*path_)[0] = '\x00'
 		*path_ = *path_[1:]
 	} else {
-
 		*path_ = ""
 	}
 }
@@ -1049,11 +994,6 @@ func parseAname(aname string, fsname *string, path_ *string) {
  * following U.S. cryptography export regulations.
  */
 func conIPCheck(con *Con) int {
-
-	var ok string
-	var p string
-	var fd int
-
 	if con.flags&ConIPCheck != 0 {
 		if con.remote[0] == 0 {
 			err = fmt.Errorf("cannot verify unknown remote address")
@@ -1062,9 +1002,8 @@ func conIPCheck(con *Con) int {
 
 		if access("/mnt/ipok/ok", 0) < 0 {
 			/* mount closes the fd on success */
-			fd = open("/srv/ipok", 2)
+			fd := int(open("/srv/ipok", 2))
 			if fd >= 0 && mount(fd, -1, "/mnt/ipok", 0x0000, "") < 0 {
-
 				close(fd)
 			}
 			if access("/mnt/ipok/ok", 0) < 0 {
@@ -1073,10 +1012,10 @@ func conIPCheck(con *Con) int {
 			}
 		}
 
-		ok = fmt.Sprintf("/mnt/ipok/ok/%s", con.remote)
-		p = strchr(ok, '!')
+		ok := string(fmt.Sprintf("/mnt/ipok/ok/%s", con.remote))
+		p := string(strchr(ok, '!'))
 		if p != "" {
-			p = ""
+			p := string("")
 		}
 		if access(ok, 0) < 0 {
 			err = fmt.Errorf("restricted remote address")
@@ -1088,18 +1027,15 @@ func conIPCheck(con *Con) int {
 }
 
 func rTattach(m *Msg) int {
-	var fid *Fid
-	var fsys *Fsys
-	var fsname string
-	var path_ string
-
-	fid = fidGet(m.con, m.t.fid, FidFWlock|FidFCreate)
+	fid := (*Fid)(fidGet(m.con, m.t.fid, FidFWlock|FidFCreate))
 	if err == nil {
 		return err
 	}
 
+	var fsname string
+	var path_ string
 	parseAname(m.t.aname, &fsname, &path_)
-	fsys = fsysGet(fsname)
+	fsys := (*Fsys)(fsysGet(fsname))
 	if fsys == nil {
 		fidClunk(fid)
 		return err
@@ -1110,7 +1046,6 @@ func rTattach(m *Msg) int {
 	if m.t.uname[0] != '\x00' {
 		fid.uname = m.t.uname
 	} else {
-
 		fid.uname = unamenone
 	}
 
@@ -1148,15 +1083,11 @@ func rTattach(m *Msg) int {
 }
 
 func rTauth(m *Msg) int {
-	var afd int
-	var con *Con
-	var afid *Fid
-	var fsys *Fsys
 	var fsname string
 	var path_ string
 
 	parseAname(m.t.aname, &fsname, &path_)
-	fsys = fsysGet(fsname)
+	fsys := (*Fsys)(fsysGet(fsname))
 	if err == nil {
 		return err
 	}
@@ -1174,8 +1105,8 @@ func rTauth(m *Msg) int {
 		return err
 	}
 
-	con = m.con
-	afid = fidGet(con, m.t.afid, FidFWlock|FidFCreate)
+	con := (*Con)(m.con)
+	afid := (*Fid)(fidGet(con, m.t.afid, FidFWlock|FidFCreate))
 	if afid == nil {
 		fsysPut(fsys)
 		return err
@@ -1183,7 +1114,7 @@ func rTauth(m *Msg) int {
 
 	afid.fsys = fsys
 
-	afd = open("/mnt/factotum/rpc", 2)
+	afd := int(open("/mnt/factotum/rpc", 2))
 	if afd < 0 {
 		err = fmt.Errorf("can't open \"/mnt/factotum/rpc\"")
 		fidClunk(afid)
@@ -1216,12 +1147,9 @@ func rTauth(m *Msg) int {
 }
 
 func rTversion(m *Msg) error {
-	var v int
-	var con *Con
-
 	t := m.t
 	r := m.r
-	con = m.con
+	con := (*Con)(m.con)
 
 	con.lock.Lock()
 	defer con.lock.Unlock()
@@ -1259,7 +1187,7 @@ func rTversion(m *Msg) error {
 		 * Currently, the only defined version
 		 * is "9P2000"; ignore any later versions.
 		 */
-		v = strtol(string(&t.version[2]), nil, 10)
+		v := int(strtol(string(&t.version[2]), nil, 10))
 
 		if v >= 2000 {
 			r.version = "9P2000"
