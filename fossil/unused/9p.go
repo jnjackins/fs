@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-var EPermission string = "permission denied"
+var EPermission = errors.New("permission denied")
 
 func permFile(file *File, fid *Fid, perm int) int {
 	var u string
@@ -1215,21 +1215,19 @@ func rTauth(m *Msg) int {
 	return nil
 }
 
-func rTversion(m *Msg) int {
+func rTversion(m *Msg) error {
 	var v int
 	var con *Con
-	var r *Fcall
-	var t *Fcall
 
-	t = &m.t
-	r = &m.r
+	t := m.t
+	r := m.r
 	con = m.con
 
 	con.lock.Lock()
+	defer con.lock.Unlock()
+
 	if con.state != ConInit {
-		con.lock.Unlock()
-		err = fmt.Errorf("Tversion: down")
-		return err
+		return errors.New("Tversion: down")
 	}
 
 	con.state = ConNew
@@ -1239,24 +1237,19 @@ func rTversion(m *Msg) int {
 	 * Should this be done before or after checking the
 	 * validity of the Tversion?
 	 */
-	fidClunkAll(con)
+	//fidClunkAll(con)
 
-	if t.tag != uint16(^0) {
-		con.lock.Unlock()
-		err = fmt.Errorf("Tversion: invalid tag")
-		return err
+	if t.tag != ^uint16(0) {
+		return errors.New("Tversion: invalid tag")
 	}
 
 	if t.msize < 256 {
-		con.lock.Unlock()
-		err = fmt.Errorf("Tversion: message size too small")
-		return err
+		return errors.New("Tversion: message size too small")
 	}
 
 	if t.msize < con.msize {
 		r.msize = t.msize
 	} else {
-
 		r.msize = con.msize
 	}
 
@@ -1285,8 +1278,6 @@ func rTversion(m *Msg) int {
 			m.state = MsgF
 		}
 	}
-
-	con.lock.Unlock()
 
 	return nil
 }

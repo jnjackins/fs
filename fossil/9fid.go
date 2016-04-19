@@ -1,9 +1,51 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+	"syscall"
+
+	"9fans.net/go/plan9"
 )
+
+/* Fid.flags and fidGet(..., flags) */
+const (
+	FidFCreate = 0x01
+	FidFWlock  = 0x02
+)
+
+const ( /* Fid.open */
+	FidOCreate = 0x01
+	FidORead   = 0x02
+	FidOWrite  = 0x04
+	FidORclose = 0x08
+)
+
+const NFidHash = 503
+
+type Fid struct {
+	lock   *sync.RWMutex
+	con    *Con
+	fidno  uint32
+	ref    int /* inc/dec under Con.fidlock */
+	flags  int
+	open   int
+	fsys   *Fsys
+	file   *File
+	qid    plan9.Qid
+	uid    string
+	uname  string
+	db     *DirBuf
+	excl   *Excl
+	alock  *sync.Mutex /* Tauth/Tattach */
+	rpc    *AuthRpc
+	cuname string
+	sort   *Fid /* sorted by uname in cmdWho */
+	hash   *Fid /* lookup by fidno */
+	next   *Fid /* clunk session with Tversion */
+	prev   *Fid
+}
 
 var fbox struct {
 	lock *sync.Mutex
@@ -65,7 +107,6 @@ func fidAlloc() *Fid {
 		fbox.free = fid.hash
 		fbox.nfree--
 	} else {
-
 		fid = new(Fid)
 		fid.lock = new(sync.RWMutex)
 		fid.alock = new(sync.Mutex)
@@ -75,13 +116,13 @@ func fidAlloc() *Fid {
 	fbox.lock.Unlock()
 
 	fid.con = nil
-	fid.fidno = ^uint32(0)
+	fid.fidno = plan9.NOFID
 	fid.ref = 0
 	fid.flags = 0
 	fid.open = FidOCreate
 	assert(fid.fsys == nil)
 	assert(fid.file == nil)
-	fid.qid = Qid{0, 0, 0}
+	fid.qid = plan9.Qid{}
 	assert(fid.uid == "")
 	assert(fid.uname == "")
 	assert(fid.db == nil)
@@ -109,12 +150,10 @@ func fidFree(fid *Fid) {
 	fidUnlock(fid)
 
 	if fid.uid != "" {
-		vtMemFree(fid.uid)
 		fid.uid = ""
 	}
 
 	if fid.uname != "" {
-		vtMemFree(fid.uname)
 		fid.uname = ""
 	}
 
@@ -122,7 +161,7 @@ func fidFree(fid *Fid) {
 		exclFree(fid)
 	}
 	if fid.rpc != nil {
-		close(fid.rpc.afd)
+		syscall.Close(fid.rpc.afd)
 		auth_freerpc(fid.rpc)
 		fid.rpc = nil
 	}
@@ -133,7 +172,6 @@ func fidFree(fid *Fid) {
 	}
 
 	if fid.cuname != "" {
-		vtMemFree(fid.cuname)
 		fid.cuname = ""
 	}
 
@@ -144,12 +182,9 @@ func fidFree(fid *Fid) {
 		fbox.free = fid
 		fbox.nfree++
 	} else {
-
-		vtLockFree(fid.alock)
-		vtLockFree(fid.lock)
-		vtMemFree(fid)
+		fid.alock = nil
+		fid.lock = nil
 	}
-
 	fbox.lock.Unlock()
 }
 
@@ -158,7 +193,6 @@ func fidUnHash(fid *Fid) {
 	var hash **Fid
 
 	assert(fid.ref == 0)
-
 	hash = &fid.con.fidhash[fid.fidno%NFidHash]
 	for fp = *hash; fp != nil; fp = fp.hash {
 		if fp == fid {
@@ -189,12 +223,12 @@ func fidUnHash(fid *Fid) {
 	fid.con.nfid--
 }
 
-func fidGet(con *Con, fidno uint, flags int) *Fid {
+func fidGet(con *Con, fidno uint32, flags int) (*Fid, error) {
 	var fid *Fid
 	var hash **Fid
 
-	if fidno == uint(^0) {
-		return nil
+	if fidno == plan9.NOFID {
+		return nil, errors.New("fidno invalid")
 	}
 
 	hash = &con.fidhash[fidno%NFidHash]
@@ -209,23 +243,20 @@ func fidGet(con *Con, fidno uint, flags int) *Fid {
 		 * when called from attach, clone or walk.
 		 */
 		if flags&FidFCreate != 0 {
-
 			con.fidlock.Unlock()
-			err = fmt.Errorf("%s: fid 0x%d in use", argv0, fidno)
-			return nil
+			return nil, fmt.Errorf("%s: fid 0x%d in use", argv0, fidno)
 		}
 
 		fid.ref++
 		con.fidlock.Unlock()
 
 		fidLock(fid, flags)
-		if (fid.open&FidOCreate != 0) || fid.fidno == uint(^0) {
+		if (fid.open&FidOCreate != 0) || fid.fidno == plan9.NOFID {
 			fidPut(fid)
-			err = fmt.Errorf("%s: fid invalid", argv0)
-			return nil
+			return nil, fmt.Errorf("%s: fid invalid", argv0)
 		}
 
-		return fid
+		return fid, nil
 	}
 
 	if flags&FidFCreate != 0 {
@@ -242,7 +273,6 @@ func fidGet(con *Con, fidno uint, flags int) *Fid {
 				fid.prev = con.ftail
 				con.ftail.next = fid
 			} else {
-
 				con.fhead = fid
 				fid.prev = nil
 			}
@@ -261,14 +291,13 @@ func fidGet(con *Con, fidno uint, flags int) *Fid {
 			fidLock(fid, flags)
 
 			fid.open &^= FidOCreate
-			return fid
+			return fid, nil
 		}
 	}
 
 	con.fidlock.Unlock()
 
-	err = fmt.Errorf("%s: fid not found", argv0)
-	return nil
+	return nil, fmt.Errorf("%s: fid not found", argv0)
 }
 
 func fidPut(fid *Fid) {
@@ -277,7 +306,7 @@ func fidPut(fid *Fid) {
 	fid.ref--
 	fid.con.fidlock.Unlock()
 
-	if fid.ref == 0 && fid.fidno == uint(^0) {
+	if fid.ref == 0 && fid.fidno == plan9.NOFID {
 		fidFree(fid)
 		return
 	}
@@ -292,7 +321,7 @@ func fidClunk(fid *Fid) {
 	assert(fid.ref > 0)
 	fid.ref--
 	fidUnHash(fid)
-	fid.fidno = uint(^0)
+	fid.fidno = plan9.NOFID
 	fid.con.fidlock.Unlock()
 
 	if fid.ref > 0 {
@@ -306,15 +335,12 @@ func fidClunk(fid *Fid) {
 }
 
 func fidClunkAll(con *Con) {
-	var fid *Fid
-	var fidno uint
-
 	con.fidlock.Lock()
 	for con.fhead != nil {
-		fidno = con.fhead.fidno
+		fidno := con.fhead.fidno
 		con.fidlock.Unlock()
-		fid = fidGet(con, fidno, FidFWlock)
-		if fid != nil {
+		fid, err := fidGet(con, fidno, FidFWlock)
+		if err == nil {
 			fidClunk(fid)
 		}
 		con.fidlock.Lock()

@@ -22,6 +22,76 @@ const (
 	NMsizeInit   = 8192 + 24
 )
 
+const (
+	MsgN = 0
+	MsgR = 1
+	Msg9 = 2
+	MsgW = 3
+	MsgF = 4
+)
+
+type Msg struct {
+	msize  uint32       /* actual size of data */
+	t      *plan9.Fcall // XXX: transmit?
+	r      *plan9.Fcall // XXX: receive?
+	con    *Con
+	anext  *Msg /* allocation free list */
+	mnext  *Msg /* all active messsages on this Con */
+	mprev  *Msg
+	state  int  /* */
+	flush  *Msg /* flushes waiting for this Msg */
+	rwnext *Msg /* read/write queue */
+	nowq   int  /* do not place on write queue */
+}
+
+const (
+	ConNoneAllow   = 1 << 0
+	ConNoAuthCheck = 1 << 1
+	ConNoPermCheck = 1 << 2
+	ConWstatAllow  = 1 << 3
+	ConIPCheck     = 1 << 4
+)
+
+const (
+	ConDead     = 0
+	ConNew      = 1
+	ConDown     = 2
+	ConInit     = 3
+	ConUp       = 4
+	ConMoribund = 5
+)
+
+type Con struct {
+	name      string
+	isconsole bool      /* immutable */
+	flags     int       /* immutable */
+	remote    [128]byte /* immutable */
+	lock      *sync.Mutex
+	state     int
+	conn      net.Conn
+	version   *Msg
+	msize     uint32 /* negotiated with Tversion */
+	rendez    *sync.Cond
+	anext     *Con /* alloc */
+	cnext     *Con /* in use */
+	cprev     *Con
+	alock     *sync.RWMutex
+	aok       int /* authentication done */
+	mlock     *sync.Mutex
+	mhead     *Msg /* all Msgs on this connection */
+	mtail     *Msg
+	mrendez   *sync.Cond
+	wlock     *sync.Mutex
+	whead     *Msg /* write queue */
+	wtail     *Msg
+	wrendez   *sync.Cond
+	fidlock   *sync.Mutex /* */
+	fidhash   [NFidHash]*Fid
+	fhead     *Fid
+	ftail     *Fid
+	nfid      int
+}
+
 var mbox struct {
 	alock   *sync.Mutex // alloc
 	ahead   *Msg
@@ -31,10 +101,9 @@ var mbox struct {
 	nmsg       int
 	nmsgstarve int
 
-	rlock   *sync.Mutex // read
-	rhead   *Msg
-	rtail   *Msg
-	rrendez *sync.Cond
+	// read
+	rlock *sync.Mutex
+	rchan chan *Msg
 
 	maxproc     int
 	nproc       int
@@ -263,35 +332,26 @@ func msgFlush(m *Msg) {
 func msgProc() {
 	//vtThreadSetName("msgProc")
 
-	var m *Msg
-	var con *Con
-
 	for {
 		// If surplus to requirements, exit.
 		// If not, wait for and pull a message off
 		// the read queue.
 		mbox.rlock.Lock()
-
 		if mbox.nproc > mbox.maxproc {
 			mbox.nproc--
 			mbox.rlock.Unlock()
 			break
 		}
-
-		for mbox.rhead == nil {
-			mbox.rrendez.Wait()
-		}
-		m = mbox.rhead
-		mbox.rhead = m.rwnext
-		m.rwnext = nil
 		mbox.rlock.Unlock()
 
-		con = m.con
-		var err error
+		m := <-mbox.rchan
+
+		con := m.con
 
 		// If the message has been flushed before
 		// any 9P processing has started, mark it so
 		// none will be attempted.
+		var err error
 		con.mlock.Lock()
 		if m.state == MsgF {
 			err = errors.New("flushed")
@@ -323,9 +383,10 @@ func msgProc() {
 		}
 
 		// Dispatch if not error already.
+		m.r = new(plan9.Fcall)
 		m.r.Tag = m.t.Tag
 		if err == nil {
-			panic("TODO: dispatch msg")
+			err = rFcall[m.t.Type](m)
 		}
 		if err != nil {
 			m.r.Type = plan9.Rerror
@@ -353,13 +414,14 @@ func msgProc() {
 func msgRead(con *Con) {
 	//vtThreadSetName("msgRead")
 
-	var m *Msg
+	go msgProc()
+
 	eof := false
 	for !eof {
-		m = msgAlloc(con)
+		m := msgAlloc(con)
 
 		var err error
-		// TODO: use a reader to begin with
+		fmt.Fprintf(os.Stderr, "msgRead: trying to read a msg\n")
 		m.t, err = plan9.ReadFcall(con.conn)
 		if err == io.EOF {
 			m.t.Type = plan9.Tversion
@@ -369,12 +431,11 @@ func msgRead(con *Con) {
 			m.t.Version = "9PEoF"
 			eof = true
 		} else if err != nil {
-			if *Dflag {
-				fmt.Fprintf(os.Stderr, "msgRead: error unmarshalling fcall from %s: %v\n", con.name, err)
-			}
+			fmt.Fprintf(os.Stderr, "msgRead: error unmarshalling fcall from %s: %v\n", con.name, err)
 			msgFree(m)
 			continue
 		}
+		fmt.Fprintf(os.Stderr, "msgRead: got a msg (type %v)\n", m.t)
 
 		if *Dflag {
 			fmt.Fprintf(os.Stderr, "msgRead %p: t %v\n", con, &m.t)
@@ -392,42 +453,19 @@ func msgRead(con *Con) {
 		con.mtail = m
 		con.mlock.Unlock()
 
-		mbox.rlock.Lock()
-		if mbox.rhead == nil {
-			mbox.rhead = m
-			// TODO: sync.Cond.Signal() never fails (but vtWakeup does)
-			//if mbox.rrendez.Signal() == 0 {
-			//	if mbox.nproc < mbox.maxproc {
-			//		go msgProc()
-			//		mbox.nproc++
-			//	} else {
-			//		mbox.nprocstarve++
-			//	}
-			//}
-
-			// don't need this surely?
-			//mbox.rrendez.Signal()
-		} else {
-			mbox.rtail.rwnext = m
-		}
-		mbox.rtail = m
-		mbox.rlock.Unlock()
+		mbox.rchan <- m
 	}
 }
 
 func msgWrite(con *Con) {
 	//vtThreadSetName("msgWrite")
 
-	go msgRead(con)
-
-	var eof int
 	var flush *Msg
 	var m *Msg
-	var n int
 	for {
 		// Wait for and pull a message off the write queue.
+		fmt.Fprintln(os.Stderr, "msgWrite: waiting for message to write")
 		con.wlock.Lock()
-
 		for con.whead == nil {
 			con.wrendez.Wait()
 		}
@@ -436,8 +474,9 @@ func msgWrite(con *Con) {
 		m.rwnext = nil
 		assert(m.nowq == 0)
 		con.wlock.Unlock()
+		fmt.Fprintln(os.Stderr, "msgWrite: got message")
 
-		eof = 0
+		eof := false
 
 		// Write each message (if it hasn't been flushed)
 		// followed by any messages waiting for it to complete.
@@ -458,8 +497,11 @@ func msgWrite(con *Con) {
 				if err != nil {
 					panic("unexpected error")
 				}
-				if nn, err := con.conn.Write(buf); nn != n || err != nil {
-					eof = 1
+				if _, err := con.conn.Write(buf); err != nil {
+					if *Dflag {
+						fmt.Fprintf(os.Stderr, "msgWrite: %v\n", err)
+					}
+					eof = true
 				}
 
 				con.mlock.Lock()
@@ -474,11 +516,11 @@ func msgWrite(con *Con) {
 			msgFree(m)
 			m = flush
 		}
-
 		con.mlock.Unlock()
 
 		con.lock.Lock()
-		if eof != 0 && con.conn != nil {
+		if eof && con.conn != nil {
+			fmt.Fprintf(os.Stderr, "msgWrite: closing con: %p\n", con.conn)
 			con.conn.Close()
 			con.conn = nil
 		}
@@ -508,7 +550,7 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 		con := &Con{
 			lock:    new(sync.Mutex),
 			msize:   cbox.msize,
-			alock:   new(sync.Mutex),
+			alock:   new(sync.RWMutex),
 			mlock:   new(sync.Mutex),
 			wlock:   new(sync.Mutex),
 			fidlock: new(sync.Mutex),
@@ -562,6 +604,7 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 	con.isconsole = false
 	cbox.alock.Unlock()
 
+	go msgRead(con)
 	go msgWrite(con)
 
 	return con
@@ -726,7 +769,7 @@ func msgInit() {
 	mbox.arendez = sync.NewCond(mbox.alock)
 
 	mbox.rlock = new(sync.Mutex)
-	mbox.rrendez = sync.NewCond(mbox.rlock)
+	mbox.rchan = make(chan *Msg, mbox.maxmsg)
 
 	mbox.maxmsg = NMsgInit
 	mbox.maxproc = NMsgProcInit

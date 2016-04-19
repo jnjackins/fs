@@ -1,70 +1,94 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+
+	"9fans.net/go/plan9"
 )
 
-func authRead(afid *Fid, data interface{}, count int) int {
-	var ai *AuthInfo
+// rpc return values
+const (
+	ARok = iota
+	ARdone
+	ARerror
+	ARneedkey
+	ARbadkey
+	ARwritenext
+	ARtoosmall
+	ARtoobig
+	ARrpcfailure
+	ARphase
+
+	AuthRpcMax = 4096
+)
+
+type AuthRpc struct {
+	afd  int
+	afid *Fid
+	ibuf [AuthRpcMax]byte
+	obuf [AuthRpcMax]byte
+	arg  string
+	narg uint
+}
+
+type AuthInfo struct {
+	cuid    string /* caller id */
+	suid    string /* server id */
+	cap     string /* capability (only valid on server side) */
+	nsecret int    /* length of secret */
+	secret  string /* secret */
+}
+
+func authRead(afid *Fid, data []byte, count int) (int, error) {
 	var rpc *AuthRpc
 
 	rpc = afid.rpc
 	if rpc == nil {
-		err = fmt.Errorf("not an auth fid")
-		return -1
+		return -1, errors.New("not an auth fid")
 	}
 
 	switch auth_rpc(rpc, "read", nil, 0) {
 	default:
-		err = fmt.Errorf("fossil authRead: auth protocol not finished")
-		return -1
+		return -1, errors.New("fossil authRead: auth protocol not finished")
 
 	case ARdone:
-		ai = auth_getinfo(rpc)
-		if ai == nil {
-			err = fmt.Errorf("%v", err)
-			break
+		ai, err := auth_getinfo(rpc)
+		if err != nil {
+			return -1, err
 		}
-
-		if ai.cuid == "" || ai.cuid[0] == '\x00' {
-			err = fmt.Errorf("auth with no cuid")
+		if ai.cuid == "" {
 			auth_freeAI(ai)
-			break
+			return -1, errors.New("auth with no cuid")
 		}
-
 		assert(afid.cuname == "")
 		afid.cuname = ai.cuid
 		auth_freeAI(ai)
-		if Dflag != 0 {
+		if *Dflag {
 			fmt.Fprintf(os.Stderr, "authRead cuname %s\n", afid.cuname)
 		}
 		assert(afid.uid == "")
 		afid.uid = uidByUname(afid.cuname)
 		if (afid.uid) == "" {
-			err = fmt.Errorf("unknown user %#q", afid.cuname)
-			break
+			return -1, fmt.Errorf("unknown user %#q", afid.cuname)
 		}
-
-		return err
+		return 0, nil
 
 	case ARok:
 		if uint(count) < rpc.narg {
-			err = fmt.Errorf("not enough data in auth read")
-			break
+			return -1, errors.New("not enough data in auth read")
 		}
-
 		copy(data, rpc.arg[:rpc.narg])
-		return int(rpc.narg)
+		return int(rpc.narg), nil
 
 	case ARphase:
-		err = fmt.Errorf("%v", err)
+		return -1, errors.New("ARphase")
 	}
-
-	return -1
+	panic("not reached")
 }
 
-func authWrite(afid *Fid, data interface{}, count int) int {
+func authWrite(afid *Fid, data []byte, count int) int {
 	assert(afid.rpc != nil)
 	if auth_rpc(afid.rpc, "write", data, count) != ARok {
 		return -1
@@ -72,9 +96,8 @@ func authWrite(afid *Fid, data interface{}, count int) int {
 	return count
 }
 
-func authCheck(t *Fcall, fid *Fid, fsys *Fsys) int {
+func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 	var con *Con
-	var afid *Fid
 	var buf [1]uint8
 
 	/*
@@ -84,7 +107,7 @@ func authCheck(t *Fcall, fid *Fid, fsys *Fsys) int {
 	 */
 	con = fid.con
 
-	if t.afid == uint(^0) {
+	if t.Afid == ^uint32(0) {
 		/*
 		 * If no authentication is asked for, allow
 		 * "none" provided the connection has already
@@ -95,10 +118,9 @@ func authCheck(t *Fcall, fid *Fid, fsys *Fsys) int {
 		 */
 		con.alock.RLock()
 
-		if con.isconsole != 0 {
-		} else /* anything goes */
-		if (con.flags&ConNoneAllow != 0) || con.aok != 0 {
-
+		if con.isconsole {
+			/* anything goes */
+		} else if (con.flags&ConNoneAllow != 0) || con.aok != 0 {
 			var noneprint int
 
 			tmp1 := noneprint
@@ -106,14 +128,11 @@ func authCheck(t *Fcall, fid *Fid, fsys *Fsys) int {
 			if tmp1 < 10 {
 				consPrintf("attach %s as %s: allowing as none\n", fsysGetName(fsys), fid.uname)
 			}
-			vtMemFree(fid.uname)
 			fid.uname = unamenone
 		} else {
-
 			con.alock.RUnlock()
 			consPrintf("attach %s as %s: connection not authenticated, not console\n", fsysGetName(fsys), fid.uname)
-			err = fmt.Errorf("cannot attach as none before authentication")
-			return err
+			return errors.New("cannot attach as none before authentication")
 		}
 
 		con.alock.RUnlock()
@@ -121,47 +140,43 @@ func authCheck(t *Fcall, fid *Fid, fsys *Fsys) int {
 		fid.uid = uidByUname(fid.uname)
 		if (fid.uid) == "" {
 			consPrintf("attach %s as %s: unknown uname\n", fsysGetName(fsys), fid.uname)
-			err = fmt.Errorf("unknown user")
-			return err
+			return errors.New("unknown user")
 		}
 
 		return nil
 	}
 
-	afid = fidGet(con, t.afid, 0)
-	if afid == nil {
-		consPrintf("attach %s as %s: bad afid\n", fsysGetName(fsys), fid.uname)
-		err = fmt.Errorf("bad authentication fid")
-		return err
+	afid, err := fidGet(con, t.Afid, 0)
+	if err != nil {
+		consPrintf("attach %s as %s: bad afid: %v\n", fsysGetName(fsys), fid.uname, err)
+		return errors.New("bad authentication fid")
 	}
 
 	/*
 	 * Check valid afid;
 	 * check uname and aname match.
 	 */
-	if afid.qid.typ&0x08 == 0 {
+	if afid.qid.Type&plan9.QTAUTH == 0 {
 
 		consPrintf("attach %s as %s: afid not an auth file\n", fsysGetName(fsys), fid.uname)
 		fidPut(afid)
-		err = fmt.Errorf("bad authentication fid")
-		return err
+		return errors.New("bad authentication fid")
 	}
 
 	if afid.uname != fid.uname || afid.fsys != fsys {
 		consPrintf("attach %s as %s: afid is for %s as %s\n", fsysGetName(fsys), fid.uname, fsysGetName(afid.fsys), afid.uname)
 		fidPut(afid)
-		err = fmt.Errorf("attach/auth mismatch")
-		return err
+		return errors.New("attach/auth mismatch")
 	}
 
 	afid.alock.Lock()
 	if afid.cuname == "" {
-		if authRead(afid, buf, 0) != 0 || afid.cuname == "" {
+		n, err := authRead(afid, buf[:], 0)
+		if n != 0 || afid.cuname == "" {
 			afid.alock.Unlock()
-			consPrintf("attach %s as %s: %R\n", fsysGetName(fsys), fid.uname)
+			consPrintf("attach %s as %s: %v\n", fsysGetName(fsys), fid.uname, err)
 			fidPut(afid)
-			err = fmt.Errorf("fossil authCheck: auth protocol not finished")
-			return err
+			return errors.New("fossil authCheck: auth protocol not finished")
 		}
 	}
 
@@ -172,11 +187,9 @@ func authCheck(t *Fcall, fid *Fid, fsys *Fsys) int {
 	if (fid.uid) == "" {
 		consPrintf("attach %s as %s: unknown cuname %s\n", fsysGetName(fsys), fid.uname, afid.cuname)
 		fidPut(afid)
-		err = fmt.Errorf("unknown user")
-		return err
+		return errors.New("unknown user")
 	}
 
-	vtMemFree(fid.uname)
 	fid.uname = afid.cuname
 	fidPut(afid)
 

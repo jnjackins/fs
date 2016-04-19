@@ -33,13 +33,11 @@ func lstnFree(lstn *Lstn) {
 	if lstn.prev != nil {
 		lstn.prev.next = lstn.next
 	} else {
-
 		lbox.head = lstn.next
 	}
 	if lstn.next != nil {
 		lstn.next.prev = lstn.prev
 	} else {
-
 		lbox.tail = lstn.prev
 	}
 	lbox.lock.Unlock()

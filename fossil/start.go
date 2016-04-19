@@ -102,7 +102,7 @@ func start(argv []string) {
 	cmdInit()
 	fsysInit()
 	exclInit()
-	//fidInit()
+	fidInit()
 
 	srvInit()
 	//lstnInit()

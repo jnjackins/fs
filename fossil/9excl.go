@@ -34,7 +34,7 @@ func exclAlloc(fid *Fid) error {
 	t := uint32(time.Now().Unix())
 	ebox.lock.Lock()
 	for excl := ebox.head; excl != nil; excl = excl.next {
-		if excl.fsys != fid.fsys || excl.path != fid.qid.path {
+		if excl.fsys != fid.fsys || excl.path != fid.qid.Path {
 			continue
 		}
 
@@ -62,7 +62,7 @@ func exclAlloc(fid *Fid) error {
 	excl := new(Excl)
 
 	excl.fsys = fid.fsys
-	excl.path = fid.qid.path
+	excl.path = fid.qid.Path
 	excl.time = t + LifeTime
 	if ebox.tail != nil {
 		excl.prev = ebox.tail

@@ -112,6 +112,11 @@ func lrand() int {
 	return rand.Intn(231)
 }
 
+func auth_rpc(rpc *AuthRpc, verb string, a interface{}, na int) uint { panic("unimplemented") }
+func auth_getinfo(rpc *AuthRpc) (*AuthInfo, error)                   { panic("unimplemented") }
+func auth_freeAI(ai *AuthInfo)                                       { panic("unimplemented") }
+func auth_freerpc(rpc *AuthRpc)                                      { panic("unimplemented") }
+
 func (b *Block) canLock() bool {
 	fmt.Fprintln(os.Stderr, "TODO canLock")
 	return false

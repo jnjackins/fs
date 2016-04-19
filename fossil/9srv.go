@@ -103,7 +103,7 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 	}
 
 	srv := &Srv{
-		//srvfd:   srvfd,
+		srvfd:   -1,
 		service: service,
 	}
 
