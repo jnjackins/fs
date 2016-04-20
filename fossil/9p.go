@@ -1,5 +1,7 @@
 package main
 
+// 9P message handlers
+
 import (
 	"errors"
 	"fmt"
@@ -20,6 +22,22 @@ const (
 )
 
 var EPermission = errors.New("permission denied")
+
+var rFcall = [plan9.Tmax]func(*Msg) error{
+	plan9.Tversion: rTversion, // version - negotiate protocol version
+	plan9.Tauth:    rTauth,    // auth - authorize a connection
+	plan9.Tattach:  rTattach,  // attach - establish a connection
+	plan9.Tflush:   rTflush,   // flush - abort a message
+	plan9.Twalk:    rTwalk,    // walk - descend a directory hierarchy
+	plan9.Topen:    rTopen,    // open - prepare a fid for I/O on a new file
+	plan9.Tcreate:  rTcreate,  // create - prepare a fid for I/O on an new file
+	plan9.Tread:    rTread,    // read - transfer data from a file
+	plan9.Twrite:   rTwrite,   // write - transfer data to a file
+	plan9.Tclunk:   rTclunk,   // clunk - forget about a fid
+	plan9.Tremove:  rTremove,  // remove - remove a file from a server
+	plan9.Tstat:    rTstat,    // wstat - change file attributes
+	plan9.Twstat:   rTwstat,   // stat - inquire about file attributes
+}
 
 func permFile(file *File, fid *Fid, perm int) error {
 	var de DirEntry
@@ -281,7 +299,6 @@ func rTwstat(m *Msg) error {
 	 * 'Gl' counts whether neither, one or both groups are led.
 	 */
 	gl = bool2int(groupLeader(gid, fid.uname))
-
 	gl += bool2int(groupLeader(de.gid, fid.uname))
 
 	if op != 0 && wstatallow == 0 {
@@ -373,7 +390,7 @@ error0:
 
 func rTstat(m *Msg) error {
 	fid, err := fidGet(m.con, m.t.Fid, 0)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 	if fid.qid.Type&plan9.QTAUTH != 0 {
@@ -408,13 +425,11 @@ func rTstat(m *Msg) error {
 
 	fidPut(fid)
 
-	// TODO: avoid this allocation
-	buf := make([]byte, int(m.con.msize))
-	dirDe2M(&de, buf)
+	buf, err := dirDe2M(&de)
 	m.r.Stat = buf
 	deCleanup(&de)
 
-	return nil
+	return err
 }
 
 func _rTclunk(fid *Fid, remove int) error {
@@ -437,7 +452,7 @@ func _rTclunk(fid *Fid, remove int) error {
 
 func rTremove(m *Msg) error {
 	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 	return _rTclunk(fid, 1)
@@ -445,7 +460,7 @@ func rTremove(m *Msg) error {
 
 func rTclunk(m *Msg) error {
 	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 	_rTclunk(fid, (fid.open & FidORclose))
@@ -457,7 +472,7 @@ func rTwrite(m *Msg) error {
 	var count, n int
 
 	fid, err := fidGet(m.con, m.t.Fid, 0)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 	if fid.open&FidOWrite == 0 {
@@ -508,7 +523,7 @@ func rTread(m *Msg) error {
 	var count, n int
 
 	fid, err := fidGet(m.con, m.t.Fid, 0)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 	var data []byte
@@ -561,7 +576,7 @@ error:
 func rTcreate(m *Msg) error {
 	var mode, perm uint32
 	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 	var file *File
@@ -686,7 +701,7 @@ func rTopen(m *Msg) error {
 	var isdir, rofs bool
 
 	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 	if fid.open != 0 {
@@ -697,7 +712,7 @@ func rTopen(m *Msg) error {
 	isdir = fileIsDir(fid.file)
 	rofs = fileIsRoFs(fid.file) || !groupWriteMember(fid.uname)
 
-	if m.t.Mode&64 != 0 {
+	if m.t.Mode&plan9.ORCLOSE != 0 {
 		if isdir {
 			err = fmt.Errorf("is a directory")
 			goto error
@@ -716,14 +731,14 @@ func rTopen(m *Msg) error {
 	}
 
 	omode = int(m.t.Mode) & OMODE
-	if omode == 0 || omode == 2 {
+	if omode == plan9.OREAD || omode == plan9.ORDWR {
 		if err = permFid(fid, PermR); err != nil {
 			goto error
 		}
 		open |= FidORead
 	}
 
-	if omode == 1 || omode == 2 || (m.t.Mode&16 != 0) {
+	if omode == plan9.OWRITE || omode == plan9.ORDWR || (m.t.Mode&plan9.OTRUNC != 0) {
 		if isdir {
 			err = fmt.Errorf("is a directory")
 			goto error
@@ -740,7 +755,7 @@ func rTopen(m *Msg) error {
 		open |= FidOWrite
 	}
 
-	if omode == 3 {
+	if omode == plan9.OEXEC {
 		if isdir {
 			err = fmt.Errorf("is a directory")
 			goto error
@@ -767,7 +782,7 @@ func rTopen(m *Msg) error {
 	/*
 	 * Everything checks out, try to commit any changes.
 	 */
-	if (m.t.Mode&16 != 0) && mode&ModeAppend == 0 {
+	if (m.t.Mode&plan9.OTRUNC != 0) && mode&ModeAppend == 0 {
 		if err = fileTruncate(fid.file, fid.uid); err != nil {
 			goto error
 		}
@@ -803,7 +818,7 @@ func rTwalk(m *Msg) error {
 	}
 
 	/*
-	 * The file identified by t->fid must be valid in the
+	 * The file identified by t.Fid must be valid in the
 	 * current session and must not have been opened for I/O
 	 * by an open or create message.
 	 */
@@ -1026,7 +1041,7 @@ func rTattach(m *Msg) error {
 func rTauth(m *Msg) error {
 	fsname, _ := parseAname(m.t.Aname)
 	fsys, err := fsysGet(fsname)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 
@@ -1146,21 +1161,4 @@ func rTversion(m *Msg) error {
 	}
 
 	return nil
-}
-
-// from fcall.h
-var rFcall = [plan9.Tmax]func(*Msg) error{
-	plan9.Tversion: rTversion,
-	plan9.Tauth:    rTauth,
-	plan9.Tattach:  rTattach,
-	plan9.Tflush:   rTflush,
-	plan9.Twalk:    rTwalk,
-	plan9.Topen:    rTopen,
-	plan9.Tcreate:  rTcreate,
-	plan9.Tread:    rTread,
-	plan9.Twrite:   rTwrite,
-	plan9.Tclunk:   rTclunk,
-	plan9.Tremove:  rTremove,
-	plan9.Tstat:    rTstat,
-	plan9.Twstat:   rTwstat,
 }

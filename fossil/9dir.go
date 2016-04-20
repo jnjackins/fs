@@ -37,7 +37,7 @@ func dirBufFree(db *DirBuf) {
 	deeClose(db.dee)
 }
 
-func dirDe2M(de *DirEntry, p []byte) int {
+func dirDe2M(de *DirEntry) ([]byte, error) {
 	var dir plan9.Dir
 
 	dir.Qid.Path = de.qid
@@ -86,10 +86,7 @@ func dirDe2M(de *DirEntry, p []byte) int {
 		dir.Muid = fmt.Sprintf("(%s)", de.mid)
 	}
 
-	buf, _ := dir.Bytes()
-
-	// TODO: avoid copy
-	return copy(p, buf)
+	return dir.Bytes()
 }
 
 func dirRead(fid *Fid, p []byte, count int, offset int64) (int, error) {
@@ -126,10 +123,12 @@ func dirRead(fid *Fid, p []byte, count int, offset int64) (int, error) {
 			db.valid = 1
 		}
 
-		n = dirDe2M(&db.de, p[nb:])
-		if n <= 2 {
+		buf, err := dirDe2M(&db.de)
+		copy(p[nb:], buf) // TODO: avoid copy
+		if len(buf) <= 2 || err != nil {
 			break
 		}
+
 		db.valid = 0
 		deCleanup(&db.de)
 	}

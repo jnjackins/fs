@@ -1,5 +1,7 @@
 package main
 
+// 9P message multiplexing
+
 import (
 	"bytes"
 	"errors"
@@ -30,10 +32,11 @@ const (
 	MsgF = 4
 )
 
+// A Msg is a 9P message.
 type Msg struct {
 	msize  uint32       /* actual size of data */
-	t      *plan9.Fcall // XXX: transmit?
-	r      *plan9.Fcall // XXX: receive?
+	t      *plan9.Fcall // request (transmit)
+	r      *plan9.Fcall // reply (return)
 	con    *Con
 	anext  *Msg /* allocation free list */
 	mnext  *Msg /* all active messsages on this Con */
@@ -421,7 +424,6 @@ func msgRead(con *Con) {
 		m := msgAlloc(con)
 
 		var err error
-		fmt.Fprintf(os.Stderr, "msgRead: trying to read a msg\n")
 		m.t, err = plan9.ReadFcall(con.conn)
 		if err == io.EOF {
 			m.t.Type = plan9.Tversion
@@ -435,10 +437,9 @@ func msgRead(con *Con) {
 			msgFree(m)
 			continue
 		}
-		fmt.Fprintf(os.Stderr, "msgRead: got a msg (type %v)\n", m.t)
 
 		if *Dflag {
-			fmt.Fprintf(os.Stderr, "msgRead %p: t %v\n", con, &m.t)
+			fmt.Fprintf(os.Stderr, "msgRead  %p:t %v\n", con, m.t)
 		}
 
 		con.mlock.Lock()
@@ -464,7 +465,6 @@ func msgWrite(con *Con) {
 	var m *Msg
 	for {
 		// Wait for and pull a message off the write queue.
-		fmt.Fprintln(os.Stderr, "msgWrite: waiting for message to write")
 		con.wlock.Lock()
 		for con.whead == nil {
 			con.wrendez.Wait()
@@ -474,7 +474,6 @@ func msgWrite(con *Con) {
 		m.rwnext = nil
 		assert(m.nowq == 0)
 		con.wlock.Unlock()
-		fmt.Fprintln(os.Stderr, "msgWrite: got message")
 
 		eof := false
 
@@ -486,7 +485,7 @@ func msgWrite(con *Con) {
 			msgMunlink(m)
 
 			if *Dflag {
-				fmt.Fprintf(os.Stderr, "msgWrite %d: r %v\n", m.state, &m.r)
+				fmt.Fprintf(os.Stderr, "msgWrite %p:r %v\n", m.con, m.r)
 			}
 
 			if m.state != MsgF {
@@ -503,7 +502,6 @@ func msgWrite(con *Con) {
 					}
 					eof = true
 				}
-
 				con.mlock.Lock()
 			}
 
@@ -611,41 +609,38 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 }
 
 func cmdMsg(argv []string) error {
-	var usage string = "usage: msg [-m nmsg] [-p nproc]"
+	var usage = errors.New("usage: msg [-m nmsg] [-p nproc]")
 
 	flags := flag.NewFlagSet("msg", flag.ContinueOnError)
-	maxmsg := flags.Int("m", 0, "nmsg")
-	maxproc := flags.Int("p", 0, "nproc")
-	flags.Parse(argv[1:])
-	if *maxmsg < 0 {
-		return fmt.Errorf(usage)
-	}
-	if *maxproc < 0 {
-		return fmt.Errorf(usage)
+	flags.Usage = func() {}
+	maxmsg := flags.Uint("m", 0, "nmsg")
+	maxproc := flags.Uint("p", 0, "nproc")
+	if err := flags.Parse(argv[1:]); err != nil {
+		return usage
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf(usage)
+		return usage
 	}
 
 	mbox.alock.Lock()
-	if *maxmsg > 0 {
-		mbox.maxmsg = *maxmsg
+	if *maxmsg != 0 {
+		mbox.maxmsg = int(*maxmsg)
 	}
-	*maxmsg = mbox.maxmsg
+	*maxmsg = uint(mbox.maxmsg)
 	nmsg := mbox.nmsg
 	nmsgstarve := mbox.nmsgstarve
 	mbox.alock.Unlock()
 
 	mbox.rlock.Lock()
-	if *maxproc > 0 {
-		mbox.maxproc = *maxproc
+	if *maxproc != 0 {
+		mbox.maxproc = int(*maxproc)
 	}
-	*maxproc = mbox.maxproc
+	*maxproc = uint(mbox.maxproc)
 	nproc := mbox.nproc
 	nprocstarve := mbox.nprocstarve
 	mbox.rlock.Unlock()
 
-	consPrintf("\tmsg -m %d -p %d\n", maxmsg, maxproc)
+	consPrintf("\tmsg -m %d -p %d\n", *maxmsg, *maxproc)
 	consPrintf("\tnmsg %d nmsgstarve %d nproc %d nprocstarve %d\n", nmsg, nmsgstarve, nproc, nprocstarve)
 
 	return nil
@@ -768,12 +763,12 @@ func msgInit() {
 	mbox.alock = new(sync.Mutex)
 	mbox.arendez = sync.NewCond(mbox.alock)
 
-	mbox.rlock = new(sync.Mutex)
-	mbox.rchan = make(chan *Msg, mbox.maxmsg)
-
 	mbox.maxmsg = NMsgInit
 	mbox.maxproc = NMsgProcInit
 	mbox.msize = NMsizeInit
+
+	mbox.rlock = new(sync.Mutex)
+	mbox.rchan = make(chan *Msg, mbox.maxmsg)
 
 	cliAddCmd("msg", cmdMsg)
 }

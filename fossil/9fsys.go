@@ -43,11 +43,11 @@ var sbox struct {
 const FsysAll = "all"
 
 var (
-	EFsysBusy      string = "fsys: '%s' busy"
-	EFsysExists    string = "fsys: '%s' already exists"
-	EFsysNoCurrent string = "fsys: no current fsys"
-	EFsysNotFound  string = "fsys: '%s' not found"
-	EFsysNotOpen   string = "fsys: '%s' not open"
+	EFsysBusy      = "fsys: '%s' busy"
+	EFsysExists    = "fsys: '%s' already exists"
+	EFsysNoCurrent = "fsys: no current fsys"
+	EFsysNotFound  = "fsys: '%s' not found"
+	EFsysNotOpen   = "fsys: '%s' not open"
 )
 
 func ventihost(host string) string {

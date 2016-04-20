@@ -18,6 +18,7 @@ const (
 	OOverWrite = 2
 )
 
+// An Fs is a fossil internal filesystem representation.
 type Fs struct {
 	arch       *Arch          /* immutable */
 	cache      *Cache         /* immutable */

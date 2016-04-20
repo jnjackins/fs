@@ -24,26 +24,34 @@ const ( /* Fid.open */
 
 const NFidHash = 503
 
+// A Fid identifies a "current file", from the client's
+// perspective. This includes files open for I/O,
+// directories being examined, etc. Fidno is chosen
+// by the client.
 type Fid struct {
-	lock   *sync.RWMutex
-	con    *Con
-	fidno  uint32
-	ref    int /* inc/dec under Con.fidlock */
-	flags  int
-	open   int
-	fsys   *Fsys
-	file   *File
-	qid    plan9.Qid
+	lock  *sync.RWMutex
+	con   *Con
+	fidno uint32 // the fid itself
+	ref   int    // inc/dec under Con.fidlock
+	flags int
+	open  int
+	fsys  *Fsys
+	file  *File
+
+	// The qid currently associated with the fid.
+	// A qid is fossil's unique ID for a file.
+	qid plan9.Qid
+
 	uid    string
 	uname  string
 	db     *DirBuf
 	excl   *Excl
-	alock  *sync.Mutex /* Tauth/Tattach */
+	alock  *sync.Mutex // Tauth/Tattach
 	rpc    *AuthRpc
 	cuname string
-	sort   *Fid /* sorted by uname in cmdWho */
-	hash   *Fid /* lookup by fidno */
-	next   *Fid /* clunk session with Tversion */
+	sort   *Fid // sorted by uname in cmdWho
+	hash   *Fid // lookup by fidno
+	next   *Fid // clunk session with Tversion
 	prev   *Fid
 }
 
@@ -93,7 +101,6 @@ func fidUnlock(fid *Fid) {
 		fid.lock.Unlock()
 		return
 	}
-
 	fid.lock.RUnlock()
 }
 
@@ -129,8 +136,8 @@ func fidAlloc() *Fid {
 	assert(fid.rpc == nil)
 	assert(fid.cuname == "")
 	fid.prev = nil
-	fid.next = fid.prev
-	fid.hash = fid.next
+	fid.next = nil
+	fid.hash = nil
 
 	return fid
 }
