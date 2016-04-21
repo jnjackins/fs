@@ -105,7 +105,7 @@ func start(argv []string) {
 	fidInit()
 
 	srvInit()
-	//lstnInit()
+	lstnInit()
 	usersInit()
 
 	for i := 0; i < len(cmd); i++ {

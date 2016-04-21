@@ -4,18 +4,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"sync"
-	"syscall"
 )
 
-const NETPATHLEN = 40
-
 type Lstn struct {
-	afd     int
+	l       net.Listener
 	flags   int
 	address string
-	dir     [NETPATHLEN]byte
 
 	next *Lstn
 	prev *Lstn
@@ -28,7 +25,7 @@ var lbox struct {
 	tail *Lstn
 }
 
-func lstnFree(lstn *Lstn) {
+func (lstn *Lstn) free() {
 	lbox.lock.Lock()
 	if lstn.prev != nil {
 		lstn.prev.next = lstn.next
@@ -42,57 +39,45 @@ func lstnFree(lstn *Lstn) {
 	}
 	lbox.lock.Unlock()
 
-	if lstn.afd != -1 {
-		syscall.Close(lstn.afd)
+	if lstn.l != nil {
+		lstn.l.Close()
 	}
 }
 
-func lstnListen(lstn *Lstn) {
+func (lstn *Lstn) accept() {
 	//vtThreadSetName("listen")
 
-	var newdir [NETPATHLEN]byte
-
 	for {
-		lfd, err := listen(lstn.dir, newdir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "listen: listen '%s': %v", lstn.dir, err)
-			break
-		}
-
-		dfd, err := accept(lfd, newdir)
+		conn, err := lstn.l.Accept()
 		if err == nil {
-			conAlloc(dfd, string(newdir[:]), lstn.flags)
+			conAlloc(conn, conn.LocalAddr().String(), lstn.flags)
 		} else {
-			fmt.Fprintf(os.Stderr, "listen: accept %s: %v\n", newdir, err)
+			fmt.Fprintln(os.Stderr, err)
 		}
-		syscall.Close(lfd)
 	}
-
-	lstnFree(lstn)
 }
 
 func lstnAlloc(address string, flags int) (*Lstn, error) {
 	lbox.lock.Lock()
+	defer lbox.lock.Unlock()
+
 	for lstn := (*Lstn)(lbox.head); lstn != nil; lstn = lstn.next {
 		if lstn.address != address {
 			continue
 		}
-		lbox.lock.Unlock()
 		return nil, fmt.Errorf("listen: already serving '%s'", address)
 	}
 
-	var dir [NETPATHLEN]byte
-	afd := int(announce(address, dir))
-	if afd < 0 {
-		lbox.lock.Unlock()
-		return nil, fmt.Errorf("listen: announce '%s': %r", address)
+	l, err := net.Listen("tcp", address)
+	if err != nil {
+		return nil, err
 	}
 
-	lstn := (*Lstn)(new(Lstn))
-	lstn.afd = afd
-	lstn.address = address
-	lstn.flags = flags
-	copy(lstn.dir[:], dir[:])
+	lstn := &Lstn{
+		l:       l,
+		address: address,
+		flags:   flags,
+	}
 
 	if lbox.tail != nil {
 		lstn.prev = lbox.tail
@@ -103,9 +88,8 @@ func lstnAlloc(address string, flags int) (*Lstn, error) {
 	}
 
 	lbox.tail = lstn
-	lbox.lock.Unlock()
 
-	go lstnListen(lstn)
+	go lstn.accept()
 
 	return lstn, nil
 }
@@ -114,15 +98,18 @@ func cmdLstn(argv []string) error {
 	var usage = errors.New("usage: listen [-dIN] [address]")
 
 	flags := flag.NewFlagSet("listen", flag.ContinueOnError)
+	flags.Usage = func() {}
 	var (
-		dflag = flags.Bool("d", false, "")
-		Iflag = flags.Bool("I", false, "")
-		Nflag = flags.Bool("N", false, "")
+		dflag = flags.Bool("d", false, "Remove the listener at the given address.")
+		Iflag = flags.Bool("I", false, "Reject disallowed IP addresses.")
+		Nflag = flags.Bool("N", false, "Allow connections from none at any time.")
 	)
 	err := flags.Parse(argv[1:])
 	if err != nil {
 		return usage
 	}
+	argv = flags.Args()
+	argc := flags.NArg()
 
 	var lstnFlags int
 	if *Iflag {
@@ -132,7 +119,6 @@ func cmdLstn(argv []string) error {
 		lstnFlags |= ConNoneAllow
 	}
 
-	argc := flags.NArg()
 	switch argc {
 	default:
 		return usage
@@ -140,7 +126,7 @@ func cmdLstn(argv []string) error {
 	case 0:
 		lbox.lock.RLock()
 		for lstn := (*Lstn)(lbox.head); lstn != nil; lstn = lstn.next {
-			consPrintf("\t%s\t%s\n", lstn.address, lstn.dir)
+			consPrintf("\t%s\n", lstn.address)
 		}
 		lbox.lock.RUnlock()
 
@@ -158,19 +144,19 @@ func cmdLstn(argv []string) error {
 			if lstn.address != argv[0] {
 				continue
 			}
-			if lstn.afd != -1 {
-				syscall.Close(lstn.afd)
-				lstn.afd = -1
+			if lstn.l != nil {
+				lstn.l.Close()
+				lstn.l = nil
 			}
+
+			// TODO: free?
 
 			break
 		}
-
 		lbox.lock.Unlock()
 
 		if lstn == nil {
-			err = fmt.Errorf("listen: '%s' not found", argv[0])
-			return err
+			return fmt.Errorf("listen: '%s' not found", argv[0])
 		}
 	}
 
