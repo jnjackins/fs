@@ -1149,12 +1149,12 @@ func fileMetaRemove(f *File, uid string) error {
 
 	mb, err = unpackMetaBlock(b.data, up.msource.dsize)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "U\n")
+		fmt.Fprintf(os.Stderr, "unpackMetaBlock: %v\n", err)
 		goto Err
 	}
 
 	if err = mb.search(f.dir.elem, &i, &me); err != nil {
-		fmt.Fprintf(os.Stderr, "S\n")
+		fmt.Fprintf(os.Stderr, "mb.search: %v\n", err)
 		goto Err
 	}
 
