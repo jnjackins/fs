@@ -401,6 +401,9 @@ func msgRead(con *Con) {
 		var err error
 		m.t, err = plan9.ReadFcall(con.conn)
 		if err == io.EOF {
+			if m.t == nil {
+				m.t = new(plan9.Fcall)
+			}
 			m.t.Type = plan9.Tversion
 			m.t.Fid = ^uint32(0)
 			m.t.Tag = ^uint16(0)
