@@ -861,8 +861,6 @@ func (fs *Fs) metaFlush() {
 }
 
 func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
-	log.Printf("fsEsearch1: %q", path)
-
 	dee, err := deeOpen(f)
 	if err != nil {
 		return 0
@@ -873,11 +871,6 @@ func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
 	for {
 		var deeReadErr error
 		r, deeReadErr = deeRead(dee, &de)
-		log.Printf("fsEsearch1: r=%d err=%v dee.i=%d dee.n=%d", r, err, dee.i, dee.n)
-		if dee.i < dee.n {
-			log.Printf("fsEsearch1: elem=%s", dee.buf[dee.i].elem)
-		}
-
 		if r <= 0 {
 			if deeReadErr != nil {
 				dprintf("fsEsearch1: deeRead: %v\n", deeReadErr)
@@ -977,8 +970,12 @@ func fsRsearch1(f *File, s string) int {
 	var r int
 	var t string
 	for {
-		r, err = deeRead(dee, &de)
-		if err != nil {
+		var deeReadErr error
+		r, deeReadErr = deeRead(dee, &de)
+		if r <= 0 {
+			if deeReadErr != nil {
+				dprintf("fsRsearch1: deeRead: %v\n", deeReadErr)
+			}
 			break
 		}
 		n++
@@ -1006,6 +1003,7 @@ func fsRsearch1(f *File, s string) int {
 
 		deCleanup(&de)
 		if r < 0 {
+			dprintf("fsRsearch1: deeRead: %v\n", deeReadErr)
 			break
 		}
 	}
