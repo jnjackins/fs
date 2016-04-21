@@ -35,8 +35,6 @@ func confirm(msg string) bool {
 }
 
 func format(argv []string) {
-	bsize := 8 * 1024
-
 	flags := flag.NewFlagSet("format", flag.ExitOnError)
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: %s [-b blocksize] [-h host] [-l label] [-v score] [-y] file\n", argv0)
@@ -44,26 +42,24 @@ func format(argv []string) {
 		os.Exit(1)
 	}
 	var (
-		bflag = flags.String("b", "", "blocksize")
-		hflag = flags.String("h", "", "host")
-		lflag = flags.String("l", "", "label")
-		vflag = flags.String("v", "", "score")
+		bflag = flags.String("b", "8K", "Set the file system `blocksize`.")
+		hflag = flags.String("h", "", "Use `host` as the Venti server.")
+		lflag = flags.String("l", "", "Set the textual label on the file system to `label`.")
+		vflag = flags.String("v", "", "Initialize the file system using the vac file system at `score`.")
 
 		// This is -y instead of -f because flchk has a
 		// (frequently used) -f option.  I type flfmt instead
 		// of flchk all the time, and want to make it hard
 		// to reformat my file system accidentally.
-		yflag = flags.Bool("y", false, "force")
+		yflag = flags.Bool("y", false, "Yes mode. If set, format will not prompt for confirmation.")
 	)
 	if err := flags.Parse(argv); err != nil {
 		flag.Usage()
 	}
-	if *bflag != "" {
-		tmp := unittoull(*bflag)
-		if tmp == badSize {
-			flags.Usage()
-		}
-		bsize = int(tmp)
+
+	bsize := unittoull(*bflag)
+	if bsize == badSize {
+		flags.Usage()
 	}
 	buf := make([]byte, bsize)
 
@@ -106,7 +102,7 @@ func format(argv []string) {
 	//}
 
 	dprintf("format: partitioning\n")
-	partition(f, bsize, &h)
+	partition(f, int(bsize), &h)
 	headerPack(&h, buf)
 	if _, err := syscall.Pwrite(int(f.Fd()), buf, HeaderOffset); err != nil {
 		log.Fatalf("could not write fs header: %v", err)
