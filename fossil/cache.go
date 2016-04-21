@@ -379,7 +379,7 @@ func cacheBumpBlock(c *Cache) *Block {
 /*
  * look for a particular version of the block in the memory cache.
  */
-func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lockfailure *int) (*Block, error) {
+func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lockfailure *int) (*Block, error) {
 	h := addr % uint32(c.hashSize)
 
 	if lockfailure != nil {
@@ -445,10 +445,6 @@ func _cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, loc
 		}
 	}
 	/* NOT REACHED */
-}
-
-func cacheLocalLookup(c *Cache, part int, addr, vers uint32) (*Block, error) {
-	return _cacheLocalLookup(c, part, addr, vers, Waitlock, nil)
 }
 
 /*
@@ -1160,7 +1156,7 @@ func blockWrite(b *Block, waitlock bool) bool {
 		}
 
 		lockfail = 0
-		bb, err = _cacheLocalLookup(c, p.part, p.addr, p.vers, waitlock, &lockfail)
+		bb, err = cacheLocalLookup(c, p.part, p.addr, p.vers, waitlock, &lockfail)
 		if err != nil {
 			if lockfail != 0 {
 				return false
@@ -1930,7 +1926,7 @@ func cacheFlushBlock(c *Cache) bool {
 		}
 		p := &c.baddr[c.br]
 		c.br++
-		b, _ := _cacheLocalLookup(c, p.part, p.addr, p.vers, Waitlock, nil)
+		b, _ := cacheLocalLookup(c, p.part, p.addr, p.vers, Waitlock, nil)
 		if b != nil && blockWrite(b, Nowaitlock) {
 			c.nflush++
 			blockPut(b)
