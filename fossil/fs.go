@@ -203,7 +203,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 func (fs *Fs) close() {
 	fs.elk.RLock()
-	defer fs.elk.Unlock()
+	defer fs.elk.RUnlock()
 
 	if fs.metaFlushTicker != nil {
 		fs.metaFlushTicker.Stop()
@@ -1036,7 +1036,7 @@ func (fs *Fs) rsearch(path_ string) int {
 
 func (fs *Fs) snapshotRemove() {
 	fs.elk.RLock()
-	defer fs.elk.Unlock()
+	defer fs.elk.RUnlock()
 
 	fs.rsearch("/snapshot")
 }
