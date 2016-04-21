@@ -351,7 +351,7 @@ func (mb *MetaBlock) meCmp(me *MetaEntry, s string) int {
 	}
 
 	for n > 0 {
-		if s[0] == 0 {
+		if s == "" {
 			return 1
 		}
 		if p[0] < s[0] {

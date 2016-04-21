@@ -520,7 +520,7 @@ error:
 }
 
 func rTread(m *Msg) error {
-	var count, n int
+	var count int
 
 	fid, err := fidGet(m.con, m.t.Fid, 0)
 	if err != nil {
@@ -549,20 +549,18 @@ func rTread(m *Msg) error {
 		}
 	}
 
-	// TODO: avoid this allocation
-	data = make([]byte, count)
 	if fid.qid.Type&plan9.QTDIR != 0 {
-		n, err = dirRead(fid, data, count, int64(m.t.Offset))
+		data, err = dirRead(fid, count, int64(m.t.Offset))
 	} else if fid.qid.Type&plan9.QTAUTH != 0 {
-		n, err = authRead(fid, data, count)
+		data, err = authRead(fid, count)
 	} else {
-		n, err = fileRead(fid.file, data, count, int64(m.t.Offset))
+		data, err = fileRead(fid.file, count, int64(m.t.Offset))
 	}
 	if err != nil {
 		goto error
 	}
 
-	m.r.Count = uint32(n)
+	m.r.Count = uint32(len(data))
 	m.r.Data = data
 
 	fidPut(fid)

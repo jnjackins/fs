@@ -89,7 +89,7 @@ func dirDe2M(de *DirEntry) ([]byte, error) {
 	return dir.Bytes()
 }
 
-func dirRead(fid *Fid, p []byte, count int, offset int64) (int, error) {
+func dirRead(fid *Fid, count int, offset int64) ([]byte, error) {
 	/*
 	 * special case of rewinding a directory
 	 * otherwise ignore the offset
@@ -103,7 +103,7 @@ func dirRead(fid *Fid, p []byte, count int, offset int64) (int, error) {
 		var err error
 		fid.db, err = dirBufAlloc(fid.file)
 		if err != nil {
-			return -1, err
+			return nil, err
 		}
 	}
 
@@ -111,11 +111,12 @@ func dirRead(fid *Fid, p []byte, count int, offset int64) (int, error) {
 
 	var n, nb int
 	var err error
+	data := make([]byte, 0, count) // TODO: avoid allocation
 	for nb = 0; nb < count; nb += n {
 		if db.valid == 0 {
 			n, err = deeRead(db.dee, &db.de)
 			if err != nil {
-				return -1, err
+				return nil, err
 			}
 			if n == 0 {
 				break
@@ -124,7 +125,7 @@ func dirRead(fid *Fid, p []byte, count int, offset int64) (int, error) {
 		}
 
 		buf, err := dirDe2M(&db.de)
-		copy(p[nb:], buf) // TODO: avoid copy
+		data = append(data, buf...) // TODO: avoid copy
 		if len(buf) <= 2 || err != nil {
 			break
 		}
@@ -133,5 +134,5 @@ func dirRead(fid *Fid, p []byte, count int, offset int64) (int, error) {
 		deCleanup(&db.de)
 	}
 
-	return nb, nil
+	return data, nil
 }

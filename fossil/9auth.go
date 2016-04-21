@@ -41,24 +41,24 @@ type AuthInfo struct {
 	secret  string /* secret */
 }
 
-func authRead(afid *Fid, data []byte, count int) (int, error) {
+func authRead(afid *Fid, count int) ([]byte, error) {
 	rpc := afid.rpc
 	if rpc == nil {
-		return -1, errors.New("not an auth fid")
+		return nil, errors.New("not an auth fid")
 	}
 
 	switch auth_rpc(rpc, "read", nil, 0) {
 	default:
-		return -1, errors.New("fossil authRead: auth protocol not finished")
+		return nil, errors.New("fossil authRead: auth protocol not finished")
 
 	case ARdone:
 		ai, err := auth_getinfo(rpc)
 		if err != nil {
-			return -1, err
+			return nil, err
 		}
 		if ai.cuid == "" {
 			auth_freeAI(ai)
-			return -1, errors.New("auth with no cuid")
+			return nil, errors.New("auth with no cuid")
 		}
 		assert(afid.cuname == "")
 		afid.cuname = ai.cuid
@@ -69,19 +69,20 @@ func authRead(afid *Fid, data []byte, count int) (int, error) {
 		assert(afid.uid == "")
 		afid.uid = uidByUname(afid.cuname)
 		if (afid.uid) == "" {
-			return -1, fmt.Errorf("unknown user %#q", afid.cuname)
+			return nil, fmt.Errorf("unknown user %#q", afid.cuname)
 		}
-		return 0, nil
+		return []byte{}, nil
 
 	case ARok:
 		if uint(count) < rpc.narg {
-			return -1, errors.New("not enough data in auth read")
+			return nil, errors.New("not enough data in auth read")
 		}
+		data := make([]byte, rpc.narg)
 		copy(data, rpc.arg[:rpc.narg])
-		return int(rpc.narg), nil
+		return data, nil
 
 	case ARphase:
-		return -1, errors.New("ARphase")
+		return nil, errors.New("ARphase")
 	}
 }
 
@@ -164,9 +165,8 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 
 	afid.alock.Lock()
 	if afid.cuname == "" {
-		var buf [1]uint8
-		n, err := authRead(afid, buf[:], 0)
-		if n != 0 || afid.cuname == "" {
+		buf, err := authRead(afid, 0)
+		if len(buf) != 0 || afid.cuname == "" {
 			afid.alock.Unlock()
 			consPrintf("attach %s as %s: %v\n", fsysGetName(fsys), fid.uname, err)
 			fidPut(afid)

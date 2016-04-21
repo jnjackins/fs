@@ -577,14 +577,14 @@ func usersFileRead(path_ string) error {
 	}
 
 	var file *File
+	var buf []byte
 	file, err = fileOpen(fsysGetFs(fsys), path_)
 	if err == nil {
 		var size uint64
-		if err := fileGetSize(file, &size); err == nil {
+		if err = fileGetSize(file, &size); err == nil {
 			length := int(size)
-			buf := make([]byte, size)
-			var n int
-			if n, err = fileRead(file, buf, length, 0); n == length && err == nil {
+			buf, err = fileRead(file, int(size), 0)
+			if len(buf) == length && err == nil {
 				err = uboxInit(string(buf))
 			}
 		}

@@ -520,8 +520,7 @@ Err1:
 	return nil, err
 }
 
-func fileRead(f *File, buf []byte, cnt int, offset int64) (int, error) {
-	var n, nn int
+func fileRead(f *File, cnt int, offset int64) ([]byte, error) {
 	var err error
 
 	if false {
@@ -529,30 +528,23 @@ func fileRead(f *File, buf []byte, cnt int, offset int64) (int, error) {
 	}
 
 	if err = fileRLock(f); err != nil {
-		return -1, err
+		return nil, err
 	}
+	defer fileRUnlock(f)
 
-	var b *Block
-	var bn uint32
-	var dsize int
-	var off int
-	var p []byte
-	var s *Source
-	var size uint64
 	if offset < 0 {
-		err = EBadOffset
-		goto Err1
+		return nil, EBadOffset
 	}
 
 	fileRAccess(f)
 
 	if err = sourceLock(f.source, OReadOnly); err != nil {
-		goto Err1
+		return nil, err
 	}
-
-	s = f.source
-	dsize = s.dsize
-	size = sourceGetSize(s)
+	s := f.source
+	dsize := s.dsize
+	size := sourceGetSize(s)
+	defer sourceUnlock(s)
 
 	if uint64(offset) >= size {
 		offset = int64(size)
@@ -561,13 +553,16 @@ func fileRead(f *File, buf []byte, cnt int, offset int64) (int, error) {
 	if uint64(cnt) > size-uint64(offset) {
 		cnt = int(size - uint64(offset))
 	}
-	bn = uint32(offset / int64(dsize))
-	off = int(offset % int64(dsize))
-	p = buf
+	bn := uint32(offset / int64(dsize))
+	off := int(offset % int64(dsize))
+	buf := make([]byte, cnt) // TODO: avoid allocation
+	p := buf
+
+	var n, nn int
 	for cnt > 0 {
-		b, err = sourceBlock(s, bn, OReadOnly)
+		b, err := sourceBlock(s, bn, OReadOnly)
 		if err != nil {
-			goto Err
+			return nil, err
 		}
 		n = cnt
 		if n > dsize-off {
@@ -588,16 +583,7 @@ func fileRead(f *File, buf []byte, cnt int, offset int64) (int, error) {
 		blockPut(b)
 	}
 
-	sourceUnlock(s)
-	fileRUnlock(f)
-	return len(buf) - len(p), nil
-
-Err:
-	sourceUnlock(s)
-
-Err1:
-	fileRUnlock(f)
-	return -1, err
+	return buf[:len(buf)-len(p)], nil
 }
 
 /*
@@ -686,8 +672,8 @@ Err:
 }
 
 func fileWrite(f *File, buf []byte, cnt int, offset int64, uid string) (int, error) {
-	if false {
-		fmt.Fprintf(os.Stderr, "fileWrite: %s %d, %d\n", f.dir.elem, cnt, offset)
+	if *Dflag {
+		fmt.Fprintf(os.Stderr, "fileWrite: %s count=%d offset=%d\n", f.dir.elem, cnt, offset)
 	}
 
 	if err := fileLock(f); err != nil {
@@ -984,22 +970,21 @@ func fileGetSize(f *File, size *uint64) error {
 }
 
 func checkValidFileName(name string) error {
-	if name == "" || name[0] == '\x00' {
+	if name == "" {
 		return fmt.Errorf("no file name")
 	}
 
 	if name[0] == '.' {
-		if name[1] == '\x00' || (name[1] == '.' && name[2] == '\x00') {
+		if len(name) == 1 || (name[1] == '.' && len(name) == 2) {
 			return fmt.Errorf(". and .. illegal as file name")
 		}
 	}
 
-	for p := name; p[0] != '\x00'; p = p[1:] {
-		if p[0]&0xFF < 040 {
+	for i := 0; i < len(name); i++ {
+		if name[i]&0xFF < 040 {
 			return fmt.Errorf("bad character in file name")
 		}
 	}
-
 	return nil
 }
 
@@ -1498,7 +1483,6 @@ func deeRead(dee *DirEntryEnum, de *DirEntry) (int, error) {
 	for dee.i >= dee.n {
 		if dee.boff >= nb {
 			ret = 0
-			err = errors.New("XXX")
 			goto Return
 		}
 
@@ -1522,9 +1506,6 @@ Return:
 		fileRAccess(f)
 	}
 
-	if ret > 0 {
-		return ret, nil
-	}
 	return ret, err
 }
 
