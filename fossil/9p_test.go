@@ -15,7 +15,7 @@ func TestParseAname(t *testing.T) {
 		fs, path := parseAname(c.aname)
 		if fs != c.fsname || path != c.path {
 			t.Errorf("%q: got fsname=%q path=%q, wanted fsname=%q path=%q ",
-				fs, path, c.fsname, c.path)
+				c.aname, fs, path, c.fsname, c.path)
 		}
 	}
 }

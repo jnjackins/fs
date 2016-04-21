@@ -518,7 +518,7 @@ func msgWrite(con *Con) {
 
 		con.lock.Lock()
 		if eof && con.conn != nil {
-			fmt.Fprintf(os.Stderr, "msgWrite: closing con: %p\n", con.conn)
+			fmt.Fprintf(os.Stderr, "msgWrite: closing con: %v\n", con.conn.LocalAddr())
 			con.conn.Close()
 			con.conn = nil
 		}
