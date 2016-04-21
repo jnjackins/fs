@@ -22,8 +22,8 @@ type Disk struct {
 	lk  *sync.Mutex
 	ref int
 
-	f *os.File
-	h Header
+	fd int
+	h  Header
 
 	flowCond   *sync.Cond
 	starveCond *sync.Cond
@@ -89,9 +89,9 @@ var partname = []string{
 	PartVenti: "venti",
 }
 
-func diskAlloc(f *os.File) (*Disk, error) {
+func diskAlloc(fd int) (*Disk, error) {
 	buf := make([]byte, HeaderSize)
-	if _, err := syscall.Pread(int(f.Fd()), buf, HeaderOffset); err != nil {
+	if _, err := syscall.Pread(fd, buf, HeaderOffset); err != nil {
 		return nil, fmt.Errorf("short read: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func diskAlloc(f *os.File) (*Disk, error) {
 
 	disk := &Disk{
 		lk:  new(sync.Mutex),
-		f:   f,
+		fd:  fd,
 		h:   h,
 		ref: 2,
 	}
@@ -127,7 +127,7 @@ func (d *Disk) free() {
 		d.dieCond.Wait()
 	}
 	d.lk.Unlock()
-	d.f.Close()
+	syscall.Close(d.fd)
 }
 
 func (d *Disk) partStart(part int) uint32 {
@@ -167,7 +167,7 @@ func (d *Disk) readRaw(part int, addr uint32, buf []byte) error {
 	offset := (int64(addr + start)) * int64(d.h.blockSize)
 	n := int(d.h.blockSize)
 	for n > 0 {
-		nn, err := syscall.Pread(int(d.f.Fd()), buf, offset)
+		nn, err := syscall.Pread(d.fd, buf, offset)
 		if err != nil {
 			return err
 		}
@@ -191,7 +191,7 @@ func (d *Disk) writeRaw(part int, addr uint32, buf []byte) error {
 	}
 
 	offset := (int64(addr + start)) * int64(d.h.blockSize)
-	n, err := syscall.Pwrite(int(d.f.Fd()), buf, offset)
+	n, err := syscall.Pwrite(d.fd, buf, offset)
 	if err != nil {
 		return err
 	}
@@ -278,25 +278,23 @@ func (d *Disk) flush() error {
 	}
 	d.lk.Unlock()
 
-	_, err := d.f.Stat()
-	if err != nil {
-		return err
-	}
-	return nil
+	/* there really should be a cleaner interface to flush an fd */
+	var stat syscall.Stat_t
+	return syscall.Fstat(d.fd, &stat)
 }
 
 func (d *Disk) size(part int) uint32 {
 	return d.partEnd(part) - d.partStart(part)
 }
 
-func disk2file(disk *Disk) string {
-	panic("TODO")
-	// if s, err := fd2path(disk.fd); err != nil {
-	// 	return "GOK"
-	// } else {
-	// 	return s
-	// }
-}
+// plan9 only
+//func disk2file(disk *Disk) string {
+//	 if s, err := fd2path(disk.fd); err != nil {
+//	 	return "GOK"
+//	 } else {
+//	 	return s
+//	 }
+//}
 
 func (d *Disk) startThread() {
 	//vtThreadSetName("disk")
@@ -343,7 +341,7 @@ func (d *Disk) startThread() {
 		// reading or writing state, so this lock should
 		// not cause deadlock.
 		if false {
-			fmt.Fprintf(os.Stderr, "fossil: diskThread: %d:%d %x\n", os.Getpid(), b.part, b.addr)
+			fmt.Fprintf(os.Stderr, "fossil: disk thread: %d:%d %x\n", os.Getpid(), b.part, b.addr)
 		}
 		bwatchLock(b)
 		b.lk.Lock()
@@ -355,7 +353,8 @@ func (d *Disk) startThread() {
 			panic("abort")
 		case BioReading:
 			if err := d.readRaw(b.part, b.addr, b.data); err != nil {
-				fmt.Fprintf(os.Stderr, "fossil: diskReadRaw failed: %s: "+"score %v: part=%s block %d: %v\n", disk2file(d), b.score, partname[b.part], b.addr, err)
+				fmt.Fprintf(os.Stderr, "fossil: disk.readRaw failed: fd=%d score=%v: part=%s block=%d: %v\n",
+					d.fd, b.score, partname[b.part], b.addr, err)
 				blockSetIOState(b, BioReadError)
 			} else {
 				blockSetIOState(b, BioClean)
@@ -364,8 +363,8 @@ func (d *Disk) startThread() {
 			buf := make([]byte, d.h.blockSize)
 			p, dirty := blockRollback(b, buf)
 			if err := d.writeRaw(b.part, b.addr, p); err != nil {
-				fmt.Fprintf(os.Stderr, "fossil: diskWriteRaw failed: %s: score %v: date %s part=%s block %d: %v\n",
-					disk2file(d), b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
+				fmt.Fprintf(os.Stderr, "fossil: disk.writeRaw failed: fd=%d score=%v: date=%s part=%s block=%d: %v\n",
+					d, b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
 				break
 			}
 			if dirty {
@@ -389,7 +388,7 @@ func (d *Disk) startThread() {
 	}
 
 Done:
-	dprintf("diskThread exiting\n")
+	dprintf("disk thread exiting\n")
 	d.ref--
 	d.dieCond.Signal()
 	d.lk.Unlock()

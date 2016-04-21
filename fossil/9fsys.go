@@ -50,6 +50,38 @@ var (
 	EFsysNotOpen   = "fsys: '%s' not open"
 )
 
+var fsyscmd = []struct {
+	cmd string
+	f   func(*Fsys, []string) error
+	f1  func(string, []string) error
+}{
+	{"close", fsysClose, nil},
+	{"config", nil, fsysConfig},
+	{"open", nil, fsysOpen},
+	{"unconfig", nil, fsysUnconfig},
+	{"venti", nil, fsysVenti},
+	{"bfree", fsysBfree, nil},
+	{"block", fsysBlock, nil},
+	{"check", fsysCheck, nil},
+	{"clre", fsysClre, nil},
+	{"clri", fsysClri, nil},
+	{"clrp", fsysClrp, nil},
+	{"create", fsysCreate, nil},
+	{"df", fsysDf, nil},
+	{"epoch", fsysEpoch, nil},
+	{"halt", fsysHalt, nil},
+	{"label", fsysLabel, nil},
+	{"remove", fsysRemove, nil},
+	{"snap", fsysSnap, nil},
+	{"snaptime", fsysSnapTime, nil},
+	{"snapclean", fsysSnapClean, nil},
+	{"stat", fsysStat, nil},
+	{"sync", fsysSync, nil},
+	{"unhalt", fsysUnhalt, nil},
+	{"wstat", fsysWstat, nil},
+	{"vac", fsysVac, nil},
+}
+
 func ventihost(host string) string {
 	if host != "" {
 		return host
@@ -1671,38 +1703,6 @@ func fsysConfig(name string, argv []string) error {
 
 	fsysPut(fsys)
 	return nil
-}
-
-var fsyscmd = []struct {
-	cmd string
-	f   func(*Fsys, []string) error
-	f1  func(string, []string) error
-}{
-	{"close", fsysClose, nil},
-	{"config", nil, fsysConfig},
-	{"open", nil, fsysOpen},
-	{"unconfig", nil, fsysUnconfig},
-	{"venti", nil, fsysVenti},
-	{"bfree", fsysBfree, nil},
-	{"block", fsysBlock, nil},
-	{"check", fsysCheck, nil},
-	{"clre", fsysClre, nil},
-	{"clri", fsysClri, nil},
-	{"clrp", fsysClrp, nil},
-	{"create", fsysCreate, nil},
-	{"df", fsysDf, nil},
-	{"epoch", fsysEpoch, nil},
-	{"halt", fsysHalt, nil},
-	{"label", fsysLabel, nil},
-	{"remove", fsysRemove, nil},
-	{"snap", fsysSnap, nil},
-	{"snaptime", fsysSnapTime, nil},
-	{"snapclean", fsysSnapClean, nil},
-	{"stat", fsysStat, nil},
-	{"sync", fsysSync, nil},
-	{"unhalt", fsysUnhalt, nil},
-	{"wstat", fsysWstat, nil},
-	{"vac", fsysVac, nil},
 }
 
 func fsysXXX1(fsys *Fsys, i int, argv []string) error {

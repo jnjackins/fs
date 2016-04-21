@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"sigint.ca/fs/venti"
@@ -67,20 +68,20 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	default:
 		return nil, EBadMode
 	case OReadOnly:
-		m = 0
+		m = os.O_RDONLY
 	case OReadWrite:
-		m = 2
+		m = os.O_RDWR
 	}
 
-	f, err := os.OpenFile(file, m, 0)
+	fd, err := syscall.Open(file, m, 0)
 	if err != nil {
 		return nil, err
 	}
 
 	bwatchInit()
-	disk, err := diskAlloc(f)
+	disk, err := diskAlloc(fd)
 	if err != nil {
-		f.Close()
+		syscall.Close(fd)
 		return nil, fmt.Errorf("diskAlloc: %v", err)
 	}
 
@@ -860,6 +861,8 @@ func (fs *Fs) metaFlush() {
 }
 
 func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
+	log.Printf("fsEsearch1: %q", path)
+
 	dee, err := deeOpen(f)
 	if err != nil {
 		return 0
@@ -870,6 +873,11 @@ func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
 	for {
 		var deeReadErr error
 		r, deeReadErr = deeRead(dee, &de)
+		log.Printf("fsEsearch1: r=%d err=%v dee.i=%d dee.n=%d", r, err, dee.i, dee.n)
+		if dee.i < dee.n {
+			log.Printf("fsEsearch1: elem=%s", dee.buf[dee.i].elem)
+		}
+
 		if r <= 0 {
 			if deeReadErr != nil {
 				dprintf("fsEsearch1: deeRead: %v\n", deeReadErr)

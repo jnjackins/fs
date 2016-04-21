@@ -7,13 +7,13 @@ const (
 	_DKIOCGETBLOCKCOUNT = 0x40086419
 )
 
-func devsize(fd uintptr) int64 {
-	var bs uint64
-	var bc uint64
-	ioctl(fd, _DKIOCGETBLOCKSIZE, uintptr(unsafe.Pointer(&bs)))
-	ioctl(fd, _DKIOCGETBLOCKCOUNT, uintptr(unsafe.Pointer(&bc)))
-	if bs > 0 && bc > 0 {
-		return int64(bc * bs)
+func _devsize(fd uintptr) (int64, error) {
+	var bs, bc uint64
+	if err := ioctl(fd, _DKIOCGETBLOCKSIZE, uintptr(unsafe.Pointer(&bs))); err != nil {
+		return 0, err
 	}
-	return 0
+	if err := ioctl(fd, _DKIOCGETBLOCKCOUNT, uintptr(unsafe.Pointer(&bc))); err != nil {
+		return 0, err
+	}
+	return int64(bc * bs), nil
 }
