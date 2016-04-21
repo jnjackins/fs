@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+
+	"9fans.net/go/plan9/client"
 )
 
 func PostService(conn net.Conn, name string) error {
@@ -13,13 +15,10 @@ func PostService(conn net.Conn, name string) error {
 		return errors.New("nothing to do")
 	}
 
-	ns, err := getns()
-	if err != nil {
-		return err
-	}
+	ns := client.Namespace()
 	addr := fmt.Sprintf("%s/%s", ns, name)
 
-	cmd := exec.Command("9pserve", "-lvv", "-u", "unix!"+addr)
+	cmd := exec.Command("9pserve", "-u", "unix!"+addr)
 	cmd.Stdin = conn
 	cmd.Stdout = conn
 	if err := cmd.Start(); err != nil {
