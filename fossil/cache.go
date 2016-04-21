@@ -997,7 +997,7 @@ func blockSetLabel(b *Block, l *Label, allocating bool) error {
  * at that index in the block.  Save the old value so we
  * can write a safer ``old'' version of the block if pressed.
  */
-func blockDependency(b *Block, bb *Block, index int, score []byte, e *Entry) {
+func blockDependency(b *Block, bb *Block, index int, score *venti.Score, e *Entry) {
 	if bb.iostate == BioClean {
 		return
 	}
@@ -1035,6 +1035,7 @@ func blockDependency(b *Block, bb *Block, index int, score []byte, e *Entry) {
 	p.typ = bb.l.typ
 	p.vers = bb.vers
 	p.index = index
+	p.old.score = new(venti.Score)
 	if p.index >= 0 {
 		/*
 		 * This test would just be b->l.type==BtDir except

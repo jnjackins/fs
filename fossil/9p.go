@@ -172,7 +172,7 @@ func rTwstat(m *Msg) error {
 		tsync = 0
 	}
 
-	if dir.Muid != "" && dir.Muid[0] != '\x00' {
+	if dir.Muid != "" {
 		uid := uidByUname(dir.Muid)
 		if uid == "" {
 			err = fmt.Errorf("wstat -- unknown muid")
@@ -328,7 +328,7 @@ func rTwstat(m *Msg) error {
 	 * Check .name is valid and different to the current.
 	 * If so, check write permission in parent.
 	 */
-	if dir.Name != "" && dir.Name[0] != '\x00' {
+	if dir.Name != "" {
 		if err = checkValidFileName(dir.Name); err != nil {
 			goto error
 		}

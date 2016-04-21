@@ -219,15 +219,15 @@ func (d *Disk) rootMetaInit(buf []byte) *Entry {
 
 	/* build up meta block */
 	memset(buf, 0)
-	mb := InitMetaBlock(buf, bsize, bsize/100)
+	mb := initMetaBlock(buf, bsize, bsize/100)
 	var me MetaEntry
 	me.size = uint16(deSize(&de))
-	o, err := mb.Alloc(int(me.size))
+	o, err := mb.alloc(int(me.size))
 	assert(err == nil)
 	me.offset = o
 	mb.dePack(&de, &me)
-	mb.Insert(0, &me)
-	mb.Pack()
+	mb.insert(0, &me)
+	mb.pack()
 	d.blockWrite(PartData, addr, buf)
 	deCleanup(&de)
 
@@ -422,9 +422,9 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	 */
 	d.ventiRead(z, e.score, venti.DataType, buf)
 
-	mb, err := UnpackMetaBlock(buf, d.blockSize())
+	mb, err := unpackMetaBlock(buf, d.blockSize())
 	if err != nil {
-		log.Fatalf("bad root: UnpackMetaBlock: %v", err)
+		log.Fatalf("bad root: unpackMetaBlock: %v", err)
 	}
 	var me MetaEntry
 	mb.meUnpack(&me, 0)

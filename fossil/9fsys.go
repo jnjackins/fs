@@ -73,7 +73,7 @@ func vtDial(host string, canfail bool) (*venti.Session, error) {
 }
 
 func _fsysGet(name string) (*Fsys, error) {
-	if name == "" || name[0] == '\x00' {
+	if name == "" {
 		name = "main"
 	}
 
@@ -210,18 +210,24 @@ func fsysModeString(mode uint32) string {
 
 // TODO: test
 func fsysParseMode(s string) (uint32, bool) {
+	// get mode chars
 	var x uint32
-	for ; s[0] < '0' || s[0] > '9'; s = s[1:] {
-		if s[0] == 0 {
+	for {
+		if s == "" {
 			return 0, false
+		}
+		if s[0] >= '0' && s[0] <= '9' {
+			break
 		}
 		i := strings.IndexByte(modechars, s[0])
 		if i < 0 {
 			return 0, false
 		}
 		x |= modebits[i]
+		s = s[1:]
 	}
 
+	// get mode bits
 	y, err := strconv.ParseUint(s, 8, 32)
 	if err != nil || y > 0777 {
 		return 0, false
@@ -1256,8 +1262,8 @@ func fsckClri(fsck *Fsck, name string, mb *MetaBlock, i int, b *Block) {
 		return
 	}
 
-	mb.Delete(i)
-	mb.Pack()
+	mb.delete(i)
+	mb.pack()
 	blockDirty(b)
 }
 

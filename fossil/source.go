@@ -602,7 +602,7 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 		var oscore venti.Score
 		copy(oscore[:], p.data[index*venti.ScoreSize:][:venti.ScoreSize])
 		copy(p.data[index*venti.ScoreSize:], b.score[:])
-		blockDependency(p, b, index, oscore[:], nil)
+		blockDependency(p, b, index, &oscore, nil)
 	}
 
 	blockDirty(p)
@@ -657,7 +657,7 @@ func sourceGrowDepth(r *Source, p *Block, e *Entry, depth int) error {
 		typ++
 		e.tag = tag
 		e.flags |= venti.EntryLocal
-		blockDependency(bb, b, 0, venti.ZeroScore[:], nil)
+		blockDependency(bb, b, 0, venti.ZeroScore, nil)
 		blockPut(b)
 		b = bb
 		blockDirty(b)
@@ -752,7 +752,7 @@ func sourceShrinkDepth(r *Source, p *Block, e *Entry, depth int) error {
 	/* (ii) */
 	copy(ob.data, venti.ZeroScore[:venti.ScoreSize])
 
-	blockDependency(ob, p, 0, b.score[:], nil)
+	blockDependency(ob, p, 0, b.score, nil)
 	blockDirty(ob)
 
 	/* (iii) */

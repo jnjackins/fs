@@ -128,17 +128,16 @@ func stringPack(s string, p []byte) int {
 	return int(n + 2)
 }
 
-func (mb *MetaBlock) Search(elem string, ri *int, me *MetaEntry) error {
-	dprintf("mbSearch %s\n", elem)
+func (mb *MetaBlock) search(elem string, ri *int, me *MetaEntry) error {
+	dprintf("mb.search %s\n", elem)
+
+	var x int
 
 	/* binary search within block */
-	b := int(0)
-
+	b := 0
 	t := mb.nindex
-	var i int
-	var x int
 	for b < t {
-		i = (b + t) >> 1
+		i := (b + t) >> 1
 		mb.meUnpack(me, i)
 
 		if mb.botch {
@@ -166,7 +165,7 @@ func (mb *MetaBlock) Search(elem string, ri *int, me *MetaEntry) error {
 	return ENoFile
 }
 
-func InitMetaBlock(p []byte, maxSize int, nEntries int) *MetaBlock {
+func initMetaBlock(p []byte, maxSize int, nEntries int) *MetaBlock {
 	for i := 0; i < maxSize; i++ {
 		p[i] = 0
 	}
@@ -179,7 +178,7 @@ func InitMetaBlock(p []byte, maxSize int, nEntries int) *MetaBlock {
 	return mb
 }
 
-func UnpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
+func unpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 	mb := new(MetaBlock)
 
 	mb.maxsize = n
@@ -233,7 +232,7 @@ Err:
 	return nil, EBadMeta
 }
 
-func (mb *MetaBlock) Pack() {
+func (mb *MetaBlock) pack() {
 	p := mb.buf
 
 	assert(mb.botch == false)
@@ -245,7 +244,7 @@ func (mb *MetaBlock) Pack() {
 	pack.U16PUT(p[10:], uint16(mb.nindex))
 }
 
-func (mb *MetaBlock) Delete(i int) {
+func (mb *MetaBlock) delete(i int) {
 	var me MetaEntry
 
 	assert(i < mb.nindex)
@@ -269,7 +268,7 @@ func (mb *MetaBlock) Delete(i int) {
 	mb.nindex--
 }
 
-func (mb *MetaBlock) Insert(i int, me *MetaEntry) {
+func (mb *MetaBlock) insert(i int, me *MetaEntry) {
 	var o, n int
 
 	assert(mb.nindex < mb.maxindex)
@@ -291,7 +290,7 @@ func (mb *MetaBlock) Insert(i int, me *MetaEntry) {
 	mb.nindex++
 }
 
-func (mb *MetaBlock) Resize(me *MetaEntry, n int) bool {
+func (mb *MetaBlock) resize(me *MetaEntry, n int) bool {
 	/* easy case */
 	if n <= int(me.size) {
 		me.size = uint16(n)
@@ -310,7 +309,7 @@ func (mb *MetaBlock) Resize(me *MetaEntry, n int) bool {
 	}
 
 	var err error
-	o, err = mb.Alloc(n)
+	o, err = mb.alloc(n)
 	if err == nil {
 		me.offset = o
 		me.size = uint16(n)
@@ -390,7 +389,7 @@ func (mb *MetaBlock) meCmpOld(me *MetaEntry, s string) int {
 	}
 
 	for n > 0 {
-		if s[0] == 0 {
+		if s == "" {
 			return -1
 		}
 		if p[0] < s[0] {
@@ -454,7 +453,7 @@ Err:
 	return nil, EBadMeta
 }
 
-func (mb *MetaBlock) Compact(mc []MetaChunk) {
+func (mb *MetaBlock) compact(mc []MetaChunk) {
 	var o int
 	var n int
 
@@ -476,7 +475,7 @@ func (mb *MetaBlock) Compact(mc []MetaChunk) {
 }
 
 // Alloc returns an offset into mb.buf.
-func (mb *MetaBlock) Alloc(n int) (int, error) {
+func (mb *MetaBlock) alloc(n int) (int, error) {
 	/* off the end */
 	if mb.maxsize-mb.size >= n {
 		return mb.size, nil
@@ -508,7 +507,7 @@ func (mb *MetaBlock) Alloc(n int) (int, error) {
 	}
 
 	/* compact and return off the end */
-	mb.Compact(mc)
+	mb.compact(mc)
 
 	if mb.maxsize-mb.size < n {
 		return -1, EBadMeta

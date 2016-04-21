@@ -158,7 +158,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		}
 
 		superPack(&super, bs.data)
-		blockDependency(bs, b, 0, oscore[:], nil)
+		blockDependency(bs, b, 0, &oscore, nil)
 		blockPut(b)
 		blockDirty(bs)
 		blockRemoveLink(bs, globalToLocal(&oscore), BtDir, RootTag, false)
@@ -471,6 +471,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 
 	e := Entry{
 		flags: venti.EntryActive | venti.EntryLocal | venti.EntryDir,
+		score: new(venti.Score),
 		tag:   RootTag,
 		snap:  b.l.epoch,
 	}
@@ -517,7 +518,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	var oscore venti.Score
 	localToGlobal(oldaddr, &oscore)
 
-	blockDependency(bs, b, 0, oscore[:], nil)
+	blockDependency(bs, b, 0, &oscore, nil)
 	blockPut(b)
 
 	/*
@@ -740,20 +741,20 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 	}
 
 	buf = make([]byte, 8192)
-	mb := InitMetaBlock(buf, int(n+MetaHeaderSize+MetaIndexSize), 1)
+	mb := initMetaBlock(buf, int(n+MetaHeaderSize+MetaIndexSize), 1)
 	var err error
-	o, err = mb.Alloc(int(n))
+	o, err = mb.alloc(int(n))
 	if err != nil {
 		panic("abort")
 	}
 	var me MetaEntry
-	mb.Search(de.elem, &i, &me)
+	mb.search(de.elem, &i, &me)
 	assert(me.offset == 0)
 	me.offset = o
 	me.size = uint16(n)
 	mb.dePack(&de, &me)
-	mb.Insert(i, &me)
-	mb.Pack()
+	mb.insert(i, &me)
+	mb.pack()
 
 	var eee Entry
 	eee.size = uint64(n) + MetaHeaderSize + MetaIndexSize
@@ -878,8 +879,7 @@ func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
 		if de.mode&ModeSnapshot != 0 {
 			ff, err := fileWalk(f, de.elem)
 			if err == nil {
-				var e Entry
-				var ee Entry
+				var e, ee Entry
 				if err := fileGetSources(ff, &e, &ee); err != nil {
 					if de.mtime >= savetime && e.snap != 0 {
 						if e.snap < *plo {

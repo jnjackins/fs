@@ -611,7 +611,7 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 			warnf(chk, "previously reported error in block %ux is in %s", b.addr, name)
 		}
 
-		mb, err = UnpackMetaBlock(b.data, meta.dsize)
+		mb, err = unpackMetaBlock(b.data, meta.dsize)
 		if err != nil {
 			errorf(chk, "could not unpack meta block: %s[%d]: %v", name, o, err)
 			blockPut(b)

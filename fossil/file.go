@@ -81,11 +81,11 @@ func dirLookup(f *File, elem string) (*File, error) {
 		if err != nil {
 			goto Err
 		}
-		mb, err = UnpackMetaBlock(b.data, meta.dsize)
+		mb, err = unpackMetaBlock(b.data, meta.dsize)
 		if err != nil {
 			goto Err
 		}
-		if err = mb.Search(elem, &i, &me); err == nil {
+		if err = mb.search(elem, &i, &me); err == nil {
 			ff = fileAlloc(f.fs)
 			if err = mb.deUnpack(&ff.dir, &me); err != nil {
 				fileFree(ff)
@@ -162,7 +162,7 @@ func fileRoot(r *Source) (*File, error) {
 		goto Err
 	}
 
-	mb, err = UnpackMetaBlock(b.data, mr.msource.dsize)
+	mb, err = unpackMetaBlock(b.data, mr.msource.dsize)
 	if err != nil {
 		goto Err
 	}
@@ -236,7 +236,7 @@ Err:
 func _fileWalk(f *File, elem string, partial bool) (*File, error) {
 	fileRAccess(f)
 
-	if elem[0] == 0 {
+	if elem == "" {
 		return nil, EBadPath
 	}
 
@@ -1055,11 +1055,11 @@ func fileMetaFlush2(f *File, oelem string) int {
 		goto Err1
 	}
 
-	mb, err = UnpackMetaBlock(b.data, fp.msource.dsize)
+	mb, err = unpackMetaBlock(b.data, fp.msource.dsize)
 	if err != nil {
 		goto Err
 	}
-	if err := mb.Search(oelem, &i, &me); err != nil {
+	if err := mb.search(oelem, &i, &me); err != nil {
 		goto Err
 	}
 
@@ -1068,16 +1068,16 @@ func fileMetaFlush2(f *File, oelem string) int {
 		fmt.Fprintf(os.Stderr, "old size %d new size %d\n", me.size, n)
 	}
 
-	if mb.Resize(&me, n) {
+	if mb.resize(&me, n) {
 		/* fits in the block */
-		mb.Delete(i)
+		mb.delete(i)
 
 		if f.dir.elem != oelem {
-			mb.Search(f.dir.elem, &i, &me2)
+			mb.search(f.dir.elem, &i, &me2)
 		}
 		mb.dePack(&f.dir, &me)
-		mb.Insert(i, &me)
-		mb.Pack()
+		mb.insert(i, &me)
+		mb.pack()
 		blockDirty(b)
 		blockPut(b)
 		sourceUnlock(fp.msource)
@@ -1098,7 +1098,7 @@ func fileMetaFlush2(f *File, oelem string) int {
 	boff = fileMetaAlloc(fp, &f.dir, f.boff+1)
 	if boff == NilBlock {
 		/* mbResize might have modified block */
-		mb.Pack()
+		mb.pack()
 		blockDirty(b)
 		goto Err
 	}
@@ -1108,8 +1108,8 @@ func fileMetaFlush2(f *File, oelem string) int {
 
 	/* make sure deletion goes to disk after new entry */
 	bb, _ = sourceBlock(fp.msource, f.boff, OReadWrite)
-	mb.Delete(i)
-	mb.Pack()
+	mb.delete(i)
+	mb.pack()
 	blockDependency(b, bb, -1, nil, nil)
 	blockPut(bb)
 	blockDirty(b)
@@ -1147,19 +1147,19 @@ func fileMetaRemove(f *File, uid string) error {
 		goto Err
 	}
 
-	mb, err = UnpackMetaBlock(b.data, up.msource.dsize)
+	mb, err = unpackMetaBlock(b.data, up.msource.dsize)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "U\n")
 		goto Err
 	}
 
-	if err = mb.Search(f.dir.elem, &i, &me); err != nil {
+	if err = mb.search(f.dir.elem, &i, &me); err != nil {
 		fmt.Fprintf(os.Stderr, "S\n")
 		goto Err
 	}
 
-	mb.Delete(i)
-	mb.Pack()
+	mb.delete(i)
+	mb.pack()
 	sourceUnlock(up.msource)
 
 	blockDirty(b)
@@ -1192,7 +1192,7 @@ func fileCheckEmpty(f *File) error {
 		if err != nil {
 			goto Err
 		}
-		mb, err = UnpackMetaBlock(b.data, r.dsize)
+		mb, err = unpackMetaBlock(b.data, r.dsize)
 		if err != nil {
 			goto Err
 		}
@@ -1344,7 +1344,9 @@ func fileGetParent(f *File) *File {
 // and to enable an interface that supports unget.
 type DirEntryEnum struct {
 	file *File
+
 	boff uint32 /* block offset */
+
 	i, n int
 	buf  []DirEntry
 }
@@ -1422,7 +1424,7 @@ func deeFill(dee *DirEntryEnum) error {
 		return err
 	}
 
-	mb, err := UnpackMetaBlock(b.data, meta.dsize)
+	mb, err := unpackMetaBlock(b.data, meta.dsize)
 	if err != nil {
 		return err
 	}
@@ -1431,7 +1433,7 @@ func deeFill(dee *DirEntryEnum) error {
 	dee.buf = make([]DirEntry, n)
 
 	var me MetaEntry
-	for i := int(0); i < n; i++ {
+	for i := 0; i < n; i++ {
 		de := &dee.buf[i]
 		mb.meUnpack(&me, i)
 		if err = mb.deUnpack(de, &me); err != nil {
@@ -1460,43 +1462,39 @@ func deeRead(dee *DirEntryEnum, de *DirEntry) (int, error) {
 	if err := fileRLock(f); err != nil {
 		return -1, err
 	}
+	defer fileRUnlock(f)
 
-	var err error
-	if err = sourceLock2(f.source, f.msource, OReadOnly); err != nil {
-		fileRUnlock(f)
+	if err := sourceLock2(f.source, f.msource, OReadOnly); err != nil {
 		return -1, err
 	}
-
-	nb := uint32((sourceGetSize(f.msource) + uint64(f.msource.dsize) - 1) / uint64(f.msource.dsize))
+	defer sourceUnlock(f.msource)
+	defer sourceUnlock(f.source)
 
 	didread := false
-	var ret int
+	defer func() {
+		if didread {
+			fileRAccess(f)
+		}
+	}()
+
+	dsize := uint64(f.msource.dsize)
+	nb := (sourceGetSize(f.msource) + dsize - 1) / dsize
+
 	for dee.i >= dee.n {
-		if dee.boff >= nb {
-			ret = 0
-			goto Return
+		if uint64(dee.boff) >= nb {
+			return 0, nil
 		}
 
 		didread = true
-		if err = deeFill(dee); err != nil {
-			ret = -1
-			goto Return
+		if err := deeFill(dee); err != nil {
+			return -1, err
 		}
 	}
 
 	*de = dee.buf[dee.i]
 	dee.i++
-	ret = 1
 
-Return:
-	sourceUnlock(f.source)
-	sourceUnlock(f.msource)
-	fileRUnlock(f)
-
-	if didread {
-		fileRAccess(f)
-	}
-	return ret, err
+	return 1, nil
 }
 
 func deeClose(dee *DirEntryEnum) {
@@ -1538,7 +1536,7 @@ func fileMetaAlloc(f *File, dir *DirEntry, start uint32) uint32 {
 		if err != nil {
 			goto Err
 		}
-		mb, err = UnpackMetaBlock(b.data, ms.dsize)
+		mb, err = unpackMetaBlock(b.data, ms.dsize)
 		if err != nil {
 			goto Err
 		}
@@ -1558,26 +1556,26 @@ func fileMetaAlloc(f *File, dir *DirEntry, start uint32) uint32 {
 			goto Err
 		}
 		sourceSetSize(ms, (uint64(nb)+1)*uint64(ms.dsize))
-		mb = InitMetaBlock(b.data, ms.dsize, ms.dsize/BytesPerEntry)
+		mb = initMetaBlock(b.data, ms.dsize, ms.dsize/BytesPerEntry)
 	}
 
-	o, err = mb.Alloc(n)
+	o, err = mb.alloc(n)
 	if err != nil {
-		/* mb.Alloc might have changed block */
-		mb.Pack()
+		/* mb.alloc might have changed block */
+		mb.pack()
 
 		blockDirty(b)
 		err = EBadMeta
 		goto Err
 	}
 
-	mb.Search(dir.elem, &i, &me)
+	mb.search(dir.elem, &i, &me)
 	assert(me.offset == 0)
 	me.offset = o
 	me.size = uint16(n)
 	mb.dePack(dir, &me)
-	mb.Insert(i, &me)
-	mb.Pack()
+	mb.insert(i, &me)
+	mb.pack()
 
 	/* meta block depends on super block for qid ... */
 	bb, err = cacheLocal(b.c, PartSuper, 0, OReadOnly)
