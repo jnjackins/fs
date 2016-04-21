@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"9fans.net/go/plan9"
 )
@@ -63,9 +62,7 @@ func authRead(afid *Fid, count int) ([]byte, error) {
 		assert(afid.cuname == "")
 		afid.cuname = ai.cuid
 		auth_freeAI(ai)
-		if *Dflag {
-			fmt.Fprintf(os.Stderr, "authRead cuname %s\n", afid.cuname)
-		}
+		dprintf("authRead cuname %s\n", afid.cuname)
 		assert(afid.uid == "")
 		afid.uid = uidByUname(afid.cuname)
 		if (afid.uid) == "" {

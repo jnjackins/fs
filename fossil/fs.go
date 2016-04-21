@@ -858,31 +858,29 @@ func (fs *Fs) metaFlush() {
 	}
 }
 
-func fsEsearch1(f *File, path_ string, savetime uint32, plo *uint32) int {
-	var dee *DirEntryEnum
-	var err error
-
-	dee, err = deeOpen(f)
+func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
+	dee, err := deeOpen(f)
 	if err != nil {
 		return 0
 	}
 
-	n := int(0)
 	var de DirEntry
-	var e Entry
-	var ee Entry
-	var ff *File
-	var r int
-	var t string
+	var r, n int
 	for {
-		r, err = deeRead(dee, &de)
-		if err != nil {
+		var deeReadErr error
+		r, deeReadErr = deeRead(dee, &de)
+		if r <= 0 {
+			if deeReadErr != nil {
+				dprintf("fsEsearch1: deeRead: %v\n", deeReadErr)
+			}
 			break
 		}
 		if de.mode&ModeSnapshot != 0 {
-			ff, err = fileWalk(f, de.elem)
+			ff, err := fileWalk(f, de.elem)
 			if err == nil {
-				if err = fileGetSources(ff, &e, &ee); err != nil {
+				var e Entry
+				var ee Entry
+				if err := fileGetSources(ff, &e, &ee); err != nil {
 					if de.mtime >= savetime && e.snap != 0 {
 						if e.snap < *plo {
 							*plo = e.snap
@@ -892,9 +890,9 @@ func fsEsearch1(f *File, path_ string, savetime uint32, plo *uint32) int {
 				fileDecRef(ff)
 			}
 		} else if de.mode&ModeDir != 0 {
-			ff, err = fileWalk(f, de.elem)
+			ff, err := fileWalk(f, de.elem)
 			if err == nil {
-				t = fmt.Sprintf("%s/%s", path_, de.elem)
+				t := fmt.Sprintf("%s/%s", path, de.elem)
 				n += fsEsearch1(ff, t, savetime, plo)
 				fileDecRef(ff)
 			}
@@ -902,6 +900,7 @@ func fsEsearch1(f *File, path_ string, savetime uint32, plo *uint32) int {
 
 		deCleanup(&de)
 		if r < 0 {
+			dprintf("fsEsearch1: deeRead: %v\n", deeReadErr)
 			break
 		}
 	}
@@ -1043,7 +1042,9 @@ func (fs *Fs) snapshotRemove() {
 
 func snapEvent(s *Snap) {
 	now := uint32(time.Now().Unix()) / 60
+
 	s.lk.Lock()
+	defer s.lk.Unlock()
 
 	/*
 	 * Snapshots happen every snapMinutes minutes.
@@ -1051,9 +1052,11 @@ func snapEvent(s *Snap) {
 	 * were down), we wait for the next one.
 	 */
 	if s.snapMinutes != ^uint(0) && s.snapMinutes != 0 && uint(now)%s.snapMinutes == 0 && now != s.lastSnap {
+		dprintf("snaphot started\n")
 		if err := s.fs.snapshot("", "", false); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: snap: %v\n", argv0, err)
 		}
+		dprintf("snapshot finished\n")
 		s.lastSnap = now
 	}
 
@@ -1091,11 +1094,11 @@ func snapEvent(s *Snap) {
 		snaplife = 24 * 60
 	}
 	if s.lastCleanup+snaplife < now {
+		dprintf("snapclean started\n")
 		s.fs.snapshotCleanup(uint32(s.snapLife))
+		dprintf("snapclean finished\n")
 		s.lastCleanup = now
 	}
-
-	s.lk.Unlock()
 }
 
 func snapInit(fs *Fs) *Snap {

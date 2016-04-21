@@ -389,9 +389,7 @@ func (d *Disk) startThread() {
 	}
 
 Done:
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "diskThread exiting\n")
-	}
+	dprintf("diskThread exiting\n")
 	d.ref--
 	d.dieCond.Signal()
 	d.lk.Unlock()

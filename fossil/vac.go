@@ -129,9 +129,7 @@ func stringPack(s string, p []byte) int {
 }
 
 func (mb *MetaBlock) Search(elem string, ri *int, me *MetaEntry) error {
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "mbSearch %s\n", elem)
-	}
+	dprintf("mbSearch %s\n", elem)
 
 	/* binary search within block */
 	b := int(0)
@@ -765,9 +763,7 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	return nil
 
 Err:
-	if *Dflag {
-		fmt.Printf("deUnpack: XXXXXXXXXXXX EBadMeta\n")
-	}
+	dprintf("deUnpack: XXXXXXXXXXXX EBadMeta\n")
 	deCleanup(dir)
 	return EBadMeta
 }

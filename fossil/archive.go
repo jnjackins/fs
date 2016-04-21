@@ -55,13 +55,9 @@ func archFree(a *Arch) {
 }
 
 func ventiSend(a *Arch, b *Block, data []byte) error {
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "ventiSend: sending %#x %v to venti\n", b.addr, &b.l)
-	}
+	dprintf("ventiSend: sending %#x %v to venti\n", b.addr, &b.l)
 	n := venti.ZeroTruncate(vtType[b.l.typ], data, int(a.blockSize))
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "ventiSend: truncate %d to %d\n", a.blockSize, n)
-	}
+	dprintf("ventiSend: truncate %d to %d\n", a.blockSize, n)
 	var score venti.Score
 	if err := a.z.Write(&score, vtType[b.l.typ], data[:n]); err != nil {
 		fmt.Fprintf(os.Stderr, "ventiSend: venti.Write block %#x failed: %v\n", b.addr, err)
@@ -162,9 +158,8 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 		return ArchFailure, err
 	}
 
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "%*sarchive(%d, %#x): block label %v\n", p.depth*2, "", p.snapEpoch, b.addr, &b.l)
-	}
+	dprintf("%*sarchive(%d, %#x): block label %v\n",
+		p.depth*2, "", p.snapEpoch, b.addr, &b.l)
 	p.depth++
 	if p.depth > p.maxdepth {
 		p.maxdepth = p.depth

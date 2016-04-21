@@ -16,12 +16,6 @@ const badSize = ^uint64(0)
 
 var qid uint64 = 1
 
-func dprintf(format string, args ...interface{}) {
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, format, args...)
-	}
-}
-
 func confirm(msg string) bool {
 	fmt.Fprintf(os.Stderr, "%s [y/n]: ", msg)
 	line, _, err := bufio.NewReader(os.Stdin).ReadLine()

@@ -244,9 +244,7 @@ func msgMunlink(m *Msg) {
 func msgFlush(m *Msg) {
 	con := m.con
 
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "msgFlush %v\n", &m.t)
-	}
+	dprintf("msgFlush %v\n", &m.t)
 
 	/*
 	 * If this Tflush has been flushed, nothing to do.
@@ -269,16 +267,12 @@ func msgFlush(m *Msg) {
 		}
 	}
 	if old == nil {
-		if *Dflag {
-			fmt.Fprintf(os.Stderr, "msgFlush: cannot find %d\n", m.t.Oldtag)
-		}
+		dprintf("msgFlush: cannot find %d\n", m.t.Oldtag)
 		con.mlock.Unlock()
 		return
 	}
 
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "\tmsgFlush found %v\n", &old.t)
-	}
+	dprintf("\tmsgFlush found %v\n", &old.t)
 
 	/*
 	 * Found it.
@@ -293,9 +287,7 @@ func msgFlush(m *Msg) {
 	 */
 	if old.state == MsgR || old.t.Type == plan9.Tflush {
 		old.state = MsgF
-		if *Dflag {
-			fmt.Fprintf(os.Stderr, "msgFlush: change %d from MsgR to MsgF\n", m.t.Oldtag)
-		}
+		dprintf("msgFlush: change %d from MsgR to MsgF\n", m.t.Oldtag)
 	}
 
 	/*
@@ -314,9 +306,7 @@ func msgFlush(m *Msg) {
 	 */
 	flush := old.flush
 	if flush != nil {
-		if *Dflag {
-			fmt.Fprintf(os.Stderr, "msgFlush: remove %d from %d list\n", old.flush.t.Tag, old.t.Tag)
-		}
+		dprintf("msgFlush: remove %d from %d list\n", old.flush.t.Tag, old.t.Tag)
 		m.flush = flush.flush
 		flush.flush = nil
 		msgMunlink(flush)
@@ -326,9 +316,7 @@ func msgFlush(m *Msg) {
 	old.flush = m
 	m.nowq = 1
 
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "msgFlush: add %d to %d queue\n", m.t.Tag, old.t.Tag)
-	}
+	dprintf("msgFlush: add %d to %d queue\n", m.t.Tag, old.t.Tag)
 	con.mlock.Unlock()
 }
 
@@ -438,9 +426,7 @@ func msgRead(con *Con) {
 			continue
 		}
 
-		if *Dflag {
-			fmt.Fprintf(os.Stderr, "msgRead  %p:t %v\n", con, m.t)
-		}
+		dprintf("msgRead  %p:t %v\n", con, m.t)
 
 		con.mlock.Lock()
 		if con.mtail != nil {
@@ -484,9 +470,7 @@ func msgWrite(con *Con) {
 		for m != nil {
 			msgMunlink(m)
 
-			if *Dflag {
-				fmt.Fprintf(os.Stderr, "msgWrite %p:r %v\n", m.con, m.r)
-			}
+			dprintf("msgWrite %p:r %v\n", m.con, m.r)
 
 			if m.state != MsgF {
 				m.state = MsgW
@@ -497,9 +481,7 @@ func msgWrite(con *Con) {
 					panic("unexpected error")
 				}
 				if _, err := con.conn.Write(buf); err != nil {
-					if *Dflag {
-						fmt.Fprintf(os.Stderr, "msgWrite: %v\n", err)
-					}
+					dprintf("msgWrite: %v\n", err)
 					eof = true
 				}
 				con.mlock.Lock()

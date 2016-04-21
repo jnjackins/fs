@@ -672,9 +672,7 @@ Err:
 }
 
 func fileWrite(f *File, buf []byte, cnt int, offset int64, uid string) (int, error) {
-	if *Dflag {
-		fmt.Fprintf(os.Stderr, "fileWrite: %s count=%d offset=%d\n", f.dir.elem, cnt, offset)
-	}
+	dprintf("fileWrite: %s count=%d offset=%d\n", f.dir.elem, cnt, offset)
 
 	if err := fileLock(f); err != nil {
 		return -1, err
@@ -1418,45 +1416,38 @@ func deeFill(dee *DirEntryEnum) error {
 	source := f.source
 	meta := f.msource
 
-	var b *Block
-	var err error
-	b, err = sourceBlock(meta, dee.boff, OReadOnly)
-	var de *DirEntry
-	var mb *MetaBlock
-	var me MetaEntry
-	var n int
+	b, err := sourceBlock(meta, dee.boff, OReadOnly)
+	defer blockPut(b)
 	if err != nil {
-		goto Err
-	}
-	mb, err = UnpackMetaBlock(b.data, meta.dsize)
-	if err != nil {
-		goto Err
+		return err
 	}
 
-	n = mb.nindex
+	mb, err := UnpackMetaBlock(b.data, meta.dsize)
+	if err != nil {
+		return err
+	}
+
+	n := mb.nindex
 	dee.buf = make([]DirEntry, n)
 
+	var me MetaEntry
 	for i := int(0); i < n; i++ {
-		de = &dee.buf[i]
+		de := &dee.buf[i]
 		mb.meUnpack(&me, i)
 		if err = mb.deUnpack(de, &me); err != nil {
-			goto Err
+			return err
 		}
 		dee.n++
 		if de.mode&ModeDir == 0 {
 			if err = dirEntrySize(source, de.entry, de.gen, &de.size); err != nil {
-				goto Err
+				return err
 			}
 		}
 	}
 
 	dee.boff++
-	blockPut(b)
 	return nil
 
-Err:
-	blockPut(b)
-	return err
 }
 
 // TODO: better error strategy
@@ -1505,7 +1496,6 @@ Return:
 	if didread {
 		fileRAccess(f)
 	}
-
 	return ret, err
 }
 

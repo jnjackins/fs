@@ -49,3 +49,9 @@ func main() {
 		flag.Usage()
 	}
 }
+
+func dprintf(format string, args ...interface{}) {
+	if *Dflag {
+		fmt.Fprintf(os.Stderr, format, args...)
+	}
+}
