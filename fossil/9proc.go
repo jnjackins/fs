@@ -34,17 +34,16 @@ const (
 
 // A Msg is a 9P message.
 type Msg struct {
-	msize  uint32       /* actual size of data */
-	t      *plan9.Fcall // request (transmit)
-	r      *plan9.Fcall // reply (return)
-	con    *Con
-	anext  *Msg /* allocation free list */
-	mnext  *Msg /* all active messsages on this Con */
-	mprev  *Msg
-	state  int  /* */
-	flush  *Msg /* flushes waiting for this Msg */
-	rwnext *Msg /* read/write queue */
-	nowq   int  /* do not place on write queue */
+	msize uint32       /* actual size of data */
+	t     *plan9.Fcall // request (transmit)
+	r     *plan9.Fcall // reply (return)
+	con   *Con
+	anext *Msg /* allocation free list */
+	mnext *Msg /* all active messsages on this Con */
+	mprev *Msg
+	state int  /* */
+	flush *Msg /* flushes waiting for this Msg */
+	nowq  bool /* do not place on write queue */
 }
 
 const (
@@ -84,15 +83,14 @@ type Con struct {
 	mhead     *Msg /* all Msgs on this connection */
 	mtail     *Msg
 	mrendez   *sync.Cond
-	wlock     *sync.Mutex
-	whead     *Msg /* write queue */
-	wtail     *Msg
-	wrendez   *sync.Cond
-	fidlock   *sync.Mutex /* */
-	fidhash   [NFidHash]*Fid
-	fhead     *Fid
-	ftail     *Fid
-	nfid      int
+
+	wchan chan *Msg // write queue
+
+	fidlock *sync.Mutex /* */
+	fidhash [NFidHash]*Fid
+	fhead   *Fid
+	ftail   *Fid
+	nfid    int
 }
 
 var mbox struct {
@@ -104,9 +102,8 @@ var mbox struct {
 	nmsg       int
 	nmsgstarve int
 
-	// read
 	rlock *sync.Mutex
-	rchan chan *Msg
+	rchan chan *Msg // read queue
 
 	maxproc     int
 	nproc       int
@@ -134,7 +131,6 @@ var cbox struct {
 func conFree(con *Con) {
 	assert(con.version == nil)
 	assert(con.mhead == nil)
-	assert(con.whead == nil)
 	assert(con.nfid == 0)
 	assert(con.state == ConMoribund)
 
@@ -177,7 +173,6 @@ func conFree(con *Con) {
 }
 
 func msgFree(m *Msg) {
-	assert(m.rwnext == nil)
 	assert(m.flush == nil)
 
 	mbox.alock.Lock()
@@ -219,7 +214,7 @@ func msgAlloc(con *Con) *Msg {
 
 	m.con = con
 	m.state = MsgR
-	m.nowq = 0
+	m.nowq = false
 
 	return m
 }
@@ -314,7 +309,7 @@ func msgFlush(m *Msg) {
 	}
 
 	old.flush = m
-	m.nowq = 1
+	m.nowq = true
 
 	dprintf("msgFlush: add %d to %d queue\n", m.t.Tag, old.t.Tag)
 	con.mlock.Unlock()
@@ -388,16 +383,8 @@ func msgProc() {
 
 		// Put the message (with reply) on the
 		// write queue and wakeup the write process.
-		if m.nowq == 0 {
-			con.wlock.Lock()
-			if con.whead == nil {
-				con.whead = m
-			} else {
-				con.wtail.rwnext = m
-			}
-			con.wtail = m
-			con.wrendez.Signal()
-			con.wlock.Unlock()
+		if !m.nowq {
+			con.wchan <- m
 		}
 	}
 }
@@ -448,18 +435,8 @@ func msgWrite(con *Con) {
 	//vtThreadSetName("msgWrite")
 
 	var flush *Msg
-	var m *Msg
 	for {
-		// Wait for and pull a message off the write queue.
-		con.wlock.Lock()
-		for con.whead == nil {
-			con.wrendez.Wait()
-		}
-		m = con.whead
-		con.whead = m.rwnext
-		m.rwnext = nil
-		assert(m.nowq == 0)
-		con.wlock.Unlock()
+		m := <-con.wchan
 
 		eof := false
 
@@ -489,13 +466,14 @@ func msgWrite(con *Con) {
 
 			flush = m.flush
 			if flush != nil {
-				assert(flush.nowq != 0)
+				assert(flush.nowq)
 				m.flush = nil
 			}
 
 			msgFree(m)
 			m = flush
 		}
+
 		con.mlock.Unlock()
 
 		con.lock.Lock()
@@ -532,12 +510,11 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 			msize:   cbox.msize,
 			alock:   new(sync.RWMutex),
 			mlock:   new(sync.Mutex),
-			wlock:   new(sync.Mutex),
+			wchan:   make(chan *Msg, mbox.maxmsg), // TODO: channel size?
 			fidlock: new(sync.Mutex),
 		}
 		con.rendez = sync.NewCond(con.lock)
 		con.mrendez = sync.NewCond(con.mlock)
-		con.wrendez = sync.NewCond(con.wlock)
 
 		cbox.ncon++
 		cbox.ahead = con
@@ -559,7 +536,6 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 	cbox.ctail = con
 
 	assert(con.mhead == nil)
-	assert(con.whead == nil)
 	assert(con.fhead == nil)
 	assert(con.nfid == 0)
 
@@ -750,7 +726,7 @@ func msgInit() {
 	mbox.msize = NMsizeInit
 
 	mbox.rlock = new(sync.Mutex)
-	mbox.rchan = make(chan *Msg, mbox.maxmsg)
+	mbox.rchan = make(chan *Msg, mbox.maxmsg) // TODO: channel size?
 
 	cliAddCmd("msg", cmdMsg)
 }
