@@ -173,10 +173,10 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	//fmt.Fprintf(os.Stderr, "%s: got fs source\n", argv0)
 
 	fs.elk.RLock()
-
 	fs.file, err = fileRoot(fs.source)
 	fs.source.file = fs.file /* point back */
 	fs.elk.RUnlock()
+
 	if err != nil {
 		fs.close()
 		return nil, fmt.Errorf("fileRoot: %v", err)
@@ -203,6 +203,8 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 func (fs *Fs) close() {
 	fs.elk.RLock()
+	defer fs.elk.Unlock()
+
 	if fs.metaFlushTicker != nil {
 		fs.metaFlushTicker.Stop()
 	}
@@ -220,7 +222,6 @@ func (fs *Fs) close() {
 	if fs.arch != nil {
 		archFree(fs.arch)
 	}
-	fs.elk.RUnlock()
 }
 
 func (fs *Fs) redial(host string) error {
@@ -411,7 +412,10 @@ func (fs *Fs) needArch(archMinute uint) bool {
 
 	buf := fmt.Sprintf("/archive/%d/%02d%02d", now.Year(), now.Month()+1, now.Day())
 	need := bool(true)
+
 	fs.elk.RLock()
+	defer fs.elk.RUnlock()
+
 	var err error
 	var f *File
 	f, err = fileOpen(fs, buf)
@@ -419,16 +423,15 @@ func (fs *Fs) needArch(archMinute uint) bool {
 		need = false
 		fileDecRef(f)
 	}
-
-	fs.elk.RUnlock()
 	return need
 }
 
 func (fs *Fs) epochLow(low uint32) error {
 	fs.elk.Lock()
+	defer fs.elk.Unlock()
+
 	if low > fs.ehi {
 		err := fmt.Errorf("bad low epoch (must be <= %d)", fs.ehi)
-		fs.elk.Unlock()
 		return err
 	}
 
@@ -437,7 +440,6 @@ func (fs *Fs) epochLow(low uint32) error {
 	var super Super
 	bs, err = superGet(fs.cache, &super)
 	if err != nil {
-		fs.elk.Unlock()
 		return err
 	}
 
@@ -445,7 +447,6 @@ func (fs *Fs) epochLow(low uint32) error {
 	fs.elo = low
 	superWrite(bs, &super, 1)
 	blockPut(bs)
-	fs.elk.Unlock()
 
 	return nil
 }
@@ -795,14 +796,18 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 
 func (fs *Fs) sync() error {
 	fs.elk.Lock()
+	defer fs.elk.Unlock()
+
 	fileMetaFlush(fs.file, true)
 	cacheFlush(fs.cache, true)
-	fs.elk.Unlock()
+
 	return nil
 }
 
 func (fs *Fs) halt() error {
 	fs.elk.Lock()
+	// leave locked
+
 	fs.halted = true
 	fileMetaFlush(fs.file, true)
 	cacheFlush(fs.cache, true)
@@ -814,6 +819,7 @@ func (fs *Fs) unhalt() error {
 		return errors.New("not halted")
 	}
 	fs.halted = false
+
 	fs.elk.Unlock()
 	return nil
 }
@@ -846,6 +852,7 @@ func (fs *Fs) metaFlush() {
 	fs.elk.RLock()
 	rv := fileMetaFlush(fs.file, true)
 	fs.elk.RUnlock()
+
 	if rv > 0 {
 		cacheFlush(fs.cache, false)
 	}
@@ -937,7 +944,6 @@ func (fs *Fs) snapshotCleanup(age uint32) {
 	 * and all the snapshots younger than age.
 	 */
 	fs.elk.RLock()
-
 	lo := fs.ehi
 	fs.esearch("/archive", 0, &lo)
 	fs.esearch("/snapshot", uint32(time.Now().Unix())-age*60, &lo)
@@ -1030,8 +1036,9 @@ func (fs *Fs) rsearch(path_ string) int {
 
 func (fs *Fs) snapshotRemove() {
 	fs.elk.RLock()
+	defer fs.elk.Unlock()
+
 	fs.rsearch("/snapshot")
-	fs.elk.RUnlock()
 }
 
 func snapEvent(s *Snap) {
