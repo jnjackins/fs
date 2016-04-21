@@ -339,9 +339,6 @@ func fsysSnap(fsys *Fsys, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return fmt.Errorf(usage)
 	}
-	if *sflag == "" || *dflag == "" {
-		return fmt.Errorf(usage)
-	}
 
 	argv = flags.Args()
 	argc := flags.NArg()
