@@ -198,6 +198,9 @@ func (d *Disk) writeRaw(part int, addr uint32, buf []byte) error {
 	return nil
 }
 
+// TODO(jnj): I don't know if ordering blocks on the queue
+// by address is a performance optimization, or if it is
+// necessary. Try replacing this with a channel.
 func (d *Disk) queue(b *Block) {
 	d.lk.Lock()
 	for d.nqueue >= QueueSize {

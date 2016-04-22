@@ -191,7 +191,7 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c.heapwait = sync.NewCond(c.lk)
 	c.syncTicker = time.NewTicker(30 * time.Second)
 
-	// TODO: leaks goroutine? loop does not terminate when ticker
+	// TODO(jnj): leaks goroutine? loop does not terminate when ticker
 	// is stopped
 	go func() {
 		for range c.syncTicker.C {
@@ -254,7 +254,6 @@ func cacheFree(c *Cache) {
 func cacheDump(c *Cache) {
 	for i := 0; i < c.nblocks; i++ {
 		b := c.blocks[i]
-		// TODO: removed pc
 		fmt.Fprintf(os.Stderr, "%d. p=%d a=%d %v t=%d ref=%d state=%s io=%s\n",
 			i, b.part, b.addr, b.score, b.l.typ, b.ref, bsStr(int(b.l.state)), bioStr(b.iostate))
 	}
@@ -401,7 +400,7 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lock
 		return nil, errors.New("miss")
 	}
 
-	// TODO: revisit (canLock is broken)
+	// TODO(jnj): revisit (canLock is broken)
 	if !waitlock && !b.canLock() {
 		*lockfailure = 1
 		c.lk.Unlock()

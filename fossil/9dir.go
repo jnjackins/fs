@@ -111,7 +111,7 @@ func dirRead(fid *Fid, count int, offset int64) ([]byte, error) {
 
 	var n, nb int
 	var err error
-	data := make([]byte, 0, count) // TODO: avoid allocation
+	data := make([]byte, 0, count) // TODO(jnj): avoid allocation
 	for nb = 0; nb < count; nb += n {
 		if db.valid == 0 {
 			n, err = deeRead(db.dee, &db.de)
@@ -125,7 +125,7 @@ func dirRead(fid *Fid, count int, offset int64) ([]byte, error) {
 		}
 
 		buf, err := dirDe2M(&db.de)
-		data = append(data, buf...) // TODO: avoid copy
+		data = append(data, buf...) // TODO(jnj): avoid copy
 		if len(buf) <= 2 || err != nil {
 			break
 		}

@@ -347,7 +347,7 @@ func (r *Source) truncate() error {
 	return r.kill(false)
 }
 
-// TODO: errors
+// TODO(jnj): errors
 func (r *Source) getSize() uint64 {
 	var e Entry
 	var b *Block

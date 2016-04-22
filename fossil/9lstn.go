@@ -149,7 +149,7 @@ func cmdLstn(argv []string) error {
 				lstn.l = nil
 			}
 
-			// TODO: free?
+			// TODO(jnj): free?
 
 			break
 		}

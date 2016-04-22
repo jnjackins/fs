@@ -86,7 +86,7 @@ func format(argv []string) {
 		return
 	}
 
-	// TODO
+	// TODO(jnj)
 	//d, err := dirfstat(f)
 	//if err != nil {
 	//	log.Fatalf("dirfstat: %v", err)

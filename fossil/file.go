@@ -555,7 +555,7 @@ func (f *File) read(cnt int, offset int64) ([]byte, error) {
 	}
 	bn := uint32(offset / int64(dsize))
 	off := int(offset % int64(dsize))
-	buf := make([]byte, cnt) // TODO: avoid allocation
+	buf := make([]byte, cnt) // TODO(jnj): avoid allocation
 	p := buf
 
 	var n, nn int
@@ -1372,7 +1372,7 @@ func deeOpen(f *File) (*DirEntryEnum, error) {
 	return dee, nil
 }
 
-// TODO: return size
+// TODO(jnj): return size
 func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	var b *Block
 	var e Entry
@@ -1452,7 +1452,7 @@ func deeFill(dee *DirEntryEnum) error {
 
 }
 
-// TODO: better error strategy
+// TODO(jnj): better error strategy
 func deeRead(dee *DirEntryEnum, de *DirEntry) (int, error) {
 	if dee == nil {
 		return -1, fmt.Errorf("cannot happen in deeRead")

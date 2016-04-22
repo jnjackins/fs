@@ -83,7 +83,7 @@ type DirEntry struct {
 }
 
 type MetaEntry struct {
-	// TODO: type?
+	// TODO(jnj): type?
 	offset int // position in MetaBlock.buf
 	size   uint16
 }
@@ -767,7 +767,7 @@ Err:
 	return EBadMeta
 }
 
-// TODO: necessary?
+// TODO(jnj): necessary?
 func deCleanup(dir *DirEntry) {
 	dir.elem = ""
 	dir.uid = ""

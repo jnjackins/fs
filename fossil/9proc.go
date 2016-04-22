@@ -515,7 +515,7 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 			msize:   cbox.msize,
 			alock:   new(sync.RWMutex),
 			mlock:   new(sync.Mutex),
-			wchan:   make(chan *Msg, mbox.maxmsg), // TODO: channel size?
+			wchan:   make(chan *Msg, mbox.maxmsg), // TODO(jnj): channel size?
 			fidlock: new(sync.Mutex),
 		}
 		con.rendez = sync.NewCond(con.lock)
@@ -730,7 +730,7 @@ func msgInit() {
 	mbox.msize = NMsizeInit
 
 	mbox.rlock = new(sync.Mutex)
-	mbox.rchan = make(chan *Msg, mbox.maxmsg) // TODO: channel size?
+	mbox.rchan = make(chan *Msg, mbox.maxmsg) // TODO(jnj): channel size?
 
 	cliAddCmd("msg", cmdMsg)
 }

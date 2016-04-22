@@ -187,7 +187,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	if mode == OReadWrite {
 		fs.metaFlushTicker = time.NewTicker(1 * time.Second)
 
-		// TODO: leakes goroutine? loop does not terminate when ticker
+		// TODO(jnj): leakes goroutine? loop does not terminate when ticker
 		// is stopped
 		go func() {
 			for range fs.metaFlushTicker.C {
@@ -1118,7 +1118,7 @@ func snapInit(fs *Fs) *Snap {
 	s.snapLife = ^uint(0)
 	s.ignore = 5 * 2 /* wait five minutes for clock to stabilize */
 
-	// TODO: leakes goroutine? loop does not terminate when ticker
+	// TODO(jnj): leakes goroutine? loop does not terminate when ticker
 	// is stopped
 	go func() {
 		for range s.tick.C {

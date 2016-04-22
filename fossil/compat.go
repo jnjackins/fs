@@ -94,7 +94,7 @@ func memset(buf []byte, c byte) {
 	}
 }
 
-// TODO: phase out
+// TODO(jnj): phase out
 func assert(cond bool) {
 	if !cond {
 		panic("assert")

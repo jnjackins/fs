@@ -229,7 +229,7 @@ var modebits = []uint32{
 	ModeSnapshot,
 }
 
-// TODO: test
+// TODO(jnj): test
 func fsysModeString(mode uint32) string {
 	var buf []byte
 	for i := range modebits {
@@ -240,7 +240,7 @@ func fsysModeString(mode uint32) string {
 	return string(buf) + fmt.Sprintf("%o", mode&0777)
 }
 
-// TODO: test
+// TODO(jnj): test
 func fsysParseMode(s string) (uint32, bool) {
 	// get mode chars
 	var x uint32
@@ -634,7 +634,7 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 				}
 				break
 			}
-			// TODO: better error
+			// TODO(jnj): better error
 			consPrintf("blockWrite failed\n")
 			n++
 			if n >= 6 {
@@ -909,7 +909,7 @@ func fsysClrp(fsys *Fsys, argv []string) error {
 	return fsysClrep(fsys, argv, 'p')
 }
 
-// TODO: errors?
+// TODO(jnj): errors?
 func fsysEsearch1(f *File, s string, elo uint32) int {
 	dee, err := deeOpen(f)
 	if err != nil {
@@ -966,7 +966,7 @@ func fsysEsearch1(f *File, s string, elo uint32) int {
 	return n
 }
 
-// TODO: errors?
+// TODO(jnj): errors?
 func fsysEsearch(fs *Fs, path string, elo uint32) int {
 	var f *File
 

@@ -89,7 +89,7 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 		break
 	}
 
-	// TODO: srvFd on plan9
+	// TODO(jnj): srvFd on plan9
 	//var mntpnt string
 	//srvfd = srvFd(service, mode, fd, &mntpnt)
 	err := p9p.PostService(conn, service)
