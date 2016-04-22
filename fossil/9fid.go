@@ -144,7 +144,7 @@ func fidAlloc() *Fid {
 
 func fidFree(fid *Fid) {
 	if fid.file != nil {
-		fileDecRef(fid.file)
+		fid.file.decRef()
 		fid.file = nil
 	}
 

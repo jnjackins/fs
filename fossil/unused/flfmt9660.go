@@ -377,9 +377,9 @@ func iso9660labels(disk *Disk, buf []byte, write func(int, uint)) {
 }
 
 func iso9660copy(fs *Fs) {
-	root := (*File)(fileOpen(fs, "/active"))
+	root := (*File)(openFile(fs, "/active"))
 	iso9660copydir(fs, root, (*Cdir)(v.rootdir))
-	fileDecRef(root)
+	root.decRef()
 	fs.elk.RUnlock()
 	if fsSnapshot(fs, "", "", 0) == 0 {
 		log.Fatalf("snapshot failed: %R")
@@ -531,7 +531,7 @@ func iso9660copyfile(fs *Fs, dir *File, c *Cdir) {
 	if d.mode&0x80000000 != 0 {
 		mode |= ModeDir
 	}
-	f := (*File)(fileCreate(dir, d.name, mode, d.uid))
+	f := (*File)(dir.create(d.name, mode, d.uid))
 	if f == nil {
 		log.Fatalf("could not create file '%s': %r", d.name)
 	}
@@ -543,18 +543,18 @@ func iso9660copyfile(fs *Fs, dir *File, c *Cdir) {
 		var score venti.Score
 		for foff := uint32(0); foff < len; foff += uint32(h.blockSize) {
 			localToGlobal(uint((off+foff-fsoff)/uint32(h.blockSize)), score)
-			if fileMapBlock(f, foff/uint32(h.blockSize), score, Tag) == 0 {
+			if f.mapBlock(foff/uint32(h.blockSize), score, Tag) == 0 {
 				log.Fatalf("fileMapBlock: %R")
 			}
 		}
 
-		if fileSetSize(f, uint64(len)) == 0 {
+		if f.setSize(uint64(len)) == 0 {
 			log.Fatalf("fileSetSize: %R")
 		}
 	}
 
 	var de DirEntry
-	if fileGetDir(f, &de) == 0 {
+	if f.getDir(&de) == 0 {
 		log.Fatalf("fileGetDir: %R")
 	}
 	de.uid = d.uid
@@ -562,9 +562,9 @@ func iso9660copyfile(fs *Fs, dir *File, c *Cdir) {
 	de.mtime = d.mtime
 	de.atime = d.atime
 	de.mode = d.mode & 0777
-	if fileSetDir(f, &de, "sys") == 0 {
+	if f.setDir(&de, "sys") == 0 {
 		log.Fatalf("fileSetDir: %R")
 	}
-	fileDecRef(f)
+	f.decRef()
 	ind--
 }

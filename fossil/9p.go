@@ -42,7 +42,7 @@ var rFcall = [plan9.Tmax]func(*Msg) error{
 func permFile(file *File, fid *Fid, perm int) error {
 	var de DirEntry
 
-	if err := fileGetDir(file, &de); err != nil {
+	if err := file.getDir(&de); err != nil {
 		return err
 	}
 
@@ -97,9 +97,9 @@ func permFid(fid *Fid, p int) error {
 }
 
 func permParent(fid *Fid, p int) error {
-	parent := fileGetParent(fid.file)
+	parent := fid.file.getParent()
 	err := permFile(parent, fid, p)
-	fileDecRef(parent)
+	parent.decRef()
 
 	return err
 }
@@ -125,12 +125,12 @@ func rTwstat(m *Msg) error {
 		goto error0
 	}
 
-	if fileIsRoFs(fid.file) || !groupWriteMember(fid.uname) {
+	if fid.file.isRoFs() || !groupWriteMember(fid.uname) {
 		err = fmt.Errorf("read-only filesystem")
 		goto error0
 	}
 
-	if err = fileGetDir(fid.file, &de); err != nil {
+	if err = fid.file.getDir(&de); err != nil {
 		goto error0
 	}
 
@@ -369,7 +369,7 @@ func rTwstat(m *Msg) error {
 	}
 
 	if op != 0 {
-		err = fileSetDir(fid.file, &de, fid.uid)
+		err = fid.file.setDir(&de, fid.uid)
 	}
 
 	if tsync != 0 {
@@ -418,7 +418,7 @@ func rTstat(m *Msg) error {
 	}
 
 	var de DirEntry
-	if err = fileGetDir(fid.file, &de); err != nil {
+	if err = fid.file.getDir(&de); err != nil {
 		fidPut(fid)
 		return err
 	}
@@ -441,7 +441,7 @@ func _rTclunk(fid *Fid, remove int) error {
 	if remove != 0 && fid.qid.Type&plan9.QTAUTH == 0 {
 		err = permParent(fid, PermW)
 		if err == nil {
-			err = fileRemove(fid.file, fid.uid)
+			err = fid.file.remove(fid.uid)
 		}
 	}
 
@@ -503,7 +503,7 @@ func rTwrite(m *Msg) error {
 	} else if fid.qid.Type&plan9.QTAUTH != 0 {
 		n = authWrite(fid, m.t.Data, count)
 	} else {
-		n, err = fileWrite(fid.file, m.t.Data, count, int64(m.t.Offset), fid.uid)
+		n, err = fid.file.write(m.t.Data, count, int64(m.t.Offset), fid.uid)
 	}
 	if n < 0 {
 		goto error
@@ -554,7 +554,7 @@ func rTread(m *Msg) error {
 	} else if fid.qid.Type&plan9.QTAUTH != 0 {
 		data, err = authRead(fid, count)
 	} else {
-		data, err = fileRead(fid.file, count, int64(m.t.Offset))
+		data, err = fid.file.read(count, int64(m.t.Offset))
 	}
 	if err != nil {
 		goto error
@@ -585,12 +585,12 @@ func rTcreate(m *Msg) error {
 		goto error
 	}
 
-	if fileIsRoFs(fid.file) || !groupWriteMember(fid.uname) {
+	if fid.file.isRoFs() || !groupWriteMember(fid.uname) {
 		err = fmt.Errorf("read-only filesystem")
 		goto error
 	}
 
-	if !fileIsDir(fid.file) {
+	if !fid.file.isDir() {
 		err = fmt.Errorf("not a directory")
 		goto error
 	}
@@ -632,7 +632,7 @@ func rTcreate(m *Msg) error {
 		}
 	}
 
-	mode = fileGetMode(fid.file)
+	mode = fid.file.getMode()
 	perm = uint32(m.t.Perm)
 	if m.t.Perm&plan9.DMDIR != 0 {
 		perm &= ^uint32(0777) | mode&0777
@@ -653,18 +653,18 @@ func rTcreate(m *Msg) error {
 		mode |= ModeTemporary
 	}
 
-	file, err = fileCreate(fid.file, m.t.Name, mode, fid.uid)
+	file, err = fid.file.create(m.t.Name, mode, fid.uid)
 	if err != nil {
 		fidPut(fid)
 		return err
 	}
 
-	fileDecRef(fid.file)
+	fid.file.decRef()
 
-	fid.qid.Vers = fileGetMcount(file)
-	fid.qid.Path = fileGetId(file)
+	fid.qid.Vers = file.getMcount()
+	fid.qid.Path = file.getId()
 	fid.file = file
-	mode = fileGetMode(fid.file)
+	mode = fid.file.getMode()
 	if mode&ModeDir != 0 {
 		fid.qid.Type = plan9.QTDIR
 	} else {
@@ -707,8 +707,8 @@ func rTopen(m *Msg) error {
 		goto error
 	}
 
-	isdir = fileIsDir(fid.file)
-	rofs = fileIsRoFs(fid.file) || !groupWriteMember(fid.uname)
+	isdir = fid.file.isDir()
+	rofs = fid.file.isRoFs() || !groupWriteMember(fid.uname)
 
 	if m.t.Mode&plan9.ORCLOSE != 0 {
 		if isdir {
@@ -770,7 +770,7 @@ func rTopen(m *Msg) error {
 		goto error
 	}
 
-	mode = int(fileGetMode(fid.file))
+	mode = int(fid.file.getMode())
 	if mode&ModeExclusive != 0 {
 		if err = exclAlloc(fid); err != nil {
 			goto error
@@ -781,7 +781,7 @@ func rTopen(m *Msg) error {
 	 * Everything checks out, try to commit any changes.
 	 */
 	if (m.t.Mode&plan9.OTRUNC != 0) && mode&ModeAppend == 0 {
-		if err = fileTruncate(fid.file, fid.uid); err != nil {
+		if err = fid.file.truncate(fid.uid); err != nil {
 			goto error
 		}
 	}
@@ -791,7 +791,7 @@ func rTopen(m *Msg) error {
 		fid.db = nil
 	}
 
-	fid.qid.Vers = fileGetMcount(fid.file)
+	fid.qid.Vers = fid.file.getMcount()
 	m.r.Qid = fid.qid
 	m.r.Iounit = m.con.msize - plan9.IOHDRSIZE
 
@@ -845,7 +845,7 @@ func rTwalk(m *Msg) error {
 		}
 
 		nfid.open = ofid.open &^ FidORclose
-		nfid.file = fileIncRef(ofid.file)
+		nfid.file = ofid.file.incRef()
 		nfid.qid = ofid.qid
 		nfid.uid = ofid.uid
 		nfid.uname = ofid.uname
@@ -866,7 +866,7 @@ func rTwalk(m *Msg) error {
 	}
 
 	file := fid.file
-	fileIncRef(file)
+	file.incRef()
 	qid := fid.qid
 
 	var nfile *File
@@ -898,27 +898,27 @@ func rTwalk(m *Msg) error {
 			goto Out
 		}
 
-		nfile, err = fileWalk(file, t.Wname[nwname])
+		nfile, err = file.walk(t.Wname[nwname])
 		if err != nil {
 			break
 		}
-		fileDecRef(file)
+		file.decRef()
 		file = nfile
 		qid.Type = plan9.QTFILE
-		if fileIsDir(file) {
+		if file.isDir() {
 			qid.Type = plan9.QTDIR
 		}
-		if fileIsAppend(file) {
+		if file.isAppend() {
 			qid.Type |= plan9.QTAPPEND
 		}
-		if fileIsTemporary(file) {
+		if file.isTemporary() {
 			qid.Type |= plan9.QTTMP
 		}
-		if fileIsExclusive(file) {
+		if file.isExclusive() {
 			qid.Type |= plan9.QTEXCL
 		}
-		qid.Vers = fileGetMcount(file)
-		qid.Path = fileGetId(file)
+		qid.Vers = file.getMcount()
+		qid.Path = file.getId()
 		r.Wqid = append(r.Wqid, qid)
 	}
 
@@ -930,7 +930,7 @@ func rTwalk(m *Msg) error {
 		 */
 		fid.qid = r.Wqid[len(r.Wqid)-1]
 
-		fileDecRef(fid.file)
+		fid.file.decRef()
 		fid.file = file
 
 		if nfid != nil {
@@ -947,7 +947,7 @@ func rTwalk(m *Msg) error {
 	 * It's not an error if some of the elements were walked OK.
 	 */
 Out:
-	fileDecRef(file)
+	file.decRef()
 
 	if nfid != nil {
 		fidClunk(nfid)
@@ -1029,7 +1029,7 @@ func rTattach(m *Msg) error {
 	}
 	fsysFsRUnlock(fsys)
 
-	fid.qid = plan9.Qid{Path: fileGetId(fid.file), Type: plan9.QTDIR}
+	fid.qid = plan9.Qid{Path: fid.file.getId(), Type: plan9.QTDIR}
 	m.r.Qid = fid.qid
 
 	fidPut(fid)

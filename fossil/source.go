@@ -1116,5 +1116,5 @@ func sourceTagGen() uint32 {
 }
 
 func (s *Source) name() string {
-	return fileName(s.file)
+	return s.file.name()
 }

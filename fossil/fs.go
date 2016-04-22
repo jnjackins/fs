@@ -174,7 +174,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	//fmt.Fprintf(os.Stderr, "%s: got fs source\n", argv0)
 
 	fs.elk.RLock()
-	fs.file, err = fileRoot(fs.source)
+	fs.file, err = rootFile(fs.source)
 	fs.source.file = fs.file /* point back */
 	fs.elk.RUnlock()
 
@@ -211,8 +211,8 @@ func (fs *Fs) close() {
 	}
 	snapClose(fs.snap)
 	if fs.file != nil {
-		fileMetaFlush(fs.file, false)
-		if !fileDecRef(fs.file) {
+		fs.file.metaFlush(false)
+		if !fs.file.decRef() {
 			log.Fatalf("fsClose: files still in use\n")
 		}
 	}
@@ -233,7 +233,7 @@ func (fs *Fs) redial(host string) error {
 }
 
 func (fs *Fs) getRoot() *File {
-	return fileIncRef(fs.file)
+	return fs.file.incRef()
 }
 
 func (fs *Fs) getBlockSize() int {
@@ -286,7 +286,7 @@ func superWrite(b *Block, super *Super, forceWrite int) {
  *
  * TODO This should be rewritten to eliminate most of the duplication.
  */
-func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
+func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 	var dir, f *File
 
 	if dstpath != "" {
@@ -296,19 +296,19 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 			p = "/"
 		}
 		var err error
-		dir, err = fileOpen(fs, p)
+		dir, err = openFile(fs, p)
 		if err != nil {
 			return nil, err
 		}
-		f, err = fileCreate(dir, elem, ModeDir|ModeSnapshot|0555, "adm")
-		fileDecRef(dir)
+		f, err = dir.create(elem, ModeDir|ModeSnapshot|0555, "adm")
+		dir.decRef()
 		return f, err
 	} else if doarchive {
 		/*
 		 * a snapshot intended to be archived to venti.
 		 */
 		var err error
-		dir, err = fileOpen(fs, "/archive")
+		dir, err = openFile(fs, "/archive")
 		if err != nil {
 			return nil, err
 		}
@@ -316,11 +316,11 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 
 		/* yyyy */
 		s := fmt.Sprintf("%d", now.Year())
-		f, err = fileWalk(dir, s)
+		f, err = dir.walk(s)
 		if err != nil {
-			f, err = fileCreate(dir, s, ModeDir|0555, "adm")
+			f, err = dir.create(s, ModeDir|0555, "adm")
 		}
-		fileDecRef(dir)
+		dir.decRef()
 		if err != nil {
 			return nil, err
 		}
@@ -332,15 +332,15 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 			if n != 0 {
 				s += fmt.Sprintf(".%d", n)
 			}
-			f, err = fileWalk(dir, s)
+			f, err = dir.walk(s)
 			if err == nil {
-				fileDecRef(f)
+				f.decRef()
 				continue
 			}
-			f, err = fileCreate(dir, s, ModeDir|ModeSnapshot|0555, "adm")
+			f, err = dir.create(s, ModeDir|ModeSnapshot|0555, "adm")
 			break
 		}
-		fileDecRef(dir)
+		dir.decRef()
 		return f, err
 	} else {
 		/*
@@ -350,7 +350,7 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		 * (I'd have used hh:mm but ':' is reserved in Microsoft file systems.)
 		 */
 		var err error
-		dir, err = fileOpen(fs, "/snapshot")
+		dir, err = openFile(fs, "/snapshot")
 		if err != nil {
 			return nil, err
 		}
@@ -360,11 +360,11 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		/* yyyy */
 		s := fmt.Sprintf("%d", now.Year())
 
-		f, err = fileWalk(dir, s)
+		f, err = dir.walk(s)
 		if err != nil {
-			f, err = fileCreate(dir, s, ModeDir|0555, "adm")
+			f, err = dir.create(s, ModeDir|0555, "adm")
 		}
-		fileDecRef(dir)
+		dir.decRef()
 		if err != nil {
 			return nil, err
 		}
@@ -373,11 +373,11 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		/* mmdd */
 		s = fmt.Sprintf("%02d%02d", now.Month(), now.Day())
 
-		f, err = fileWalk(dir, s)
+		f, err = dir.walk(s)
 		if err != nil {
-			f, err = fileCreate(dir, s, ModeDir|0555, "adm")
+			f, err = dir.create(s, ModeDir|0555, "adm")
 		}
-		fileDecRef(dir)
+		dir.decRef()
 		if err != nil {
 			return nil, err
 		}
@@ -389,15 +389,15 @@ func fileOpenSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 			if n != 0 {
 				s += fmt.Sprintf(".%d", n)
 			}
-			f, err = fileWalk(dir, s)
+			f, err = dir.walk(s)
 			if err == nil {
-				fileDecRef(f)
+				f.decRef()
 				continue
 			}
-			f, err = fileCreate(dir, s, ModeDir|ModeSnapshot|0555, "adm")
+			f, err = dir.create(s, ModeDir|ModeSnapshot|0555, "adm")
 			break
 		}
-		fileDecRef(dir)
+		dir.decRef()
 		return f, err
 	}
 }
@@ -419,10 +419,10 @@ func (fs *Fs) needArch(archMinute uint) bool {
 
 	var err error
 	var f *File
-	f, err = fileOpen(fs, buf)
+	f, err = openFile(fs, buf)
 	if err == nil {
 		need = false
-		fileDecRef(f)
+		f.decRef()
 	}
 	return need
 }
@@ -554,7 +554,7 @@ func saveQid(fs *Fs) error {
 	qidMax := super.qid
 	blockPut(b)
 
-	if err := fileSetQidSpace(fs.file, 0, qidMax); err != nil {
+	if err := fs.file.setQidSpace(0, qidMax); err != nil {
 		return err
 	}
 
@@ -583,7 +583,7 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 		srcpath = "/active"
 	}
 	var err error
-	src, err = fileOpen(fs, srcpath)
+	src, err = openFile(fs, srcpath)
 	if err != nil {
 		goto Err
 	}
@@ -626,7 +626,7 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	if err = bumpEpoch(fs, false); err != nil {
 		goto Err
 	}
-	if err = fileWalkSources(src); err != nil {
+	if err = src.walkSources(); err != nil {
 		goto Err
 	}
 
@@ -638,7 +638,7 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	/*
 	 * Create the directory where we will store the copy of src.
 	 */
-	dst, err = fileOpenSnapshot(fs, dstpath, doarchive)
+	dst, err = openSnapshot(fs, dstpath, doarchive)
 	if err != nil {
 		goto Err
 	}
@@ -647,12 +647,12 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	 * Actually make the copy by setting dst's source and msource
 	 * to be src's.
 	 */
-	if err = fileSnapshot(dst, src, fs.ehi-1, doarchive); err != nil {
+	if err = dst.snapshot(src, fs.ehi-1, doarchive); err != nil {
 		goto Err
 	}
 
-	fileDecRef(src)
-	fileDecRef(dst)
+	src.decRef()
+	dst.decRef()
 	src = nil
 	dst = nil
 
@@ -680,10 +680,10 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 Err:
 	fmt.Fprintf(os.Stderr, "%s: snapshot: %v\n", argv0, err)
 	if src != nil {
-		fileDecRef(src)
+		src.decRef()
 	}
 	if dst != nil {
-		fileDecRef(dst)
+		dst.decRef()
 	}
 	return err
 }
@@ -692,22 +692,22 @@ func (fs *Fs) vac(name string, score *venti.Score) error {
 	fs.elk.RLock()
 	defer fs.elk.RUnlock()
 
-	f, err := fileOpen(fs, name)
+	f, err := openFile(fs, name)
 	if err != nil {
 		return err
 	}
 
 	var e, ee Entry
-	if err := fileGetSources(f, &e, &ee); err != nil {
-		fileDecRef(f)
+	if err := f.getSources(&e, &ee); err != nil {
+		f.decRef()
 		return err
 	}
 	var de DirEntry
-	if err := fileGetDir(f, &de); err != nil {
-		fileDecRef(f)
+	if err := f.getDir(&de); err != nil {
+		f.decRef()
 		return err
 	}
-	fileDecRef(f)
+	f.decRef()
 
 	return mkVac(fs.z, uint(fs.blockSize), &e, &ee, &de, score)
 }
@@ -800,7 +800,7 @@ func (fs *Fs) sync() error {
 	fs.elk.Lock()
 	defer fs.elk.Unlock()
 
-	fileMetaFlush(fs.file, true)
+	fs.file.metaFlush(true)
 	cacheFlush(fs.cache, true)
 
 	return nil
@@ -811,7 +811,7 @@ func (fs *Fs) halt() error {
 	// leave locked
 
 	fs.halted = true
-	fileMetaFlush(fs.file, true)
+	fs.file.metaFlush(true)
 	cacheFlush(fs.cache, true)
 	return nil
 }
@@ -852,7 +852,7 @@ func (fs *Fs) nextQid(qid *uint64) error {
 
 func (fs *Fs) metaFlush() {
 	fs.elk.RLock()
-	rv := fileMetaFlush(fs.file, true)
+	rv := fs.file.metaFlush(true)
 	fs.elk.RUnlock()
 
 	if rv > 0 {
@@ -878,24 +878,24 @@ func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
 			break
 		}
 		if de.mode&ModeSnapshot != 0 {
-			ff, err := fileWalk(f, de.elem)
+			ff, err := f.walk(de.elem)
 			if err == nil {
 				var e, ee Entry
-				if err := fileGetSources(ff, &e, &ee); err != nil {
+				if err := ff.getSources(&e, &ee); err != nil {
 					if de.mtime >= savetime && e.snap != 0 {
 						if e.snap < *plo {
 							*plo = e.snap
 						}
 					}
 				}
-				fileDecRef(ff)
+				ff.decRef()
 			}
 		} else if de.mode&ModeDir != 0 {
-			ff, err := fileWalk(f, de.elem)
+			ff, err := f.walk(de.elem)
 			if err == nil {
 				t := fmt.Sprintf("%s/%s", path, de.elem)
 				n += fsEsearch1(ff, t, savetime, plo)
-				fileDecRef(ff)
+				ff.decRef()
 			}
 		}
 
@@ -915,25 +915,25 @@ func (fs *Fs) esearch(path_ string, savetime uint32, plo *uint32) int {
 	var f *File
 	var err error
 
-	f, err = fileOpen(fs, path_)
+	f, err = openFile(fs, path_)
 	if err != nil {
 		return 0
 	}
 	var de DirEntry
-	if err := fileGetDir(f, &de); err != nil {
-		fileDecRef(f)
+	if err := f.getDir(&de); err != nil {
+		f.decRef()
 		return 0
 	}
 
 	if de.mode&ModeDir == 0 {
-		fileDecRef(f)
+		f.decRef()
 		deCleanup(&de)
 		return 0
 	}
 
 	deCleanup(&de)
 	n := fsEsearch1(f, path_, savetime, plo)
-	fileDecRef(f)
+	f.decRef()
 	return n
 }
 
@@ -980,24 +980,24 @@ func fsRsearch1(f *File, s string) int {
 		}
 		n++
 		if de.mode&ModeSnapshot != 0 {
-			ff, err = fileWalk(f, de.elem)
+			ff, err = f.walk(de.elem)
 			if err == nil {
-				fileDecRef(ff)
+				ff.decRef()
 			} else if err == ESnapOld {
-				if err = fileClri(f, de.elem, "adm"); err != nil {
+				if err = f.clri(de.elem, "adm"); err != nil {
 					n--
 				}
 			}
 		} else if de.mode&ModeDir != 0 {
-			ff, err = fileWalk(f, de.elem)
+			ff, err = f.walk(de.elem)
 			if err == nil {
 				t = fmt.Sprintf("%s/%s", s, de.elem)
 				if fsRsearch1(ff, t) == 0 {
-					if err = fileRemove(ff, "adm"); err != nil {
+					if err = ff.remove("adm"); err != nil {
 						n--
 					}
 				}
-				fileDecRef(ff)
+				ff.decRef()
 			}
 		}
 
@@ -1017,25 +1017,25 @@ func (fs *Fs) rsearch(path_ string) int {
 	var f *File
 	var err error
 
-	f, err = fileOpen(fs, path_)
+	f, err = openFile(fs, path_)
 	if err != nil {
 		return 0
 	}
 	var de DirEntry
-	if err := fileGetDir(f, &de); err != nil {
-		fileDecRef(f)
+	if err := f.getDir(&de); err != nil {
+		f.decRef()
 		return 0
 	}
 
 	if de.mode&ModeDir == 0 {
-		fileDecRef(f)
+		f.decRef()
 		deCleanup(&de)
 		return 0
 	}
 
 	deCleanup(&de)
 	fsRsearch1(f, path_)
-	fileDecRef(f)
+	f.decRef()
 	return 1
 }
 

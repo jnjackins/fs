@@ -327,30 +327,30 @@ func usersFileWrite(box *Ubox) error {
 	 */
 
 	var dir *File
-	dir, err = fileOpen(fs, "/active")
+	dir, err = openFile(fs, "/active")
 	if err != nil {
 		return err
 	}
 	var file *File
-	file, err = fileWalk(dir, uidadm)
+	file, err = dir.walk(uidadm)
 	if err != nil {
-		file, err = fileCreate(dir, uidadm, ModeDir|0775, uidadm)
+		file, err = dir.create(uidadm, ModeDir|0775, uidadm)
 	}
-	fileDecRef(dir)
+	dir.decRef()
 	var buf bytes.Buffer
 	if err != nil {
 		goto tidy
 	}
 	dir = file
-	file, err = fileWalk(dir, "users")
+	file, err = dir.walk("users")
 	if err != nil {
-		file, err = fileCreate(dir, "users", 0664, uidadm)
+		file, err = dir.create("users", 0664, uidadm)
 	}
-	fileDecRef(dir)
+	dir.decRef()
 	if err != nil {
 		goto tidy
 	}
-	if err = fileTruncate(file, uidadm); err != nil {
+	if err = file.truncate(uidadm); err != nil {
 		goto tidy
 	}
 
@@ -358,11 +358,11 @@ func usersFileWrite(box *Ubox) error {
 		buf.WriteString(fmt.Sprintf("%v\n", u))
 	}
 
-	_, err = fileWrite(file, buf.Bytes(), box.length, 0, uidadm)
+	_, err = file.write(buf.Bytes(), box.length, 0, uidadm)
 
 tidy:
 	if file != nil {
-		fileDecRef(file)
+		file.decRef()
 	}
 
 	return err
@@ -565,30 +565,30 @@ func uboxInit(users string) error {
 	return nil
 }
 
-func usersFileRead(path_ string) error {
+func usersFileRead(path string) error {
 	fsys, err := fsysGet("main")
 	if err != nil {
 		return err
 	}
 	fsysFsRlock(fsys)
 
-	if path_ == "" {
-		path_ = "/active/adm/users"
+	if path == "" {
+		path = "/active/adm/users"
 	}
 
 	var file *File
 	var buf []byte
-	file, err = fileOpen(fsysGetFs(fsys), path_)
+	file, err = openFile(fsysGetFs(fsys), path)
 	if err == nil {
 		var size uint64
-		if err = fileGetSize(file, &size); err == nil {
+		if err = file.getSize(&size); err == nil {
 			length := int(size)
-			buf, err = fileRead(file, int(size), 0)
+			buf, err = file.read(int(size), 0)
 			if len(buf) == length && err == nil {
 				err = uboxInit(string(buf))
 			}
 		}
-		fileDecRef(file)
+		file.decRef()
 	}
 
 	fsysFsRUnlock(fsys)

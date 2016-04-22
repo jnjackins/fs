@@ -276,8 +276,8 @@ func fsysGetRoot(fsys *Fsys, name string) *File {
 	}
 
 	var sub *File
-	sub, _ = fileWalk(root, name)
-	fileDecRef(root)
+	sub, _ = root.walk(name)
+	root.decRef()
 
 	return sub
 }
@@ -524,14 +524,14 @@ func fsysRemove(fsys *Fsys, argv []string) error {
 
 	fsys.fs.elk.RLock()
 	for argc > 0 {
-		file, err := fileOpen(fsys.fs, argv[0])
+		file, err := openFile(fsys.fs, argv[0])
 		if err != nil {
 			consPrintf("%s: %v\n", argv[0], err)
 		} else {
-			if err := fileRemove(file, uidadm); err != nil {
+			if err := file.remove(uidadm); err != nil {
 				consPrintf("%s: %v\n", argv[0], err)
 			}
-			fileDecRef(file)
+			file.decRef()
 		}
 		argc--
 		argv = argv[1:]
@@ -931,27 +931,27 @@ func fsysEsearch1(f *File, s string, elo uint32) int {
 			break
 		}
 		if de.mode&ModeSnapshot != 0 {
-			ff, err := fileWalk(f, de.elem)
+			ff, err := f.walk(de.elem)
 			if err != nil {
 				consPrintf("\tcannot walk %s/%s: %v\n", s, de.elem, err)
 			} else {
-				if err := fileGetSources(ff, &e, &ee); err != nil {
+				if err := ff.getSources(&e, &ee); err != nil {
 					consPrintf("\tcannot get sources for %s/%s: %v\n", s, de.elem, err)
 				} else if e.snap != 0 && e.snap < elo {
 					consPrintf("\t%d\tclri %s/%s\n", e.snap, s, de.elem)
 					n++
 				}
 
-				fileDecRef(ff)
+				ff.decRef()
 			}
 		} else if de.mode&ModeDir != 0 {
-			ff, err := fileWalk(f, de.elem)
+			ff, err := f.walk(de.elem)
 			if err != nil {
 				consPrintf("\tcannot walk %s/%s: %v\n", s, de.elem, err)
 			} else {
 				t = fmt.Sprintf("%s/%s", s, de.elem)
 				n += fsysEsearch1(ff, t, elo)
-				fileDecRef(ff)
+				ff.decRef()
 			}
 		}
 
@@ -967,17 +967,17 @@ func fsysEsearch1(f *File, s string, elo uint32) int {
 }
 
 // TODO: errors?
-func fsysEsearch(fs *Fs, path_ string, elo uint32) int {
+func fsysEsearch(fs *Fs, path string, elo uint32) int {
 	var f *File
 
-	f, err := fileOpen(fs, path_)
+	f, err := openFile(fs, path)
 	if err != nil {
 		return 0
 	}
-	defer fileDecRef(f)
+	defer f.decRef()
 	var de DirEntry
-	if err := fileGetDir(f, &de); err != nil {
-		consPrintf("\tfileGetDir %s failed: %v\n", path_, err)
+	if err := f.getDir(&de); err != nil {
+		consPrintf("\tfileGetDir %s failed: %v\n", path, err)
 		return 0
 	}
 
@@ -987,7 +987,7 @@ func fsysEsearch(fs *Fs, path_ string, elo uint32) int {
 	}
 
 	deCleanup(&de)
-	return fsysEsearch1(f, path_, elo)
+	return fsysEsearch1(f, path, elo)
 }
 
 func fsysEpoch(fsys *Fsys, argv []string) error {
@@ -1108,27 +1108,27 @@ func fsysCreate(fsys *Fsys, argv []string) error {
 		elem = path
 	}
 
-	parent, err := fileOpen(fsys.fs, parentPath)
+	parent, err := openFile(fsys.fs, parentPath)
 	if err != nil {
 		return err
 	}
 
-	file, err := fileCreate(parent, elem, mode, argv[1])
-	fileDecRef(parent)
+	file, err := parent.create(elem, mode, argv[1])
+	parent.decRef()
 	if err != nil {
 		return fmt.Errorf("create %s/%s: %v", parentPath, elem, err)
 	}
-	defer fileDecRef(file)
+	defer file.decRef()
 
 	var de DirEntry
-	if err := fileGetDir(file, &de); err != nil {
+	if err := file.getDir(&de); err != nil {
 		return fmt.Errorf("stat failed after create: %v", err)
 	}
 
 	defer deCleanup(&de)
 	if de.gid != argv[2] {
 		de.gid = argv[2]
-		if err := fileSetDir(file, &de, argv[1]); err != nil {
+		if err := file.setDir(&de, argv[1]); err != nil {
 			return fmt.Errorf("wstat failed after create: %v", err)
 		}
 	}
@@ -1137,10 +1137,8 @@ func fsysCreate(fsys *Fsys, argv []string) error {
 }
 
 func fsysPrintStat(prefix string, file string, de *DirEntry) {
-	if prefix == "" {
-		prefix = ""
-	}
-	consPrintf("%sstat %q %q %q %q %s %d\n", prefix, file, de.elem, de.uid, de.gid, fsysModeString(de.mode), de.size)
+	consPrintf("%sstat %q %q %q %q %s %d\n",
+		prefix, file, de.elem, de.uid, de.gid, fsysModeString(de.mode), de.size)
 }
 
 func fsysStat(fsys *Fsys, argv []string) error {
@@ -1158,24 +1156,22 @@ func fsysStat(fsys *Fsys, argv []string) error {
 
 	fsys.fs.elk.RLock()
 	for i := 0; i < argc; i++ {
-		f, err := fileOpen(fsys.fs, argv[i])
+		f, err := openFile(fsys.fs, argv[i])
 		if err != nil {
 			consPrintf("%s: %v\n", argv[i], err)
 			continue
 		}
 
-		if err := fileGetDir; err != nil {
+		var de DirEntry
+		if err := f.getDir(&de); err != nil {
 			consPrintf("%s: %v\n", argv[i], err)
-			fileDecRef(f)
+			f.decRef()
 			continue
 		}
-
-		var de DirEntry
 		fsysPrintStat("\t", argv[i], &de)
 		deCleanup(&de)
-		fileDecRef(f)
+		f.decRef()
 	}
-
 	fsys.fs.elk.RUnlock()
 	return nil
 }
@@ -1196,15 +1192,15 @@ func fsysWstat(fsys *Fsys, argv []string) error {
 	fsys.fs.elk.RLock()
 	var err error
 	var f *File
-	f, err = fileOpen(fsys.fs, argv[0])
+	f, err = openFile(fsys.fs, argv[0])
 	if err != nil {
 		fsys.fs.elk.RUnlock()
 		return fmt.Errorf("console wstat - walk - %v", err)
 	}
 
 	var de DirEntry
-	if err := fileGetDir(f, &de); err != nil {
-		fileDecRef(f)
+	if err := f.getDir(&de); err != nil {
+		f.decRef()
 		fsys.fs.elk.RUnlock()
 		return fmt.Errorf("console wstat - stat - %v", err)
 	}
@@ -1254,28 +1250,28 @@ func fsysWstat(fsys *Fsys, argv []string) error {
 		}
 	}
 
-	if err := fileSetDir(f, &de, uidadm); err != nil {
+	if err := f.setDir(&de, uidadm); err != nil {
 		err = fmt.Errorf("console wstat - %v", err)
 		goto Err
 	}
 
 	deCleanup(&de)
 
-	if err := fileGetDir(f, &de); err != nil {
+	if err := f.getDir(&de); err != nil {
 		err = fmt.Errorf("console wstat - stat2 - %v", err)
 		goto Err
 	}
 
 	fsysPrintStat("\tnew: w", argv[0], &de)
 	deCleanup(&de)
-	fileDecRef(f)
+	f.decRef()
 	fsys.fs.elk.RUnlock()
 
 	return nil
 
 Err:
 	deCleanup(&de) /* okay to do this twice */
-	fileDecRef(f)
+	f.decRef()
 	fsys.fs.elk.RUnlock()
 
 	assert(err != nil)

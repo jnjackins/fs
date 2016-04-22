@@ -164,7 +164,7 @@ func partition(fd int, bsize int, h *Header) {
 		log.Fatalf("error getting file size: %v", err)
 	}
 
-	nblock := uint32(size/ int64(bsize))
+	nblock := uint32(size / int64(bsize))
 
 	/* sanity check */
 	if nblock < uint32((HeaderOffset*10)/bsize) {
@@ -337,11 +337,11 @@ func (d *Disk) blockWrite(part int, addr uint32, buf []byte) {
 }
 
 func addFile(root *File, name string, mode uint) {
-	f, err := fileCreate(root, name, uint32(mode)|ModeDir, "adm")
+	f, err := root.create(name, uint32(mode)|ModeDir, "adm")
 	if err != nil {
 		log.Fatalf("could not create file: %s: %v", name, err)
 	}
-	fileDecRef(f)
+	f.decRef()
 }
 
 func topLevel(name string, z *venti.Session) {
@@ -358,7 +358,7 @@ func topLevel(name string, z *venti.Session) {
 	addFile(root, "active", 0555)
 	addFile(root, "archive", 0555)
 	addFile(root, "snapshot", 0555)
-	fileDecRef(root)
+	root.decRef()
 	fs.elk.RUnlock()
 	fs.close()
 }

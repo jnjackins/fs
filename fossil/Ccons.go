@@ -76,10 +76,9 @@ func consClose(cons *Cons) {
 	console.nopens--
 }
 
-func consIProc(v interface{}) {
+func consIProc(cons *Cons) {
 	//vtThreadSetName("consI")
 
-	cons := v.(*Cons)
 	q := cons.iq
 	buf := make([]byte, Nq/4)
 	for {
