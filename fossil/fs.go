@@ -911,10 +911,7 @@ func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
 }
 
 func (fs *Fs) esearch(path_ string, savetime uint32, plo *uint32) int {
-	var f *File
-	var err error
-
-	f, err = openFile(fs, path_)
+	f, err := openFile(fs, path_)
 	if err != nil {
 		return 0
 	}
@@ -955,19 +952,13 @@ func (fs *Fs) snapshotCleanup(age uint32) {
 /* remove all snapshots that have expired */
 /* return number of directory entries remaining */
 func fsRsearch1(f *File, s string) int {
-	var dee *DirEntryEnum
-	var err error
-
-	dee, err = deeOpen(f)
+	dee, err := deeOpen(f)
 	if err != nil {
 		return 0
 	}
 
-	n := int(0)
 	var de DirEntry
-	var ff *File
-	var r int
-	var t string
+	var r, n int
 	for {
 		var deeReadErr error
 		r, deeReadErr = deeRead(dee, &de)
@@ -979,7 +970,7 @@ func fsRsearch1(f *File, s string) int {
 		}
 		n++
 		if de.mode&ModeSnapshot != 0 {
-			ff, err = f.walk(de.elem)
+			ff, err := f.walk(de.elem)
 			if err == nil {
 				ff.decRef()
 			} else if err == ESnapOld {
@@ -988,9 +979,9 @@ func fsRsearch1(f *File, s string) int {
 				}
 			}
 		} else if de.mode&ModeDir != 0 {
-			ff, err = f.walk(de.elem)
+			ff, err := f.walk(de.elem)
 			if err == nil {
-				t = fmt.Sprintf("%s/%s", s, de.elem)
+				t := fmt.Sprintf("%s/%s", s, de.elem)
 				if fsRsearch1(ff, t) == 0 {
 					if err = ff.remove("adm"); err != nil {
 						n--
@@ -1013,10 +1004,7 @@ func fsRsearch1(f *File, s string) int {
 }
 
 func (fs *Fs) rsearch(path_ string) int {
-	var f *File
-	var err error
-
-	f, err = openFile(fs, path_)
+	f, err := openFile(fs, path_)
 	if err != nil {
 		return 0
 	}
@@ -1107,16 +1095,15 @@ func snapEvent(s *Snap) {
 }
 
 func snapInit(fs *Fs) *Snap {
-	var s *Snap
-
-	s = new(Snap)
-	s.fs = fs
-	s.tick = time.NewTicker(10 * time.Second)
-	s.lk = new(sync.Mutex)
-	s.snapMinutes = ^uint(0)
-	s.archMinute = ^uint(0)
-	s.snapLife = ^uint(0)
-	s.ignore = 5 * 2 /* wait five minutes for clock to stabilize */
+	s := &Snap{
+		fs:          fs,
+		tick:        time.NewTicker(10 * time.Second),
+		lk:          new(sync.Mutex),
+		snapMinutes: ^uint(0),
+		archMinute:  ^uint(0),
+		snapLife:    ^uint(0),
+		ignore:      5 * 2, /* wait five minutes for clock to stabilize */
+	}
 
 	// TODO(jnj): leakes goroutine? loop does not terminate when ticker
 	// is stopped

@@ -43,13 +43,13 @@ type File struct {
 }
 
 func allocFile(fs *Fs) *File {
-	f := new(File)
-	f.lk = new(sync.RWMutex)
-	f.ref = 1
-	f.fs = fs
-	f.boff = NilBlock
-	f.mode = fs.mode
-	return f
+	return &File{
+		lk:   new(sync.RWMutex),
+		ref:  1,
+		fs:   fs,
+		boff: NilBlock,
+		mode: fs.mode,
+	}
 }
 
 func (f *File) free() {
@@ -63,36 +63,34 @@ func (f *File) free() {
  * f->msource is unlocked
  */
 func dirLookup(f *File, elem string) (*File, error) {
-	var bo, nb uint32
-
 	meta := f.msource
-	b := (*Block)(nil)
 	if err := meta.lock(-1); err != nil {
 		return nil, err
 	}
-	nb = uint32((meta.getSize() + uint64(meta.dsize) - 1) / uint64(meta.dsize))
-	var err error
-	var ff *File
-	var i int
-	var mb *MetaBlock
-	var me MetaEntry
-	for bo = 0; bo < nb; bo++ {
-		b, err = meta.block(bo, OReadOnly)
+	defer meta.unlock()
+
+	nb := uint32((meta.getSize() + uint64(meta.dsize) - 1) / uint64(meta.dsize))
+	for bo := uint32(0); bo < nb; bo++ {
+		b, err := meta.block(bo, OReadOnly)
 		if err != nil {
-			goto Err
+			blockPut(b)
+			return nil, err
 		}
-		mb, err = unpackMetaBlock(b.data, meta.dsize)
+		mb, err := unpackMetaBlock(b.data, meta.dsize)
 		if err != nil {
-			goto Err
+			blockPut(b)
+			return nil, err
 		}
+		var i int
+		var me MetaEntry
 		if err = mb.search(elem, &i, &me); err == nil {
-			ff = allocFile(f.fs)
+			ff := allocFile(f.fs)
 			if err = mb.deUnpack(&ff.dir, &me); err != nil {
 				ff.free()
-				goto Err
+				blockPut(b)
+				return nil, err
 			}
 
-			meta.unlock()
 			blockPut(b)
 			ff.boff = bo
 			ff.mode = f.mode
@@ -100,32 +98,25 @@ func dirLookup(f *File, elem string) (*File, error) {
 			return ff, nil
 		}
 		blockPut(b)
-		b = nil
 	}
-	err = ENoFile
-	/* fall through */
-Err:
-	meta.unlock()
-	blockPut(b)
-	return nil, err
+	return nil, ENoFile
 }
 
 func rootFile(r *Source) (*File, error) {
-	b := (*Block)(nil)
-	root := (*File)(nil)
-	mr := (*File)(nil)
-	r1 := (*Source)(nil)
-	r2 := (*Source)(nil)
+	var r0, r1, r2 *Source
+	var root, mr *File
+	var mb *MetaBlock
+	var me MetaEntry
+	var b *Block
+	var err error
 
 	fs := r.fs
 	if err := r.lock(-1); err != nil {
 		return nil, err
 	}
-	var err error
-	var r0 *Source
+	defer r.unlock()
+
 	r0, err = r.open(0, fs.mode, false)
-	var mb *MetaBlock
-	var me MetaEntry
 	if err != nil {
 		goto Err
 	}
@@ -172,7 +163,6 @@ func rootFile(r *Source) (*File, error) {
 		goto Err
 	}
 	blockPut(b)
-	r.unlock()
 	root.rAccess()
 
 	return root, nil
@@ -194,7 +184,6 @@ Err:
 	if root != nil {
 		root.free()
 	}
-	r.unlock()
 
 	return nil, err
 }
@@ -203,9 +192,7 @@ func (f *File) openSource(offset, gen uint32, dir bool, mode uint, issnapshot bo
 	if err := f.source.lock(int(mode)); err != nil {
 		return nil, err
 	}
-	var err error
-	var r *Source
-	r, err = f.source.open(offset, int(mode), issnapshot)
+	r, err := f.source.open(offset, int(mode), issnapshot)
 	f.source.unlock()
 	if err != nil {
 		return nil, err
@@ -258,13 +245,15 @@ func (f *File) _walk(elem string, partial bool) (*File, error) {
 	if err := f.lock(); err != nil {
 		return nil, err
 	}
+	defer f.unlock()
 
-	var err error
 	var ff *File
+	var err error
+
 	for ff = f.down; ff != nil; ff = ff.next {
 		if elem == ff.dir.elem && !ff.removed {
 			ff.ref++
-			goto Exit
+			return ff, nil
 		}
 	}
 
@@ -310,12 +299,9 @@ func (f *File) _walk(elem string, partial bool) (*File, error) {
 	ff.up = f
 	f.incRef()
 
-Exit:
-	f.unlock()
 	return ff, nil
 
 Err:
-	f.unlock()
 	if ff != nil {
 		ff.decRef()
 	}
@@ -361,7 +347,6 @@ func openFile(fs *Fs, path string) (*File, error) {
 func (f *File) setTmp(istmp int) {
 	var e Entry
 	var r *Source
-	var err error
 
 	for i := 0; i < 2; i++ {
 		if i == 0 {
@@ -372,7 +357,7 @@ func (f *File) setTmp(istmp int) {
 		if r == nil {
 			continue
 		}
-		if err = r.getEntry(&e); err != nil {
+		if err := r.getEntry(&e); err != nil {
 			fmt.Fprintf(os.Stderr, "sourceGetEntry failed (cannot happen): %v\n", err)
 			continue
 		}
@@ -382,7 +367,7 @@ func (f *File) setTmp(istmp int) {
 		} else {
 			e.flags &^= venti.EntryNoArchive
 		}
-		if err = r.setEntry(&e); err != nil {
+		if err := r.setEntry(&e); err != nil {
 			fmt.Fprintf(os.Stderr, "sourceSetEntry failed (cannot happen): %v\n", err)
 			continue
 		}
@@ -395,6 +380,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 	if err := f.lock(); err != nil {
 		return nil, err
 	}
+	defer f.unlock()
 
 	var dir *DirEntry
 	var err error
@@ -493,7 +479,6 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 
 	f.wAccess(uid)
 
-	f.unlock()
 	return ff, nil
 
 Err:
@@ -514,7 +499,6 @@ Err1:
 	if ff != nil {
 		ff.decRef()
 	}
-	f.unlock()
 
 	assert(err != nil)
 	return nil, err
@@ -972,10 +956,8 @@ func checkValidFileName(name string) error {
 		return fmt.Errorf("no file name")
 	}
 
-	if name[0] == '.' {
-		if len(name) == 1 || (name[1] == '.' && len(name) == 2) {
-			return fmt.Errorf(". and .. illegal as file name")
-		}
+	if name == "." || name == ".." {
+		return fmt.Errorf(". and .. illegal as file name")
 	}
 
 	for i := 0; i < len(name); i++ {
@@ -1042,8 +1024,7 @@ func (f *File) metaFlush2(oelem string) int {
 	}
 
 	/* can happen if source is clri'ed out from under us */
-	var b *Block
-	var bb *Block
+	var b, bb *Block
 	var boff uint32
 	var err error
 	var mb *MetaBlock
@@ -1374,20 +1355,19 @@ func deeOpen(f *File) (*DirEntryEnum, error) {
 
 // TODO(jnj): return size
 func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
-	var b *Block
-	var e Entry
-	var err error
-
 	epb := s.dsize / venti.EntrySize
 	bn := elem / uint32(epb)
 	elem -= bn * uint32(epb)
 
-	b, err = s.block(bn, OReadOnly)
+	b, err := s.block(bn, OReadOnly)
 	if err != nil {
-		goto Err
+		return err
 	}
+	defer blockPut(b)
+
+	var e Entry
 	if err = entryUnpack(&e, b.data, int(elem)); err != nil {
-		goto Err
+		return err
 	}
 
 	/* hanging entries are returned as zero size */
@@ -1396,12 +1376,7 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	} else {
 		*size = e.size
 	}
-	blockPut(b)
 	return nil
-
-Err:
-	blockPut(b)
-	return err
 }
 
 func deeFill(dee *DirEntryEnum) error {
@@ -1711,9 +1686,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 		return nil
 	}
 
-	var b *Block
-	var err error
-	b, err = cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadOnly)
+	b, err := cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadOnly)
 	if err != nil {
 		return err
 	}
@@ -1741,10 +1714,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 }
 
 func setEntry(r *Source, e *Entry) error {
-	var b *Block
-	var err error
-
-	b, err = cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadWrite)
+	b, err := cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadWrite)
 	if false {
 		fmt.Fprintf(os.Stderr, "setEntry: b %#x %d score=%v\n", b.addr, r.offset%uint32(r.epb), e.score)
 	}

@@ -189,13 +189,14 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c.flush = sync.NewCond(c.lk)
 	c.flushwait = sync.NewCond(c.lk)
 	c.heapwait = sync.NewCond(c.lk)
-	c.syncTicker = time.NewTicker(30 * time.Second)
 
+	// Kick the flushThread every 30 seconds.
 	// TODO(jnj): leaks goroutine? loop does not terminate when ticker
 	// is stopped
+	c.syncTicker = time.NewTicker(30 * time.Second)
 	go func() {
 		for range c.syncTicker.C {
-			cacheSync(c)
+			cacheFlush(c, false)
 		}
 	}()
 
@@ -259,8 +260,6 @@ func cacheDump(c *Cache) {
 	}
 }
 
-var cacheCheck_zero venti.Score
-
 func cacheCheck(c *Cache) {
 	now := c.now
 
@@ -281,7 +280,7 @@ func cacheCheck(c *Cache) {
 		}
 	}
 
-	refed := int(0)
+	refed := 0
 	var b *Block
 	for i := 0; i < c.nblocks; i++ {
 		b = c.blocks[i]
@@ -322,19 +321,19 @@ func cacheBumpBlock(c *Cache) *Block {
 	 * locate the block with the oldest second to last use.
 	 * remove it from the heap, and fix up the heap.
 	 */
-	printed := int(0)
+	printed := false
 
 	if c.nheap == 0 {
 		for c.nheap == 0 {
 			c.flush.Signal()
 			c.heapwait.Wait()
 			if c.nheap == 0 {
-				printed = 1
+				printed = true
 				fmt.Fprintf(os.Stderr, "%s: entire cache is busy, %d dirty "+"-- waking flush thread\n", argv0, c.ndirty)
 			}
 		}
 
-		if printed != 0 {
+		if printed {
 			fmt.Fprintf(os.Stderr, "%s: cache is okay again, %d dirty\n", argv0, c.ndirty)
 		}
 	}
@@ -448,17 +447,15 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lock
  * if it's not there, load it, bumping some other block.
  */
 func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Block, error) {
-	var b *Block
-
 	assert(part != PartVenti)
-
-	h := addr % uint32(c.hashSize)
 
 	/*
 	 * look for the block in the cache
 	 */
 	c.lk.Lock()
 
+	var b *Block
+	h := addr % uint32(c.hashSize)
 	for b = c.heads[h]; b != nil; b = b.next {
 		if b.part != part || b.addr != addr {
 			continue
@@ -483,10 +480,6 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
-		if b.next == b {
-			panic("cycle")
-		}
-
 		c.heads[h] = b
 		if b.next != nil {
 			b.next.prev = &b.next
@@ -626,10 +619,6 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
-		if b.next == b {
-			panic("cycle")
-		}
-
 		c.heads[h] = b
 		if b.next != nil {
 			b.next.prev = &b.next
@@ -1410,17 +1399,17 @@ func blockRemoveLink(b *Block, addr uint32, typ int, tag uint32, recurse bool) {
 		}
 	}
 
-	var bl BList
-	bl.part = PartData
-	bl.addr = addr
-	bl.typ = uint8(typ)
-	bl.tag = tag
+	bl := BList{
+		part:    PartData,
+		addr:    addr,
+		typ:     uint8(typ),
+		tag:     tag,
+		epoch:   b.l.epoch,
+		recurse: recurse,
+	}
 	if b.l.epoch == 0 {
 		assert(b.part == PartSuper)
 	}
-	bl.epoch = b.l.epoch
-	bl.next = nil
-	bl.recurse = recurse
 
 	if b.part == PartSuper && b.iostate == BioClean {
 		p = nil
@@ -1547,10 +1536,8 @@ func doRemoveLink(c *Cache, p *BList) {
  */
 func blistAlloc(b *Block) *BList {
 	if b.iostate != BioDirty {
-		/*
-				 * should not happen anymore -
-			 	 * blockDirty used to flush but no longer does.
-		*/
+		// should not happen anymore -
+		// blockDirty used to flush but no longer does.
 		assert(b.iostate == BioClean)
 		fmt.Fprintf(os.Stderr, "%s: blistAlloc: called on clean block\n", argv0)
 		return nil
@@ -1605,8 +1592,6 @@ func blistFree(c *Cache, bl *BList) {
 	c.lk.Unlock()
 }
 
-var bsStr_s string
-
 func bsStr(state int) string {
 	if state == BsFree {
 		return "Free"
@@ -1615,51 +1600,42 @@ func bsStr(state int) string {
 		return "Bad"
 	}
 
-	bsStr_s = fmt.Sprintf("%x", state)
+	s := fmt.Sprintf("%x", state)
 	if state&BsAlloc == 0 {
-		bsStr_s += ",Free" /* should not happen */
+		s += ",Free" /* should not happen */
 	}
 	if state&BsCopied != 0 {
-		bsStr_s += ",Copied"
+		s += ",Copied"
 	}
 	if state&BsVenti != 0 {
-		bsStr_s += ",Venti"
+		s += ",Venti"
 	}
 	if state&BsClosed != 0 {
-		bsStr_s += ",Closed"
+		s += ",Closed"
 	}
-	return bsStr_s
+	return s
 }
 
 func bioStr(iostate int) string {
 	switch iostate {
 	default:
 		return "Unknown!!"
-
 	case BioEmpty:
 		return "Empty"
-
 	case BioLabel:
 		return "Label"
-
 	case BioClean:
 		return "Clean"
-
 	case BioDirty:
 		return "Dirty"
-
 	case BioReading:
 		return "Reading"
-
 	case BioWriting:
 		return "Writing"
-
 	case BioReadError:
 		return "ReadError"
-
 	case BioVentiError:
 		return "VentiError"
-
 	case BioMax:
 		return "Max"
 	}
@@ -1712,9 +1688,7 @@ func upHeap(i int, b *Block) int {
 }
 
 func downHeap(i int, b *Block) int {
-	var bb *Block
 	var k int
-
 	c := b.c
 	now := c.now
 	for ; ; i = k {
@@ -1725,7 +1699,7 @@ func downHeap(i int, b *Block) int {
 		if k+1 < c.nheap && c.heap[k].used-now > c.heap[k+1].used-now {
 			k++
 		}
-		bb = c.heap[k]
+		bb := c.heap[k]
 		if b.used-now <= bb.used-now {
 			break
 		}
@@ -1744,7 +1718,6 @@ func downHeap(i int, b *Block) int {
  */
 func heapDel(b *Block) {
 	c := b.c
-
 	if b.heap == BadHeap {
 		return
 	}
@@ -2005,11 +1978,4 @@ func cacheFlush(c *Cache, wait bool) {
 		c.flush.Signal()
 	}
 	c.lk.Unlock()
-}
-
-/*
- * Kick the flushThread every 30 seconds.
- */
-func cacheSync(c *Cache) {
-	cacheFlush(c, false)
 }

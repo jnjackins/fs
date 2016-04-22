@@ -678,7 +678,7 @@ func fsysBlock(fsys *Fsys, argv []string) error {
 	if argc > 2 {
 		count = int(strtoul(argv[2], 0))
 	} else {
-		count = 100000000
+		count = 1e8
 	}
 	if offset+count > fs.blockSize {
 		count = fs.blockSize - count
@@ -916,11 +916,9 @@ func fsysEsearch1(f *File, s string, elo uint32) int {
 		return 0
 	}
 
-	n := int(0)
+	n := 0
 	var de DirEntry
-	var e Entry
-	var ee Entry
-	var t string
+	var e, ee Entry
 	for {
 		r, err := deeRead(dee, &de)
 		if r < 0 {
@@ -949,7 +947,7 @@ func fsysEsearch1(f *File, s string, elo uint32) int {
 			if err != nil {
 				consPrintf("\tcannot walk %s/%s: %v\n", s, de.elem, err)
 			} else {
-				t = fmt.Sprintf("%s/%s", s, de.elem)
+				t := fmt.Sprintf("%s/%s", s, de.elem)
 				n += fsysEsearch1(ff, t, elo)
 				ff.decRef()
 			}
@@ -1359,31 +1357,30 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return fmt.Errorf(usage)
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	for i := int(0); i < argc; i++ {
-		if argv[i] == "pblock" {
+	for _, arg := range flags.Args() {
+		switch arg {
+		case "pblock":
 			fsck.printblocks = true
-		} else if argv[i] == "pdir" {
+		case "pdir":
 			fsck.printdirs = true
-		} else if argv[i] == "pfile" {
+		case "pfile":
 			fsck.printfiles = true
-		} else if argv[i] == "bclose" {
+		case "bclose":
 			fsck.flags |= doClose
-		} else if argv[i] == "clri" {
+		case "clri":
 			fsck.flags |= doClri
-		} else if argv[i] == "clre" {
+		case "clre":
 			fsck.flags |= doClre
-		} else if argv[i] == "clrp" {
+		case "clrp":
 			fsck.flags |= doClrp
-		} else if argv[i] == "fix" {
+		case "fix":
 			fsck.flags |= doClose | doClri | doClre | doClrp
-		} else if argv[i] == "venti" {
+		case "venti":
 			fsck.useventi = true
-		} else if argv[i] == "snapshot" {
+		case "snapshot":
 			fsck.walksnapshots = true
-		} else {
-			consPrintf("unknown option '%s'\n", argv[i])
+		default:
+			consPrintf("unknown option '%s'\n", arg)
 			return fmt.Errorf(usage)
 		}
 	}
