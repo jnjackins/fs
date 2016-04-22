@@ -78,7 +78,6 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		return nil, err
 	}
 
-	bwatchInit()
 	disk, err := diskAlloc(fd)
 	if err != nil {
 		syscall.Close(fd)

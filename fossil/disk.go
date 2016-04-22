@@ -343,7 +343,6 @@ func (d *Disk) startThread() {
 		if false {
 			fmt.Fprintf(os.Stderr, "fossil: disk thread: %d:%d %x\n", os.Getpid(), b.part, b.addr)
 		}
-		bwatchLock(b)
 		b.lk.Lock()
 		//b.pc = mypc(0)
 		nlock := atomic.LoadInt32(&b.nlock)

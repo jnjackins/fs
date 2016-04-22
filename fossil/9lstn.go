@@ -61,7 +61,7 @@ func lstnAlloc(address string, flags int) (*Lstn, error) {
 	lbox.lock.Lock()
 	defer lbox.lock.Unlock()
 
-	for lstn := (*Lstn)(lbox.head); lstn != nil; lstn = lstn.next {
+	for lstn := lbox.head; lstn != nil; lstn = lstn.next {
 		if lstn.address != address {
 			continue
 		}
@@ -125,7 +125,7 @@ func cmdLstn(argv []string) error {
 
 	case 0:
 		lbox.lock.RLock()
-		for lstn := (*Lstn)(lbox.head); lstn != nil; lstn = lstn.next {
+		for lstn := lbox.head; lstn != nil; lstn = lstn.next {
 			consPrintf("\t%s\n", lstn.address)
 		}
 		lbox.lock.RUnlock()

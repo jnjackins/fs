@@ -21,6 +21,23 @@ var cmdbox struct {
 	tag   uint16
 }
 
+var cmd9pTmsg = [...]Cmd9p{
+	{"Tversion", plan9.Tversion, 2, "msize version", cmd9pTversion},
+	{"Tauth", plan9.Tauth, 3, "afid uname aname", cmd9pTauth},
+	{"Tflush", plan9.Tflush, 1, "oldtag", cmd9pTflush},
+	{"Tattach", plan9.Tattach, 4, "fid afid uname aname", cmd9pTattach},
+	{"Twalk", plan9.Twalk, 0, "fid newfid [name...]", cmd9pTwalk},
+	{"Topen", plan9.Topen, 2, "fid mode", cmd9pTopen},
+	{"Tcreate", plan9.Tcreate, 4, "fid name perm mode", cmd9pTcreate},
+	{"Tread", plan9.Tread, 3, "fid offset count", cmd9pTread},
+	{"Twrite", plan9.Twrite, 3, "fid offset data", cmd9pTwrite},
+	{"Tclunk", plan9.Tclunk, 1, "fid", cmd9pTclunk},
+	{"Tremove", plan9.Tremove, 1, "fid", cmd9pTremove},
+	{"Tstat", plan9.Tstat, 1, "fid", cmd9pTstat},
+	{"Twstat", plan9.Twstat, 7, "fid name uid gid mode mtime length", cmd9pTwstat},
+	{"nexttag", 0, 0, "", cmd9pTag},
+}
+
 func cmd9pStrtoul(s string) uint32 {
 	if s == "~0" {
 		return ^uint32(0)
@@ -171,23 +188,6 @@ type Cmd9p struct {
 	argc  int
 	usage string
 	f     func(*plan9.Fcall, []string) error
-}
-
-var cmd9pTmsg = [...]Cmd9p{
-	{"Tversion", plan9.Tversion, 2, "msize version", cmd9pTversion},
-	{"Tauth", plan9.Tauth, 3, "afid uname aname", cmd9pTauth},
-	{"Tflush", plan9.Tflush, 1, "oldtag", cmd9pTflush},
-	{"Tattach", plan9.Tattach, 4, "fid afid uname aname", cmd9pTattach},
-	{"Twalk", plan9.Twalk, 0, "fid newfid [name...]", cmd9pTwalk},
-	{"Topen", plan9.Topen, 2, "fid mode", cmd9pTopen},
-	{"Tcreate", plan9.Tcreate, 4, "fid name perm mode", cmd9pTcreate},
-	{"Tread", plan9.Tread, 3, "fid offset count", cmd9pTread},
-	{"Twrite", plan9.Twrite, 3, "fid offset data", cmd9pTwrite},
-	{"Tclunk", plan9.Tclunk, 1, "fid", cmd9pTclunk},
-	{"Tremove", plan9.Tremove, 1, "fid", cmd9pTremove},
-	{"Tstat", plan9.Tstat, 1, "fid", cmd9pTstat},
-	{"Twstat", plan9.Twstat, 7, "fid name uid gid mode mtime length", cmd9pTwstat},
-	{"nexttag", 0, 0, "", cmd9pTag},
 }
 
 func cmd9p(argv []string) error {

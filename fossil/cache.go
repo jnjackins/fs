@@ -146,8 +146,6 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 		vers:     1,
 	}
 
-	bwatchSetBlockSize(uint(c.size))
-
 	/* round c.size up to be a nice multiple */
 	c.size = (c.size + 127) &^ 127
 	c.ndmap = (c.size/20 + 7) / 8
@@ -414,7 +412,6 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lock
 	b.ref++
 	c.lk.Unlock()
 
-	bwatchLock(b)
 	if waitlock {
 		b.lk.Lock()
 	}
@@ -512,7 +509,6 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	//if false {
 	//	fmt.Fprintf(os.Stderr, "%s: cacheLocal: %d: %d %x\n", argv0, getpid(), b.part, b.addr)
 	//}
-	bwatchLock(b)
 	b.lk.Lock()
 	atomic.StoreInt32(&b.nlock, 1)
 
@@ -644,7 +640,6 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 
 	c.lk.Unlock()
 
-	bwatchLock(b)
 	b.lk.Lock()
 	atomic.StoreInt32(&b.nlock, 1)
 	//b.pc = getcallerpc(&c)
@@ -878,10 +873,6 @@ func blockPut(b *Block) {
 	// fmt.Fprintf(os.Stderr, "%s: blockPut: %d: %d %x %d %s\n", argv0, getpid(), b.part, b.addr, c.nheap, bioStr(b.iostate))
 	//}
 
-	if b.iostate == BioDirty {
-		bwatchDependency(b)
-	}
-
 	atomic.AddInt32(&b.nlock, -1)
 	nlock := atomic.LoadInt32(&b.nlock)
 	if nlock > 0 {
@@ -899,7 +890,6 @@ func blockPut(b *Block) {
 	atomic.StoreInt32(&b.nlock, 1)
 	//b->pc = 0;
 
-	bwatchUnlock(b)
 	b.lk.Unlock()
 	c := b.c
 	c.lk.Lock()
@@ -1232,8 +1222,6 @@ func blockSetIOState(b *Block, iostate int) {
 	case BioLabel:
 		assert(b.uhead == nil)
 	case BioClean:
-		bwatchDependency(b)
-
 		// If b->prior is set, it means a write just finished.
 		// The prior list isn't needed anymore.
 		var q *BList
