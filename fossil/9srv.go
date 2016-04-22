@@ -92,7 +92,7 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 	// TODO(jnj): srvFd on plan9
 	//var mntpnt string
 	//srvfd = srvFd(service, mode, fd, &mntpnt)
-	err := p9p.PostService(conn, service)
+	mntpnt, err := p9p.PostService(conn, service)
 	if err != nil {
 		srvbox.lock.Unlock()
 		return nil, fmt.Errorf("PostService: %v", err)
@@ -101,6 +101,7 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 	srv := &Srv{
 		srvfd:   -1,
 		service: service,
+		mntpnt:  mntpnt,
 	}
 
 	if srvbox.tail != nil {

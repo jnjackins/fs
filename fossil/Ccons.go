@@ -355,6 +355,8 @@ func consTTY() error {
 		return fmt.Errorf("consTTY: consOpen failed: %v", err)
 	}
 
+	consProc()
+
 	return nil
 }
 

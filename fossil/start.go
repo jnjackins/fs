@@ -117,6 +117,4 @@ func start(argv []string) {
 	if err := consTTY(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
-
-	consProc()
 }
