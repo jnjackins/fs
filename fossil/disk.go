@@ -11,12 +11,7 @@ import (
 	"sigint.ca/fs/venti"
 )
 
-const (
-	// disable measurement since it gets alignment faults on BG
-	// and the guts used to be commented out.
-	Timing    = 0   // flag
-	QueueSize = 100 // maximum block to queue
-)
+const QueueSize = 100 // maximum block to queue
 
 type Disk struct {
 	lk  *sync.Mutex
@@ -299,32 +294,14 @@ func (d *Disk) size(part int) uint32 {
 func (d *Disk) startThread() {
 	//vtThreadSetName("disk")
 
-	var nio int
-	var t float64
 	d.lk.Lock()
-	if Timing != 0 /*TypeKind(100016)*/ {
-		nio = 0
-		t = float64(-nsec())
-	}
 
 	for {
 		for d.nqueue == 0 {
-			if Timing != 0 /*TypeKind(100016)*/ {
-				t += float64(nsec())
-				if nio >= 10000 {
-					fmt.Fprintf(os.Stderr, "d: io=%d at %.3fms\n", nio, t*1e-6/float64(nio))
-					nio = 0
-					t = 0
-				}
-			}
-
 			if d.dieCond != nil {
 				goto Done
 			}
 			d.starveCond.Wait()
-			if Timing != 0 /*TypeKind(100016)*/ {
-				t -= float64(nsec())
-			}
 		}
 		assert(d.cur != nil || d.next != nil)
 
@@ -380,9 +357,6 @@ func (d *Disk) startThread() {
 		}
 		if d.nqueue == 0 {
 			d.flushCond.Signal()
-		}
-		if Timing != 0 /*TypeKind(100016)*/ {
-			nio++
 		}
 	}
 
