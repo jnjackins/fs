@@ -76,7 +76,7 @@ func _userByUid(box *Ubox, uid string) (*User, error) {
 			}
 		}
 	}
-	return nil, fmt.Errorf("uname: uid '%s' not found", uid)
+	return nil, fmt.Errorf("uname: uid %q not found", uid)
 }
 
 func unameByUid(uid string) string {
@@ -187,9 +187,9 @@ func _groupRemMember(box *Ubox, g *User, member string) error {
 	if i >= len(g.group) {
 		var err error
 		if g.uname == member {
-			err = fmt.Errorf("uname: '%s' always in own group", member)
+			err = fmt.Errorf("uname: %q always in own group", member)
 		} else {
-			err = fmt.Errorf("uname: '%s' not in group '%s'", member, g.uname)
+			err = fmt.Errorf("uname: %q not in group %q", member, g.uname)
 		}
 		return err
 	}
@@ -224,9 +224,9 @@ func _groupAddMember(box *Ubox, g *User, member string) error {
 	if _groupMember(box, g.uid, u.uname, false) {
 		var err error
 		if g.uname == member {
-			err = fmt.Errorf("uname: '%s' always in own group", member)
+			err = fmt.Errorf("uname: %q always in own group", member)
 		} else {
-			err = fmt.Errorf("uname: '%s' already in group '%s'", member, g.uname)
+			err = fmt.Errorf("uname: %q already in group %q", member, g.uname)
 		}
 		return err
 	}
@@ -425,7 +425,7 @@ func uboxDump(box *Ubox) {
 	consPrintf("nuser %d len = %d\n", box.nuser, box.length)
 
 	for u := box.head; u != nil; u = u.next {
-		consPrintf("%U\n", u)
+		consPrintf("%v\n", u)
 	}
 }
 
@@ -548,12 +548,12 @@ func uboxInit(users string) error {
 	for _, name := range usersMandatory {
 		u, err := _userByUid(box, name)
 		if err != nil {
-			err = fmt.Errorf("user '%s' is mandatory", name)
+			err = fmt.Errorf("user %q is mandatory", name)
 			return err
 		}
 
 		if u.uid != u.uname {
-			err = fmt.Errorf("uid/uname for user '%s' must match", name)
+			err = fmt.Errorf("uid/uname for user %q must match", name)
 			return err
 		}
 	}
@@ -633,7 +633,7 @@ func cmdUname(argv []string) error {
 			return err
 		}
 
-		consPrintf("\t%U\n", u)
+		consPrintf("\t%v\n", u)
 		ubox.lock.RUnlock()
 		return nil
 	}
@@ -641,13 +641,7 @@ func cmdUname(argv []string) error {
 	ubox.lock.Lock()
 	defer ubox.lock.Unlock()
 
-	var err error
-	var u *User
-	u, err = _userByUname(ubox.box, uname)
-	var d int
-	var i int
-	var p string
-	var uid string
+	u, err := _userByUname(ubox.box, uname)
 	var up *User
 	for {
 		tmp1 := argc
@@ -660,22 +654,20 @@ func cmdUname(argv []string) error {
 				return err
 			}
 
-			p = argv[0][1:]
+			p := argv[0][1:]
 			up, err = _userByUname(ubox.box, p)
 			if err == nil {
-				err = fmt.Errorf("uname: uname '%s' already exists", up.uname)
-				return err
+				return fmt.Errorf("uname: uname %q already exists", up.uname)
 			}
 
-			for i = 0; usersMandatory[i] != ""; i++ {
+			for i := 0; usersMandatory[i] != ""; i++ {
 				if usersMandatory[i] != uname {
 					continue
 				}
-				err = fmt.Errorf("uname: uname '%s' is mandatory", uname)
-				return err
+				return fmt.Errorf("uname: uname %q is mandatory", uname)
 			}
 
-			d = len(p) - len(u.uname)
+			d := len(p) - len(u.uname)
 			for up = ubox.box.head; up != nil; up = up.next {
 				if up.leader != "" {
 					if up.leader == u.uname {
@@ -684,7 +676,7 @@ func cmdUname(argv []string) error {
 					}
 				}
 
-				for i = 0; i < len(up.group); i++ {
+				for i := 0; i < len(up.group); i++ {
 					if up.group[i] != u.uname {
 						continue
 					}
@@ -746,18 +738,16 @@ func cmdUname(argv []string) error {
 			}
 		} else {
 			if u != nil {
-				err = fmt.Errorf("uname: uname '%s' already exists", u.uname)
-				return err
+				return fmt.Errorf("uname: uname %q already exists", u.uname)
 			}
 
-			uid = argv[0]
+			uid := argv[0]
 			if uid[0] == ':' {
 				uid = uid[1:]
 			}
 			u, err = _userByUid(ubox.box, uid)
-			if err != nil {
-				err = fmt.Errorf("uname: uid '%s' already exists", u.uid)
-				return err
+			if err == nil {
+				return fmt.Errorf("uname: uid %q already exists", uid)
 			}
 
 			u = userAlloc(uid, uname)
