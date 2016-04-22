@@ -1,4 +1,0 @@
-fsys main config /dev/disk2s1
-fsys main open -AWPV
-fsys main
-

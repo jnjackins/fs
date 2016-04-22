@@ -218,7 +218,7 @@ func (fs *Fs) close() {
 	}
 
 	fs.file = nil
-	sourceClose(fs.source)
+	fs.source.close()
 	cacheFree(fs.cache)
 	if fs.arch != nil {
 		archFree(fs.arch)

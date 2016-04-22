@@ -431,7 +431,7 @@ func openSource(chk *Fsck, s *Source, name string, bm []byte, offset uint32, gen
 
 	setBit(bm, offset)
 
-	r, err = sourceOpen(s, offset, OReadOnly, false)
+	r, err = s.open(offset, OReadOnly, false)
 	if err != nil {
 		warnf(chk, "could not open source: %s -> %d: %v", name, offset, err)
 		goto Err
@@ -455,7 +455,7 @@ Err:
 	chk.clri(chk, name, mb, i, b)
 	chk.nclri++
 	if r != nil {
-		sourceClose(r)
+		r.close()
 	}
 	return nil, err
 }
@@ -521,7 +521,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
 		return
 	}
 	var e Entry
-	if err := sourceGetEntry(r, &e); err != nil {
+	if err := r.getEntry(&e); err != nil {
 		errorf(chk, "could not get entry for %s", name)
 		return
 	}
@@ -535,9 +535,9 @@ func scanSource(chk *Fsck, name string, r *Source) {
 	}
 	setBit(chk.smap, a)
 
-	nb := uint32((sourceGetSize(r) + uint64(r.dsize) - 1) / uint64(r.dsize))
+	nb := uint32((r.getSize() + uint64(r.dsize) - 1) / uint64(r.dsize))
 	for o := uint32(0); o < nb; o++ {
-		b, err := sourceBlock(r, o, OReadOnly)
+		b, err := r.block(o, OReadOnly)
 		if err != nil {
 			errorf(chk, "could not read block in data file %s", name)
 			continue
@@ -565,14 +565,14 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		return
 	}
 
-	if err := sourceLock2(source, meta, OReadOnly); err != nil {
+	if err := source.lock2(meta, OReadOnly); err != nil {
 		warnf(chk, "could not lock sources for %s: %v", name, err)
 		return
 	}
 
-	err := sourceGetEntry(source, &e1)
+	err := source.getEntry(&e1)
 	if err == nil {
-		err = sourceGetEntry(meta, &e2)
+		err = meta.getEntry(&e2)
 	}
 	if err != nil {
 		warnf(chk, "could not load entries for %s: %v", name, err)
@@ -582,24 +582,24 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 	a1 = globalToLocal(e1.score)
 	a2 = globalToLocal(e2.score)
 	if (!chk.useventi && a1 == NilBlock && a2 == NilBlock) || (getBit(chk.smap, a1) != 0 && getBit(chk.smap, a2) != 0) {
-		sourceUnlock(source)
-		sourceUnlock(meta)
+		source.unlock()
+		meta.unlock()
 		return
 	}
 
 	setBit(chk.smap, a1)
 	setBit(chk.smap, a2)
 
-	bm := make([]uint8, int(sourceGetDirSize(source)/8+1))
+	bm := make([]uint8, int(source.getDirSize()/8+1))
 
-	nb := uint32((sourceGetSize(meta) + uint64(meta.dsize) - 1) / uint64(meta.dsize))
+	nb := uint32((meta.getSize() + uint64(meta.dsize) - 1) / uint64(meta.dsize))
 	var de DirEntry
 	var mb *MetaBlock
 	var me MetaEntry
 	var nn string
 	var s string
 	for o := uint32(0); o < nb; o++ {
-		b, err = sourceBlock(meta, o, OReadOnly)
+		b, err = meta.block(o, OReadOnly)
 		if err != nil {
 			errorf(chk, "could not read block in meta file: %s[%d]: %v", name, o, err)
 			continue
@@ -655,12 +655,12 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 			if de.mode&ModeDir == 0 {
 				r, err = openSource(chk, source, nn, bm, de.entry, de.gen, false, mb, i, b)
 				if err == nil {
-					if err = sourceLock(r, OReadOnly); err != nil {
+					if err = r.lock(OReadOnly); err != nil {
 						scanSource(chk, nn, r)
-						sourceUnlock(r)
+						r.unlock()
 					}
 
-					sourceClose(r)
+					r.close()
 				}
 
 				deCleanup(&de)
@@ -675,7 +675,7 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 
 			mr, err = openSource(chk, source, nn, bm, de.mentry, de.mgen, false, mb, i, b)
 			if err != nil {
-				sourceClose(r)
+				r.close()
 				deCleanup(&de)
 
 				continue
@@ -685,8 +685,8 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 				chkDir(chk, nn, r, mr)
 			}
 
-			sourceClose(mr)
-			sourceClose(r)
+			mr.close()
+			r.close()
 			deCleanup(&de)
 			deCleanup(&de)
 		}
@@ -694,17 +694,17 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		blockPut(b)
 	}
 
-	nb = sourceGetDirSize(source)
+	nb = source.getDirSize()
 	for o := uint32(0); o < nb; o++ {
 		if getBit(bm, o) != 0 {
 			continue
 		}
-		r, err = sourceOpen(source, o, OReadOnly, false)
+		r, err = source.open(o, OReadOnly, false)
 		if err != nil {
 			continue
 		}
 		warnf(chk, "non referenced entry in source %s[%d]", name, o)
-		bb, err = sourceBlock(source, o/(uint32(source.dsize)/venti.EntrySize), OReadOnly)
+		bb, err = source.block(o/(uint32(source.dsize)/venti.EntrySize), OReadOnly)
 		if err == nil {
 			if bb.addr != NilBlock {
 				setBit(chk.errmap, bb.addr)
@@ -714,25 +714,25 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 			blockPut(bb)
 		}
 
-		sourceClose(r)
+		r.close()
 	}
 
-	sourceUnlock(source)
-	sourceUnlock(meta)
+	source.unlock()
+	meta.unlock()
 }
 
 func checkDirs(chk *Fsck) {
 	var r *Source
 	var mr *Source
 
-	sourceLock(chk.fs.source, OReadOnly)
-	r, _ = sourceOpen(chk.fs.source, 0, OReadOnly, false)
-	mr, _ = sourceOpen(chk.fs.source, 1, OReadOnly, false)
-	sourceUnlock(chk.fs.source)
+	chk.fs.source.lock(OReadOnly)
+	r, _ = chk.fs.source.open(0, OReadOnly, false)
+	mr, _ = chk.fs.source.open(1, OReadOnly, false)
+	chk.fs.source.unlock()
 	chkDir(chk, "", r, mr)
 
-	sourceClose(r)
-	sourceClose(mr)
+	r.close()
+	mr.close()
 }
 
 func setBit(bmap []byte, addr uint32) {
