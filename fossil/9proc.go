@@ -77,12 +77,14 @@ type Con struct {
 	anext     *Con /* alloc */
 	cnext     *Con /* in use */
 	cprev     *Con
-	alock     *sync.RWMutex
-	aok       int /* authentication done */
-	mlock     *sync.Mutex
-	mhead     *Msg /* all Msgs on this connection */
-	mtail     *Msg
-	mrendez   *sync.Cond
+
+	alock *sync.RWMutex
+
+	aok bool /* authentication done */
+
+	mlock *sync.Mutex
+	mhead *Msg /* all Msgs on this connection */
+	mtail *Msg
 
 	wchan chan *Msg // write queue
 
@@ -140,11 +142,13 @@ func conFree(con *Con) {
 	}
 
 	con.state = ConDead
-	con.aok = 0
+	con.aok = false
 	con.flags = 0
 	con.isconsole = false
 
 	cbox.alock.Lock()
+	defer cbox.alock.Unlock()
+
 	if con.cprev != nil {
 		con.cprev.cnext = con.cnext
 	} else {
@@ -160,7 +164,6 @@ func conFree(con *Con) {
 
 	if cbox.ncon > cbox.maxcon {
 		cbox.ncon--
-		cbox.alock.Unlock()
 		return
 	}
 
@@ -169,7 +172,6 @@ func conFree(con *Con) {
 	if con.anext == nil {
 		cbox.arendez.Signal()
 	}
-	cbox.alock.Unlock()
 }
 
 func msgFree(m *Msg) {
@@ -517,7 +519,6 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 			fidlock: new(sync.Mutex),
 		}
 		con.rendez = sync.NewCond(con.lock)
-		con.mrendez = sync.NewCond(con.mlock)
 
 		cbox.ncon++
 		cbox.ahead = con

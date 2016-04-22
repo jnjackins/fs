@@ -1044,7 +1044,7 @@ func rTauth(m *Msg) error {
 	}
 
 	if fsysNoAuthCheck(fsys) || (m.con.flags&ConNoAuthCheck != 0) {
-		m.con.aok = 1
+		m.con.aok = true
 		err = fmt.Errorf("authentication disabled")
 		fsysPut(fsys)
 		return err

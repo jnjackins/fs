@@ -29,7 +29,7 @@ var srvbox struct {
 }
 
 /*
-func srvFd(name string, mode int, fd int, mntpnt *string) int {
+func srvFd(name string, mode int, fd int, mntpnt *string) (int, error) {
 	// Drop a file descriptor with given name and mode into /srv.
 	// Create with ORCLOSE and don't close srvfd so it will be removed
 	// automatically on process exit.
@@ -39,21 +39,17 @@ func srvFd(name string, mode int, fd int, mntpnt *string) int {
 		p = fmt.Sprintf("#s/%s", name)
 		srvfd = create(p, ORCLOSE|OWRITE, uint32(mode))
 		if srvfd < 0 {
-			err = fmt.Errorf("create %s: %r", p)
-			vtMemFree(p)
-			return -1
+			return -1 fmt.Errorf("create %s: %r", p)
 		}
 	}
 
 	buf := fmt.Sprintf("%d", fd)
 	if write(srvfd, buf, len(buf)) < 0 {
 		close(srvfd)
-		err = fmt.Errorf("write %s: %r", p)
-		vtMemFree(p)
-		return -1
+		return -1, fmt.Errorf("write %s: %r", p)
 	}
 	*mntpnt = p
-	return srvfd
+	return srvfd, nil
 }
 */
 

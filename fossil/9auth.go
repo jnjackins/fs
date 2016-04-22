@@ -112,7 +112,7 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 
 		if con.isconsole {
 			/* anything goes */
-		} else if (con.flags&ConNoneAllow != 0) || con.aok != 0 {
+		} else if (con.flags&ConNoneAllow != 0) || con.aok {
 			var noneprint int
 
 			tmp1 := noneprint
@@ -189,7 +189,7 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 	 */
 	con.alock.Lock()
 
-	con.aok = 1
+	con.aok = true
 	con.alock.Unlock()
 
 	return nil
