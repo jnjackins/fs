@@ -1,6 +1,10 @@
 package venti
 
-import "fmt"
+import (
+	"fmt"
+
+	"sigint.ca/fs/internal/pack"
+)
 
 type Score [ScoreSize]uint8
 
@@ -11,22 +15,18 @@ var ZeroScore = &Score{
 	0xbf, 0xef, 0x95, 0x60, 0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09,
 }
 
-func ParseScore(buf string, score *Score) error {
-	var c int
-
-	for i := 0; i < ScoreSize; i++ {
-		score[i] = 0
-	}
-
+func ParseScore(s string) (*Score, error) {
+	var score Score
 	for i := 0; i < ScoreSize*2; i++ {
-		if buf[i] >= '0' && buf[i] <= '9' {
-			c = int(buf[i]) - '0'
-		} else if buf[i] >= 'a' && buf[i] <= 'f' {
-			c = int(buf[i]) - 'a' + 10
-		} else if buf[i] >= 'A' && buf[i] <= 'F' {
-			c = int(buf[i]) - 'A' + 10
+		var c int
+		if s[i] >= '0' && s[i] <= '9' {
+			c = int(s[i]) - '0'
+		} else if s[i] >= 'a' && s[i] <= 'f' {
+			c = int(s[i]) - 'a' + 10
+		} else if s[i] >= 'A' && s[i] <= 'F' {
+			c = int(s[i]) - 'A' + 10
 		} else {
-			return fmt.Errorf("invalid byte: %d", buf[i])
+			return nil, fmt.Errorf("invalid byte: %d", s[i])
 		}
 
 		if i&1 == 0 {
@@ -36,17 +36,37 @@ func ParseScore(buf string, score *Score) error {
 		score[i>>1] |= uint8(c)
 	}
 
-	return nil
+	return &score, nil
+}
+
+const NilBlock = ^uint32(0)
+
+func GlobalToLocal(score *Score) uint32 {
+	for i := 0; i < ScoreSize-4; i++ {
+		if score[i] != 0 {
+			return NilBlock
+		}
+	}
+	return pack.U32GET(score[ScoreSize-4:])
+}
+
+func LocalToGlobal(addr uint32, score *Score) {
+	for i := 0; i < ScoreSize-4; i++ {
+		score[i] = 0
+	}
+	pack.U32PUT(score[ScoreSize-4:], addr)
 }
 
 func (sc *Score) String() string {
-	var s string
 	if sc == nil {
-		s += fmt.Sprintf("*")
-	} else {
-		for i := 0; i < ScoreSize; i++ {
-			s += fmt.Sprintf("%2.2x", sc[i])
-		}
+		return "*"
+	}
+	if addr := GlobalToLocal(sc); addr != NilBlock {
+		return fmt.Sprintf("%#.8x", addr)
+	}
+	var s string
+	for i := 0; i < ScoreSize; i++ {
+		s += fmt.Sprintf("%#2.2x", sc[i])
 	}
 	return s
 }

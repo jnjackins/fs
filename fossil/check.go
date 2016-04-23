@@ -47,8 +47,12 @@ func (chk *Fsck) init(fs *Fs) {
 	chk.cache = fs.cache
 	chk.nblocks = int(cacheLocalSize(chk.cache, PartData))
 	chk.bsize = fs.blockSize
+	chk.walkdepth = 0
+	chk.hint = 0
 	chk.quantum = chk.nblocks / 100
-	chk.quantum = 1
+	if chk.quantum == 0 {
+		chk.quantum = 1
+	}
 	if chk.printf == nil {
 		chk.printf = printnop
 	}
@@ -83,7 +87,6 @@ func (chk *Fsck) check(fs *Fs) {
 		chk.printf("could not load super block: %v", err)
 		return
 	}
-
 	blockPut(b)
 
 	chk.hint = super.active
@@ -145,6 +148,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 		errorf(chk, "could not read root block %#.8x: %v", a, err)
 		return
 	}
+	defer blockPut(b)
 
 	/* no one should point at root blocks */
 	setBit(chk.amap, a)
@@ -159,15 +163,13 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	var e Entry
 	if err := entryUnpack(&e, b.data, 0); err != nil {
 		errorf(chk, "could not unpack root block %#.8x: %v", a, err)
-		blockPut(b)
 		return
 	}
 
 	walkEpoch(chk, b, e.score, BtDir, e.tag, epoch)
 	if err := entryUnpack(&e, b.data, 1); err == nil {
-		chk.hint = globalToLocal(e.score)
+		chk.hint = venti.GlobalToLocal(e.score)
 	}
-	blockPut(b)
 }
 
 /*
@@ -185,7 +187,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 		chk.printf("%v %d %#.8x %#.8x\n", b.score, b.l.typ, b.l.tag, b.l.epoch)
 	}
 
-	if !chk.useventi && globalToLocal(score) == NilBlock {
+	if !chk.useventi && venti.GlobalToLocal(score) == NilBlock {
 		return true
 	}
 
@@ -193,7 +195,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 
 	bb, err := cacheGlobal(chk.cache, score, typ, tag, OReadOnly)
 	if err != nil {
-		errorf(chk, "could not load block %v type %d tag %x: %v", score, typ, tag, err)
+		errorf(chk, "could not load block %v type=%d tag=%x: %v", score, typ, tag, err)
 		chk.walkdepth--
 		return false
 	}
@@ -203,8 +205,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 	}
 
 	ret := false
-	addr := globalToLocal(score)
-	var tmp1 int
+	addr := venti.GlobalToLocal(score)
 	if addr == NilBlock {
 		ret = true
 		goto Exit
@@ -267,12 +268,11 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 
 	setBit(chk.amap, addr)
 
-	tmp1 = chk.nseen
-	chk.nseen++
-	if tmp1%chk.quantum == 0 {
+	if chk.nseen%chk.quantum == 0 {
 		chk.printf("check: visited %d/%d blocks (%.0f%%)\n",
-			chk.nseen, chk.nblocks, float64(chk.nseen)*100/float64(chk.nblocks))
+			chk.nseen+1, chk.nblocks, float64(chk.nseen)*100/float64(chk.nblocks))
 	}
+	chk.nseen++
 
 	b = nil /* make sure no more refs to parent */
 
@@ -517,7 +517,7 @@ Err:
 }
 
 func scanSource(chk *Fsck, name string, r *Source) {
-	if !chk.useventi && globalToLocal(r.score) == NilBlock {
+	if !chk.useventi && venti.GlobalToLocal(r.score) == NilBlock {
 		return
 	}
 	var e Entry
@@ -526,7 +526,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
 		return
 	}
 
-	a := globalToLocal(e.score)
+	a := venti.GlobalToLocal(e.score)
 	if !chk.useventi && a == NilBlock {
 		return
 	}
@@ -561,7 +561,9 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 	var e1, e2 Entry
 	var r, mr *Source
 
-	if !chk.useventi && globalToLocal(source.score) == NilBlock && globalToLocal(meta.score) == NilBlock {
+	if !chk.useventi &&
+		venti.GlobalToLocal(source.score) == NilBlock &&
+		venti.GlobalToLocal(meta.score) == NilBlock {
 		return
 	}
 
@@ -579,9 +581,10 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		return
 	}
 
-	a1 = globalToLocal(e1.score)
-	a2 = globalToLocal(e2.score)
-	if (!chk.useventi && a1 == NilBlock && a2 == NilBlock) || (getBit(chk.smap, a1) != 0 && getBit(chk.smap, a2) != 0) {
+	a1 = venti.GlobalToLocal(e1.score)
+	a2 = venti.GlobalToLocal(e2.score)
+	if (!chk.useventi && a1 == NilBlock && a2 == NilBlock) ||
+		(getBit(chk.smap, a1) != 0 && getBit(chk.smap, a2) != 0) {
 		source.unlock()
 		meta.unlock()
 		return

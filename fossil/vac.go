@@ -129,7 +129,7 @@ func stringPack(s string, p []byte) int {
 }
 
 func (mb *MetaBlock) search(elem string, ri *int, me *MetaEntry) error {
-	dprintf("mb.search %s\n", elem)
+	//dprintf("mb.search %s\n", elem)
 
 	var x int
 

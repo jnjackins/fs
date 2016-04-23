@@ -1324,7 +1324,7 @@ func fsckClre(fsck *Fsck, b *Block, offset int) {
 		return
 	}
 
-	e := Entry{}
+	e := Entry{score: new(venti.Score)}
 	entryPack(&e, b.data, offset)
 	blockDirty(b)
 }

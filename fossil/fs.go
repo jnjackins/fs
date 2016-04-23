@@ -147,7 +147,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		}
 
 		var oscore venti.Score
-		localToGlobal(super.active, &oscore)
+		venti.LocalToGlobal(super.active, &oscore)
 		super.active = b.addr
 		var bs *Block
 		bs, err = cacheLocal(fs.cache, PartSuper, 0, OReadWrite)
@@ -161,7 +161,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		blockDependency(bs, b, 0, &oscore, nil)
 		blockPut(b)
 		blockDirty(bs)
-		blockRemoveLink(bs, globalToLocal(&oscore), BtDir, RootTag, false)
+		blockRemoveLink(bs, venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
 		blockPut(bs)
 		fs.source, err = sourceRoot(fs, super.active, mode)
 		if err != nil {
@@ -516,7 +516,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 * the new b gets written out.  Until then, use the old value.
 	 */
 	var oscore venti.Score
-	localToGlobal(oldaddr, &oscore)
+	venti.LocalToGlobal(oldaddr, &oscore)
 
 	blockDependency(bs, b, 0, &oscore, nil)
 	blockPut(b)
@@ -535,7 +535,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 */
 	superWrite(bs, &super, 1)
 
-	blockRemoveLink(bs, globalToLocal(&oscore), BtDir, RootTag, false)
+	blockRemoveLink(bs, venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
 	blockPut(bs)
 
 	return nil
@@ -725,7 +725,7 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 	ee := *pee
 	de := *pde
 
-	if globalToLocal(e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && globalToLocal(ee.score) != NilBlock) {
+	if venti.GlobalToLocal(e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && venti.GlobalToLocal(ee.score) != NilBlock) {
 		return fmt.Errorf("can only vac paths already stored on venti")
 	}
 

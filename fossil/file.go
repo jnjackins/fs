@@ -1682,7 +1682,7 @@ func (f *File) wAccess(mid string) {
 
 func getEntry(r *Source, e *Entry, checkepoch bool) error {
 	if r == nil {
-		*e = Entry{}
+		*e = Entry{score: new(venti.Score)}
 		return nil
 	}
 

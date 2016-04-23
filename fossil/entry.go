@@ -40,7 +40,7 @@ func entryPack(e *Entry, p []byte, index int) {
 	pack.U48PUT(p[14:], e.size)
 
 	if flags&venti.EntryLocal != 0 {
-		if globalToLocal(e.score) == NilBlock {
+		if venti.GlobalToLocal(e.score) == NilBlock {
 			panic("abort")
 		}
 		for i := 0; i < 7; i++ {

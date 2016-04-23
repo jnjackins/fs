@@ -202,7 +202,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 				}
 			}
 
-			addr = globalToLocal(&score)
+			addr = venti.GlobalToLocal(&score)
 			if addr == NilBlock {
 				continue
 			}

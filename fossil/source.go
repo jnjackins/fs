@@ -304,7 +304,7 @@ func (r *Source) kill(doremove bool) error {
 	}
 
 	/* remember info on link we are removing */
-	addr = globalToLocal(e.score)
+	addr = venti.GlobalToLocal(e.score)
 
 	typ := EntryType(&e)
 	tag = e.tag
@@ -395,7 +395,7 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 		for ; i < ppb; i++ {
 			var score venti.Score
 			copy(score[:], b.data[i*venti.ScoreSize:])
-			addr = globalToLocal(&score)
+			addr = venti.GlobalToLocal(&score)
 			copy(b.data[i*venti.ScoreSize:], venti.ZeroScore[:venti.ScoreSize])
 			blockDirty(b)
 			if addr != NilBlock {
@@ -741,7 +741,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 	e.depth = uint8(d)
 
 	/* might have been local and now global; reverse cannot happen */
-	if globalToLocal(b.score) == NilBlock {
+	if venti.GlobalToLocal(b.score) == NilBlock {
 		e.flags &^= venti.EntryLocal
 	}
 	copy(e.score[:], b.score[:venti.ScoreSize])
@@ -945,7 +945,7 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 		return b, nil
 
 	case OReadOnly:
-		addr := globalToLocal(r.score)
+		addr := venti.GlobalToLocal(r.score)
 		if addr == NilBlock {
 			return cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, mode)
 		}

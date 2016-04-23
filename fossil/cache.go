@@ -476,7 +476,7 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 
 		b.part = part
 		b.addr = addr
-		localToGlobal(addr, b.score)
+		venti.LocalToGlobal(addr, b.score)
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
@@ -579,7 +579,7 @@ func cacheLocalData(c *Cache, addr uint32, typ int, tag uint32, mode int, epoch 
  * check tag and type if it's really a local block in disguise.
  */
 func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*Block, error) {
-	addr := globalToLocal(score)
+	addr := venti.GlobalToLocal(score)
 	if addr != NilBlock {
 		b, err := cacheLocalData(c, addr, typ, tag, mode, 0)
 		//if b != nil {
@@ -1079,7 +1079,7 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
 			assert(p.index == 0)
 			var super Super
 			superUnpack(&super, buf)
-			addr := globalToLocal(p.old.score)
+			addr := venti.GlobalToLocal(p.old.score)
 			if addr == NilBlock {
 				fmt.Fprintf(os.Stderr, "%s: rolling back super block: bad replacement addr %v\n", argv0, p.old.score)
 				panic("abort")
@@ -1478,7 +1478,7 @@ func doRemoveLink(c *Cache, p *BList) {
 		for i := int(0); i < n; i++ {
 			var score venti.Score
 			copy(score[:], b.data[i*venti.ScoreSize:])
-			a := globalToLocal(&score)
+			a := venti.GlobalToLocal(&score)
 			if a == NilBlock || readLabel(c, &l, a) != nil {
 				continue
 			}
