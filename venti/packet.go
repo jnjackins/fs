@@ -834,9 +834,11 @@ func memAlloc(n int, pos int) (*Mem, error) {
 	}
 
 	if m == nil {
-		m = new(Mem)
-		m.buf = make([]byte, nn)
-		m.eoff = nn
+		m = &Mem{
+			lk:   new(sync.Mutex),
+			buf:  make([]byte, nn),
+			eoff: nn,
+		}
 	}
 
 	if m.ref != 0 {
