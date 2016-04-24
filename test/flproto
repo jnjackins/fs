@@ -1,0 +1,4 @@
+fsys main config fossil.part
+fsys main open -AWP
+fsys main
+srv fossilsrv
