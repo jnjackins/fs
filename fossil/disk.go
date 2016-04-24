@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -32,10 +33,14 @@ type Disk struct {
 }
 
 type Block struct {
-	c     *Cache
-	ref   int
+	c   *Cache
+	ref int
+
+	// The thread that has locked a Block may refer to it by
+	// multiple names.  nlock counts the number of
+	// references the locking thread holds.  It will call
+	// blockPut once per reference.
 	nlock int32
-	//pc    uintptr /* pc that fetched this block from the cache */
 
 	lk *sync.Mutex
 
@@ -65,6 +70,53 @@ type Block struct {
 	ionext  *Block
 	iostate int
 	ioready *sync.Cond
+}
+
+func (b *Block) String() string {
+	return fmt.Sprintf("%d", b.addr)
+}
+
+func (b *Block) lock() {
+	b.lk.Lock()
+	if *Dflag {
+		if pc, file, line, ok := runtime.Caller(3); ok {
+			funcName := runtime.FuncForPC(pc).Name()
+			dprintf("block %v locked by %s:%d (%v)\n", b, file, line, funcName)
+		}
+		stack := make([]byte, 5*1024)
+		runtime.Stack(stack, false)
+		lockmaplk.Lock()
+		lockmap[b] = string(stack)
+		lockmaplk.Unlock()
+	}
+}
+
+func (b *Block) unlock() {
+	b.lk.Unlock()
+	if *Dflag {
+		if pc, file, line, ok := runtime.Caller(3); ok {
+			funcName := runtime.FuncForPC(pc).Name()
+			dprintf("block %v unlocked by %s:%d (%v)\n", b, file, line, funcName)
+		}
+		lockmaplk.Lock()
+		delete(lockmap, b)
+		lockmaplk.Unlock()
+	}
+}
+
+var (
+	lockmaplk *sync.Mutex
+	lockmap   map[*Block]string
+)
+
+func watchlocks() {
+	for range time.NewTicker(10 * time.Second).C {
+		lockmaplk.Lock()
+		for b, stack := range lockmap {
+			dprintf("block %v is locked!\n%s\n\n", b, stack)
+		}
+		lockmaplk.Unlock()
+	}
 }
 
 /* disk partitions; keep in sync with []partname */
@@ -105,7 +157,7 @@ func diskAlloc(fd int) (*Disk, error) {
 	disk.flowCond = sync.NewCond(disk.lk)
 	disk.flushCond = sync.NewCond(disk.lk)
 
-	go disk.startThread()
+	go disk.thread()
 
 	return disk, nil
 }
@@ -237,8 +289,7 @@ func (d *Disk) read(b *Block) {
 }
 
 func (d *Disk) write(b *Block) {
-	nlock := atomic.LoadInt32(&b.nlock)
-	assert(nlock == 1)
+	assert(atomic.LoadInt32(&b.nlock) == 1)
 	assert(b.iostate == BioDirty)
 	blockSetIOState(b, BioWriting)
 	d.queue(b)
@@ -248,15 +299,14 @@ func (d *Disk) writeAndWait(b *Block) {
 	/*
 	 * If b->nlock > 1, the block is aliased within
 	 * a single thread.  That thread is us.
-	 * DiskWrite does some funny stuff with sync.Mutex
-	 * and blockPut that basically assumes b->nlock==1.
-	 * We humor diskWrite by temporarily setting
-	 * nlock to 1.  This needs to be revisited.
+	 * disk.write does some funny stuff with sync.Mutex
+	 * and blockPut that basically assumes b.nlock==1.
+	 * We humor disk.write by temporarily setting
+	 * nlock to 1. This needs to be revisited.
 	 */
 	nlock := atomic.LoadInt32(&b.nlock)
-
 	if nlock > 1 {
-		atomic.StoreInt32(&b.nlock, 1)
+		b.nlock = 1
 	}
 	d.write(b)
 	for b.iostate != BioClean {
@@ -294,8 +344,14 @@ func (d *Disk) size(part int) uint32 {
 //	 }
 //}
 
-func (d *Disk) startThread() {
+func (d *Disk) thread() {
 	//vtThreadSetName("disk")
+
+	if *Dflag {
+		lockmaplk = new(sync.Mutex)
+		lockmap = make(map[*Block]string)
+		go watchlocks()
+	}
 
 	d.lk.Lock()
 
@@ -323,8 +379,7 @@ func (d *Disk) startThread() {
 		if false {
 			fmt.Fprintf(os.Stderr, "fossil: disk thread: %d:%d %x\n", os.Getpid(), b.part, b.addr)
 		}
-		b.lk.Lock()
-		//b.pc = mypc(0)
+		b.lock()
 		nlock := atomic.LoadInt32(&b.nlock)
 		assert(nlock == 1)
 		switch b.iostate {

@@ -215,7 +215,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 
 			b.lk.Unlock()
 			x, _ := archWalk(p, addr, typ, tag)
-			b.lk.Lock()
+			b.lock()
 			if e != nil {
 				p.dsize = uint(dsize)
 				p.psize = uint(psize)

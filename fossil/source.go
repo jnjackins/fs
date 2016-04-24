@@ -277,20 +277,16 @@ Found:
 		}
 	}
 
-	var rr *Source
-	rr, err = allocSource(r.fs, b, r, offset, OReadWrite, false)
+	rr, err := allocSource(r.fs, b, r, offset, OReadWrite, false)
 	blockPut(b)
 	return rr, err
 }
 
 func (r *Source) kill(doremove bool) error {
-	var e Entry
-	var b *Block
-	var addr, tag uint32
-	var err error
-
 	assert(r.b != nil)
-	b, err = r.load(&e)
+
+	var e Entry
+	b, err := r.load(&e)
 	if err != nil {
 		return err
 	}
@@ -304,10 +300,10 @@ func (r *Source) kill(doremove bool) error {
 	}
 
 	/* remember info on link we are removing */
-	addr = venti.GlobalToLocal(e.score)
+	addr := venti.GlobalToLocal(e.score)
 
 	typ := EntryType(&e)
-	tag = e.tag
+	tag := e.tag
 
 	if doremove {
 		if e.gen != ^uint32(0) {
@@ -349,10 +345,9 @@ func (r *Source) truncate() error {
 
 // TODO(jnj): errors
 func (r *Source) getSize() uint64 {
-	var e Entry
-	var b *Block
-
 	assert(r.b != nil)
+
+	var e Entry
 	b, err := r.load(&e)
 	if err != nil {
 		return 0
@@ -363,11 +358,8 @@ func (r *Source) getSize() uint64 {
 }
 
 func (r *Source) shrinkSize(e *Entry, size uint64) error {
-	var b *Block
-	var err error
-
 	typ := EntryType(e)
-	b, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
+	b, err := cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -450,10 +442,8 @@ func (r *Source) setSize(size uint64) error {
 		return ETooBig
 	}
 
-	var b *Block
 	var e Entry
-	var err error
-	b, err = r.load(&e)
+	b, err := r.load(&e)
 	if err != nil {
 		return err
 	}
@@ -542,9 +532,7 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 	var b *Block
 	var typ int
 	var err error
-
 	c := fs.cache
-
 	if p.l.typ&BtLevelMask == 0 {
 		assert(p.l.typ == BtDir)
 		typ = EntryType(e)
@@ -555,10 +543,6 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 		copy(score[:], p.data[index*venti.ScoreSize:])
 		b, err = cacheGlobal(c, &score, typ, e.tag, mode)
 	}
-
-	//if err == nil {
-	//	b.pc = getcallerpc(&p)
-	//}
 
 	if err != nil || mode == OReadOnly {
 		return b, nil
@@ -590,7 +574,6 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 		return nil, err
 	}
 
-	//b.pc = getcallerpc(&p)
 	assert(b.l.epoch == fs.ehi)
 
 	blockDirty(b)
@@ -849,7 +832,6 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 		b = bb
 	}
 
-	//b.pc = getcallerpc(&r)
 	return b, nil
 
 Err:
@@ -859,9 +841,6 @@ Err:
 
 func (r *Source) block(bn uint32, mode int) (*Block, error) {
 	b, err := r._block(bn, mode, 0, 0)
-	//if b != nil {
-	//	b.pc = getcallerpc(&r)
-	//}
 	return b, err
 }
 
@@ -891,7 +870,7 @@ func (r *Source) close() {
  * in the common case by caching the score for
  * the block and the last epoch in which it was valid.
  *
- * We use r->mode to tell the difference between active
+ * We use r.mode to tell the difference between active
  * file system sources (OReadWrite) and sources for the
  * snapshot file system (OReadOnly).
  */
@@ -1010,6 +989,7 @@ func (r *Source) lock(mode int) error {
  * because the Entries for both sources might be in the same block.
  * We also try to lock blocks in left-to-right order within the tree.
  */
+// TODO(jnj): this probably should not be a method of r
 func (r *Source) lock2(rr *Source, mode int) error {
 	if rr == nil {
 		return r.lock(mode)
@@ -1019,8 +999,7 @@ func (r *Source) lock2(rr *Source, mode int) error {
 		mode = r.mode
 	}
 
-	var b *Block
-	var bb *Block
+	var b, bb *Block
 	var err error
 	if r.parent == rr.parent && r.offset/uint32(r.epb) == rr.offset/uint32(rr.epb) {
 		b, err = r.loadBlock(mode)
@@ -1068,7 +1047,7 @@ func (r *Source) lock2(rr *Source, mode int) error {
 
 func (r *Source) unlock() {
 	if r.b == nil {
-		fmt.Fprintf(os.Stderr, "sourceUnlock: already unlocked\n")
+		fmt.Fprintf(os.Stderr, "source.unlock: already unlocked\n")
 		panic("abort")
 	}
 

@@ -77,6 +77,8 @@ func (chk *Fsck) init(fs *Fs) {
  * (e.g., XXX bad or unreachable blocks in /active/usr/rsc/foo).
  */
 func (chk *Fsck) check(fs *Fs) {
+	dprintf("check: starting\n")
+
 	var b *Block
 	var super Super
 	var err error
@@ -94,6 +96,8 @@ func (chk *Fsck) check(fs *Fs) {
 
 	chk.smap = make([]uint8, chk.nblocks/8+1)
 	checkDirs(chk)
+
+	dprintf("check: all done\n")
 }
 
 /*
@@ -556,11 +560,6 @@ func scanSource(chk *Fsck, name string, r *Source) {
  * sources containing directory entries are okay.
  */
 func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
-	var a1, a2 uint32
-	var b, bb *Block
-	var e1, e2 Entry
-	var r, mr *Source
-
 	if !chk.useventi &&
 		venti.GlobalToLocal(source.score) == NilBlock &&
 		venti.GlobalToLocal(meta.score) == NilBlock {
@@ -571,7 +570,7 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		warnf(chk, "could not lock sources for %s: %v", name, err)
 		return
 	}
-
+	var e1, e2 Entry
 	err := source.getEntry(&e1)
 	if err == nil {
 		err = meta.getEntry(&e2)
@@ -580,29 +579,23 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		warnf(chk, "could not load entries for %s: %v", name, err)
 		return
 	}
-
-	a1 = venti.GlobalToLocal(e1.score)
-	a2 = venti.GlobalToLocal(e2.score)
+	a1 := venti.GlobalToLocal(e1.score)
+	a2 := venti.GlobalToLocal(e2.score)
 	if (!chk.useventi && a1 == NilBlock && a2 == NilBlock) ||
 		(getBit(chk.smap, a1) != 0 && getBit(chk.smap, a2) != 0) {
 		source.unlock()
 		meta.unlock()
 		return
 	}
-
 	setBit(chk.smap, a1)
 	setBit(chk.smap, a2)
 
-	bm := make([]uint8, int(source.getDirSize()/8+1))
-
-	nb := uint32((meta.getSize() + uint64(meta.dsize) - 1) / uint64(meta.dsize))
 	var de DirEntry
-	var mb *MetaBlock
 	var me MetaEntry
-	var nn string
-	var s string
+	bm := make([]uint8, int(source.getDirSize()/8+1))
+	nb := uint32((meta.getSize() + uint64(meta.dsize) - 1) / uint64(meta.dsize))
 	for o := uint32(0); o < nb; o++ {
-		b, err = meta.block(o, OReadOnly)
+		b, err := meta.block(o, OReadOnly)
 		if err != nil {
 			errorf(chk, "could not read block in meta file: %s[%d]: %v", name, o, err)
 			continue
@@ -613,38 +606,30 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		if b.addr != NilBlock && getBit(chk.errmap, b.addr) != 0 {
 			warnf(chk, "previously reported error in block %ux is in %s", b.addr, name)
 		}
-
-		mb, err = unpackMetaBlock(b.data, meta.dsize)
+		mb, err := unpackMetaBlock(b.data, meta.dsize)
 		if err != nil {
 			errorf(chk, "could not unpack meta block: %s[%d]: %v", name, o, err)
 			blockPut(b)
 			continue
 		}
-
 		if !chkMetaBlock(mb) {
 			errorf(chk, "bad meta block: %s[%d]", name, o)
 			blockPut(b)
 			continue
 		}
 
-		s = ""
+		var s string
 		for i := mb.nindex - 1; i >= 0; i-- {
 			mb.meUnpack(&me, i)
 			if err = mb.deUnpack(&de, &me); err != nil {
 				errorf(chk, "could not unpack dir entry: %s[%d][%d]: %v", name, o, i, err)
 				continue
 			}
-
 			if s != "" && s <= de.elem {
 				errorf(chk, "dir entry out of order: %s[%d][%d] = %s last = %s", name, o, i, de.elem, s)
 			}
 			s = de.elem
-			nn = fmt.Sprintf("%s/%s", name, de.elem)
-			if nn == "" {
-				errorf(chk, "out of memory")
-				continue
-			}
-
+			nn := fmt.Sprintf("%s/%s", name, de.elem)
 			if chk.printdirs {
 				if de.mode&ModeDir != 0 {
 					chk.printf("%s/\n", nn)
@@ -656,31 +641,27 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 				}
 			}
 			if de.mode&ModeDir == 0 {
-				r, err = openSource(chk, source, nn, bm, de.entry, de.gen, false, mb, i, b)
-				if err == nil {
-					if err = r.lock(OReadOnly); err != nil {
+				if r, err := openSource(chk, source, nn, bm, de.entry, de.gen, false, mb, i, b); err == nil {
+					if err = r.lock(OReadOnly); err == nil {
 						scanSource(chk, nn, r)
 						r.unlock()
 					}
-
 					r.close()
 				}
-
 				deCleanup(&de)
 				continue
 			}
 
-			r, err = openSource(chk, source, nn, bm, de.entry, de.gen, true, mb, i, b)
+			r, err := openSource(chk, source, nn, bm, de.entry, de.gen, true, mb, i, b)
 			if err != nil {
 				deCleanup(&de)
 				continue
 			}
 
-			mr, err = openSource(chk, source, nn, bm, de.mentry, de.mgen, false, mb, i, b)
+			mr, err := openSource(chk, source, nn, bm, de.mentry, de.mgen, false, mb, i, b)
 			if err != nil {
 				r.close()
 				deCleanup(&de)
-
 				continue
 			}
 
@@ -693,7 +674,6 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 			deCleanup(&de)
 			deCleanup(&de)
 		}
-
 		blockPut(b)
 	}
 
@@ -702,35 +682,35 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 		if getBit(bm, o) != 0 {
 			continue
 		}
-		r, err = source.open(o, OReadOnly, false)
+		r, err := source.open(o, OReadOnly, false)
 		if err != nil {
 			continue
 		}
 		warnf(chk, "non referenced entry in source %s[%d]", name, o)
-		bb, err = source.block(o/(uint32(source.dsize)/venti.EntrySize), OReadOnly)
-		if err == nil {
-			if bb.addr != NilBlock {
-				setBit(chk.errmap, bb.addr)
-				chk.clre(chk, bb, int(o%uint32(source.dsize/venti.EntrySize)))
+		if b, err := source.block(o/(uint32(source.dsize)/venti.EntrySize), OReadOnly); err == nil {
+			if b.addr != NilBlock {
+				setBit(chk.errmap, b.addr)
+				chk.clre(chk, b, int(o%uint32(source.dsize/venti.EntrySize)))
 				chk.nclre++
 			}
-			blockPut(bb)
+			blockPut(b)
 		}
-
 		r.close()
 	}
-
 	source.unlock()
 	meta.unlock()
 }
 
 func checkDirs(chk *Fsck) {
-	var r *Source
-	var mr *Source
-
 	chk.fs.source.lock(OReadOnly)
-	r, _ = chk.fs.source.open(0, OReadOnly, false)
-	mr, _ = chk.fs.source.open(1, OReadOnly, false)
+	r, err := chk.fs.source.open(0, OReadOnly, false)
+	if err != nil {
+		panic(err) // should not occur
+	}
+	mr, err := chk.fs.source.open(1, OReadOnly, false)
+	if err != nil {
+		panic(err) // should not occur
+	}
 	chk.fs.source.unlock()
 	chkDir(chk, "", r, mr)
 

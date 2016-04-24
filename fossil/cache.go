@@ -411,7 +411,7 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lock
 	c.lk.Unlock()
 
 	if waitlock {
-		b.lk.Lock()
+		b.lock()
 	}
 	atomic.StoreInt32(&b.nlock, 1)
 
@@ -501,7 +501,7 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	//if false {
 	//	fmt.Fprintf(os.Stderr, "%s: cacheLocal: %d: %d %x\n", argv0, getpid(), b.part, b.addr)
 	//}
-	b.lk.Lock()
+	b.lock()
 	atomic.StoreInt32(&b.nlock, 1)
 
 	if part == PartData && b.iostate == BioEmpty {
@@ -517,7 +517,6 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 		return nil, ELabelMismatch
 	}
 
-	//b.pc = getcallerpc(&c)
 	for {
 		switch b.iostate {
 		default:
@@ -569,7 +568,6 @@ func cacheLocalData(c *Cache, addr uint32, typ int, tag uint32, mode int, epoch 
 		return nil, ELabelMismatch
 	}
 
-	//b.pc = getcallerpc(&c)
 	return b, nil
 }
 
@@ -581,11 +579,7 @@ func cacheLocalData(c *Cache, addr uint32, typ int, tag uint32, mode int, epoch 
 func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*Block, error) {
 	addr := venti.GlobalToLocal(score)
 	if addr != NilBlock {
-		b, err := cacheLocalData(c, addr, typ, tag, mode, 0)
-		//if b != nil {
-		//	b.pc = getcallerpc(&c)
-		//}
-		return b, err
+		return cacheLocalData(c, addr, typ, tag, mode, 0)
 	}
 
 	h := (uint32(score[0]) | uint32(score[1])<<8 | uint32(score[2])<<16 | uint32(score[3])<<24) % uint32(c.hashSize)
@@ -628,9 +622,8 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 
 	c.lk.Unlock()
 
-	b.lk.Lock()
+	b.lock()
 	atomic.StoreInt32(&b.nlock, 1)
-	//b.pc = getcallerpc(&c)
 
 	switch b.iostate {
 	default:
@@ -764,7 +757,6 @@ Found:
 	lastAlloc = addr
 	fl.nused++
 	fl.lk.Unlock()
-	//b.pc = getcallerpc(&c)
 	return b, nil
 }
 
@@ -836,12 +828,6 @@ func cacheLocalSize(c *Cache, part int) uint32 {
 	return c.disk.size(part)
 }
 
-/*
- * The thread that has locked b may refer to it by
- * multiple names.  Nlock counts the number of
- * references the locking thread holds.  It will call
- * blockPut once per reference.
- */
 func blockDupLock(b *Block) {
 	nlock := atomic.LoadInt32(&b.nlock)
 	assert(nlock > 0)
@@ -857,28 +843,22 @@ func blockPut(b *Block) {
 		return
 	}
 
-	//if false {
-	// fmt.Fprintf(os.Stderr, "%s: blockPut: %d: %d %x %d %s\n", argv0, getpid(), b.part, b.addr, c.nheap, bioStr(b.iostate))
-	//}
-
 	atomic.AddInt32(&b.nlock, -1)
 	nlock := atomic.LoadInt32(&b.nlock)
 	if nlock > 0 {
 		return
 	}
 
-	/*
-	 * b->nlock should probably stay at zero while
-	 * the block is unlocked, but diskThread and vtSleep
-	 * conspire to assume that they can just b->lk.Lock(); blockPut(b),
-	 * so we have to keep b->nlock set to 1 even
-	 * when the block is unlocked.
-	 */
+	// b.nlock should probably stay at zero while
+	// the block is unlocked, but disk.thread and vtSleep
+	// conspire to assume that they can just b.lock(); blockPut(b),
+	// so we have to keep b.nlock set to 1 even
+	// when the block is unlocked.
 	assert(nlock == 0)
 	atomic.StoreInt32(&b.nlock, 1)
-	//b->pc = 0;
 
-	b.lk.Unlock()
+	b.unlock()
+
 	c := b.c
 	c.lk.Lock()
 
