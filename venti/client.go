@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 var (
@@ -34,6 +35,10 @@ func Dial(host string, canfail bool) (*Session, error) {
 		na = ""
 		conn = nil
 	} else {
+		if !strings.Contains(host, ":") {
+			// append default venti port
+			host += ":17034"
+		}
 		conn, err = net.Dial("tcp", host)
 	}
 
