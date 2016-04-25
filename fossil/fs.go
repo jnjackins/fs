@@ -343,8 +343,9 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 	} else {
 		/*
 		 * Just a temporary snapshot
-		 * We'll use /snapshot/yyyy/mmdd/hh:mm.
+		 * We'll use /snapshot/yyyy/mmdd/hhmm.
 		 * There may well be a better naming scheme.
+		 * (I'd have used hh:mm but ':' is reserved in Microsoft file systems.)
 		 */
 		var err error
 		dir, err = openFile(fs, "/snapshot")
@@ -380,8 +381,8 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		}
 		dir = f
 
-		/* hh:mm[.#] */
-		s = fmt.Sprintf("%02d:%02d", now.Hour(), now.Minute())
+		/* hhmm[.#] */
+		s = fmt.Sprintf("%02d%02d", now.Hour(), now.Minute())
 		for n := 0; ; n++ {
 			if n != 0 {
 				s += fmt.Sprintf(".%d", n)

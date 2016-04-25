@@ -82,6 +82,7 @@ var fsyscmd = []struct {
 	{"unhalt", fsysUnhalt, nil},
 	{"wstat", fsysWstat, nil},
 	{"vac", fsysVac, nil},
+	{"", nil, nil},
 }
 
 func ventihost(host string) string {
@@ -106,27 +107,6 @@ func vtDial(host string, canfail bool) (*venti.Session, error) {
 	return venti.Dial(host, canfail)
 }
 
-func _fsysGet(name string) (*Fsys, error) {
-	if name == "" {
-		name = "main"
-	}
-
-	sbox.lock.RLock()
-	var fsys *Fsys
-	for fsys = sbox.head; fsys != nil; fsys = fsys.next {
-		if name == fsys.name {
-			fsys.ref++
-			break
-		}
-	}
-
-	sbox.lock.RUnlock()
-	if fsys == nil {
-		return nil, fmt.Errorf(EFsysNotFound, name)
-	}
-	return fsys, nil
-}
-
 func cmdPrintConfig(argv []string) error {
 	var usage string = "usage: printconfig"
 
@@ -135,9 +115,7 @@ func cmdPrintConfig(argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc != 0 {
+	if flags.NArg() != 0 {
 		flags.Usage()
 		return EUsage
 	}
@@ -145,7 +123,7 @@ func cmdPrintConfig(argv []string) error {
 	sbox.lock.RLock()
 	for fsys := sbox.head; fsys != nil; fsys = fsys.next {
 		consPrintf("\tfsys %s config %s\n", fsys.name, fsys.dev)
-		if fsys.venti != "" && fsys.venti[0] != 0 {
+		if fsys.venti != "" {
 			consPrintf("\tfsys %s venti %q\n", fsys.name, fsys.venti)
 		}
 	}
@@ -169,6 +147,27 @@ func fsysGet(name string) (*Fsys, error) {
 
 	fsys.lock.Unlock()
 
+	return fsys, nil
+}
+
+func _fsysGet(name string) (*Fsys, error) {
+	if name == "" {
+		name = "main"
+	}
+
+	sbox.lock.RLock()
+	var fsys *Fsys
+	for fsys = sbox.head; fsys != nil; fsys = fsys.next {
+		if name == fsys.name {
+			fsys.ref++
+			break
+		}
+	}
+	sbox.lock.RUnlock()
+
+	if fsys == nil {
+		return nil, fmt.Errorf(EFsysNotFound, name)
+	}
 	return fsys, nil
 }
 
@@ -322,9 +321,7 @@ func fsysClose(fsys *Fsys, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc != 0 {
+	if flags.NArg() != 0 {
 		flags.Usage()
 		return EUsage
 	}
@@ -380,16 +377,13 @@ func fsysSnap(fsys *Fsys, argv []string) error {
 
 	flags := flag.NewFlagSet("snap", flag.ContinueOnError)
 	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
-	aflag := flags.Bool("a", false, "")
-	sflag := flags.String("s", "", "")
-	dflag := flags.String("d", "", "")
+	aflag := flags.Bool("a", false, "Take an archival snapshot.")
+	sflag := flags.String("s", "", "Set the source path of the snapshot to `path`.")
+	dflag := flags.String("d", "", "Set the destination path of the snapshot to `path`.")
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc != 0 {
+	if flags.NArg() != 0 {
 		flags.Usage()
 		return EUsage
 	}
@@ -448,56 +442,40 @@ func fsysSnapTime(fsys *Fsys, argv []string) error {
 	}
 
 	arch, snap, life := snapGetTimes(fsys.fs.snap)
-	changed := false
-
 	var err error
-	// don't parse default values
+
+	// only consider flags that were explicitly set
 	flags.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "a":
+			arch = -1
 			if *aflag != "none" {
 				t, err1 := time.Parse("1504", *aflag)
 				if err1 != nil {
 					err = EUsage
 					return
 				}
-				changed = true
 				arch = t.Sub(t.Truncate(24 * time.Hour))
-			} else {
-				if arch > 0 {
-					changed = true
-					arch = -1
-				}
 			}
 		case "s":
+			snap = -1
 			if *sflag != "none" {
 				d, err1 := strconv.ParseUint(*sflag, 10, 0)
 				if err1 != nil {
 					err = EUsage
 					return
 				}
-				changed = true
 				snap = time.Duration(d) * time.Minute
-			} else {
-				if snap > 0 {
-					changed = true
-					snap = -1
-				}
 			}
 		case "t":
+			life = -1
 			if *tflag != "none" {
 				d, err1 := strconv.ParseUint(*tflag, 10, 0)
 				if err1 != nil {
 					err = EUsage
 					return
 				}
-				changed = true
 				life = time.Duration(d) * time.Minute
-			} else {
-				if life > 0 {
-					changed = true
-					life = -1
-				}
 			}
 		}
 	})
@@ -507,7 +485,7 @@ func fsysSnapTime(fsys *Fsys, argv []string) error {
 		return err
 	}
 
-	if changed {
+	if flags.NFlag() > 0 {
 		snapSetTimes(fsys.fs.snap, arch, snap, life)
 		return nil
 	}
@@ -541,9 +519,7 @@ func fsysSync(fsys *Fsys, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc > 0 {
+	if flags.NArg() != 0 {
 		flags.Usage()
 		return EUsage
 	}
@@ -562,9 +538,7 @@ func fsysHalt(fsys *Fsys, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc > 0 {
+	if flags.NArg() != 0 {
 		flags.Usage()
 		return EUsage
 	}
@@ -581,9 +555,7 @@ func fsysUnhalt(fsys *Fsys, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc > 0 {
+	if flags.NArg() != 0 {
 		flags.Usage()
 		return EUsage
 	}
@@ -687,6 +659,7 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 	if err != nil {
 		return err
 	}
+	defer blockPut(b)
 
 	l := b.l
 	showOld := ""
@@ -715,7 +688,6 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 		consPrintf("new: label %#x %d %d %d %d %#x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
 		bb, err := _blockSetLabel(b, &l)
 		if err != nil {
-			blockPut(b)
 			return err
 		}
 		n := 0
@@ -734,10 +706,8 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 				consPrintf("giving up\n")
 				break
 			}
-
 			time.Sleep(5 * time.Second)
 		}
-
 		blockPut(bb)
 	}
 
@@ -895,9 +865,7 @@ func fsysDf(fsys *Fsys, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc != 0 {
+	if flags.NArg() != 0 {
 		flags.Usage()
 		return EUsage
 	}
@@ -1733,9 +1701,7 @@ func fsysUnconfig(name string, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc != 0 {
+	if flags.NArg() != 0 {
 		flags.Usage()
 		return EUsage
 	}

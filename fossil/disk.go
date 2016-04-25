@@ -79,10 +79,10 @@ func (b *Block) String() string {
 func (b *Block) lock() {
 	b.lk.Lock()
 	if *Dflag {
-		if pc, file, line, ok := runtime.Caller(3); ok {
-			funcName := runtime.FuncForPC(pc).Name()
-			dprintf("block %v locked by %s:%d (%v)\n", b, file, line, funcName)
-		}
+		//if pc, file, line, ok := runtime.Caller(3); ok {
+		//	funcName := runtime.FuncForPC(pc).Name()
+		//	dprintf("block %v locked by %s:%d (%v)\n", b, file, line, funcName)
+		//}
 		stack := make([]byte, 5*1024)
 		runtime.Stack(stack, false)
 		lockmaplk.Lock()
@@ -94,10 +94,10 @@ func (b *Block) lock() {
 func (b *Block) unlock() {
 	b.lk.Unlock()
 	if *Dflag {
-		if pc, file, line, ok := runtime.Caller(3); ok {
-			funcName := runtime.FuncForPC(pc).Name()
-			dprintf("block %v unlocked by %s:%d (%v)\n", b, file, line, funcName)
-		}
+		//if pc, file, line, ok := runtime.Caller(3); ok {
+		//	funcName := runtime.FuncForPC(pc).Name()
+		//	dprintf("block %v unlocked by %s:%d (%v)\n", b, file, line, funcName)
+		//}
 		lockmaplk.Lock()
 		delete(lockmap, b)
 		lockmaplk.Unlock()
