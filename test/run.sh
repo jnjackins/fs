@@ -2,6 +2,8 @@
 # Setup new venti and fossil filesystems, and run fossil in console mode.
 # Run with -D to run fossil in debug mode.
 
+go install sigint.ca/fs/fossil
+
 export venti=127.0.0.1
 export NAMESPACE=$(pwd)
 
