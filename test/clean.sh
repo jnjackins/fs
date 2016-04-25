@@ -7,4 +7,5 @@ rm -f fossilsrv
 (for _ in 1 2; do umount -f archive; done; rmdir archive) 2>/dev/null &
 
 pkill venti 2>/dev/null
+pkill fossil 2>/dev/null
 rm -f {arenas,isect,fossil}.part

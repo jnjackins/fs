@@ -24,10 +24,21 @@ fossil fmt -y fossil.part
 mkdir active snap archive
 
 (
-	sleep 1;
+	sleep 2;
 	9pfuse -a main/active fossilsrv active;
 	9pfuse -a main/snapshot fossilsrv snap;
 	9pfuse -a main/archive fossilsrv archive;
+) &
+
+(
+	sleep 3;
+	mkdir active/dir{1,2}
+	mkdir active/dir{1,2}/dir{3,4}
+	touch  active/file1 active/dir1/file2 active/dir2/dir3/file3
+	cat > active/dir2/file4 <<EOF
+the quick brown fox
+jumps over the lazy dog
+EOF
 ) &
 
 fossil $1 cons -c '. flproto'
