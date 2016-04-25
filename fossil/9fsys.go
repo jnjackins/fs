@@ -43,12 +43,14 @@ var sbox struct {
 const FsysAll = "all"
 
 var (
-	EFsysBusy      = "fsys: '%s' busy"
-	EFsysExists    = "fsys: '%s' already exists"
+	EFsysBusy      = "fsys: %q busy"
+	EFsysExists    = "fsys: %q already exists"
 	EFsysNoCurrent = "fsys: no current fsys"
-	EFsysNotFound  = "fsys: '%s' not found"
-	EFsysNotOpen   = "fsys: '%s' not open"
+	EFsysNotFound  = "fsys: %q not found"
+	EFsysNotOpen   = "fsys: %q not open"
 )
+
+var EUsage = errors.New("error parsing command")
 
 var fsyscmd = []struct {
 	cmd string
@@ -129,13 +131,15 @@ func cmdPrintConfig(argv []string) error {
 	var usage string = "usage: printconfig"
 
 	flags := flag.NewFlagSet("printconfig", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	sbox.lock.RLock()
@@ -314,13 +318,15 @@ func fsysClose(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] close"
 
 	flags := flag.NewFlagSet("close", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	return fmt.Errorf("close isn't working yet; halt %s and then kill fossil", fsys.name)
@@ -349,13 +355,15 @@ func fsysVac(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] vac path"
 
 	flags := flag.NewFlagSet("vac", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 1 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	var score venti.Score
@@ -371,39 +379,49 @@ func fsysSnap(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] snap [-a] [-s /active] [-d /archive/yyyy/mmmm]"
 
 	flags := flag.NewFlagSet("snap", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	aflag := flags.Bool("a", false, "")
 	sflag := flags.String("s", "", "")
 	dflag := flags.String("d", "", "")
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	return fsys.fs.snapshot(*sflag, *dflag, *aflag)
 }
 
 func fsysSnapClean(fsys *Fsys, argv []string) error {
-	var arch, snap, life uint32
 	var usage string = "usage: [fsys name] snapclean [maxminutes]\n"
 
 	flags := flag.NewFlagSet("snapclean", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc > 1 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
+
+	var life time.Duration
+	var err error
 	if argc == 1 {
-		life = uint32(atoi(argv[0]))
+		life, err = time.ParseDuration(argv[0])
+		if err != nil {
+			flags.Usage()
+			return EUsage
+		}
 	} else {
-		snapGetTimes(fsys.fs.snap, &arch, &snap, &life)
+		_, _, life = snapGetTimes(fsys.fs.snap)
 	}
 
 	fsys.fs.snapshotCleanup(life)
@@ -411,40 +429,103 @@ func fsysSnapClean(fsys *Fsys, argv []string) error {
 }
 
 func fsysSnapTime(fsys *Fsys, argv []string) error {
-	var arch, snap, life uint32
-	var usage string = "usage: [fsys name] snaptime [-a hhmm] [-s snapminutes] [-t maxminutes]"
+	var usage string = "usage: [fsys name] snaptime [-a archtime] [-s snapfreq] [-t snaplife]"
 
-	changed := int(0)
-	snapGetTimes(fsys.fs.snap, &arch, &snap, &life)
 	flags := flag.NewFlagSet("snaptime", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	var (
+		// unfortunately, these cannot be flags.Duration, because we need to accept "none"
+		aflag = flags.String("a", "", "Set the daily archival snapshot time to `hhmm`")
+		sflag = flags.String("s", "", "Set the ephemeral snapshot interval to `snapfreq` minutes.")
+		tflag = flags.String("t", "", "Set the snapshot timeout to `snaplife` minutes.")
+	)
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc > 0 {
-		return fmt.Errorf(usage)
+	if flags.NArg() > 0 {
+		flags.Usage()
+		return EUsage
 	}
 
-	if changed != 0 {
+	arch, snap, life := snapGetTimes(fsys.fs.snap)
+	changed := false
+
+	var err error
+	// don't parse default values
+	flags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "a":
+			if *aflag != "none" {
+				t, err1 := time.Parse("1504", *aflag)
+				if err1 != nil {
+					err = EUsage
+					return
+				}
+				changed = true
+				arch = t.Sub(t.Truncate(24 * time.Hour))
+			} else {
+				if arch > 0 {
+					changed = true
+					arch = -1
+				}
+			}
+		case "s":
+			if *sflag != "none" {
+				d, err1 := strconv.ParseUint(*sflag, 10, 0)
+				if err1 != nil {
+					err = EUsage
+					return
+				}
+				changed = true
+				snap = time.Duration(d) * time.Minute
+			} else {
+				if snap > 0 {
+					changed = true
+					snap = -1
+				}
+			}
+		case "t":
+			if *tflag != "none" {
+				d, err1 := strconv.ParseUint(*tflag, 10, 0)
+				if err1 != nil {
+					err = EUsage
+					return
+				}
+				changed = true
+				life = time.Duration(d) * time.Minute
+			} else {
+				if life > 0 {
+					changed = true
+					life = -1
+				}
+			}
+		}
+	})
+
+	if err != nil {
+		flags.Usage()
+		return err
+	}
+
+	if changed {
 		snapSetTimes(fsys.fs.snap, arch, snap, life)
 		return nil
 	}
 
-	snapGetTimes(fsys.fs.snap, &arch, &snap, &life)
+	arch, snap, life = snapGetTimes(fsys.fs.snap)
 	var buf string
-	if arch != ^uint32(0) {
-		buf = fmt.Sprintf("-a %02d%02d", arch/60, arch%60)
+	if arch >= 0 {
+		buf = fmt.Sprintf("-a %s", time.Time{}.Add(arch).Format("1504"))
 	} else {
 		buf = fmt.Sprintf("-a none")
 	}
-	if snap != ^uint32(0) {
-		buf += fmt.Sprintf(" -s %d", snap)
+	if snap >= 0 {
+		buf += fmt.Sprintf(" -s %d", int(snap.Minutes()))
 	} else {
 		buf += fmt.Sprintf(" -s none")
 	}
-	if life != ^uint32(0) {
-		buf += fmt.Sprintf(" -t %d", life)
+	if life >= 0 {
+		buf += fmt.Sprintf(" -t %d", int(life.Minutes()))
 	} else {
 		buf += fmt.Sprintf(" -t none")
 	}
@@ -456,13 +537,15 @@ func fsysSync(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] sync"
 
 	flags := flag.NewFlagSet("sync", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc > 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	n := cacheDirty(fsys.fs.cache)
@@ -475,13 +558,15 @@ func fsysHalt(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] halt"
 
 	flags := flag.NewFlagSet("halt", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc > 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fsys.fs.halt()
@@ -492,13 +577,15 @@ func fsysUnhalt(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] unhalt"
 
 	flags := flag.NewFlagSet("unhalt", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc > 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	if !fsys.fs.halted {
@@ -513,13 +600,15 @@ func fsysRemove(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] remove path ..."
 
 	flags := flag.NewFlagSet("remove", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc == 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fsys.fs.elk.RLock()
@@ -546,13 +635,15 @@ func fsysClri(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] clri path ..."
 
 	flags := flag.NewFlagSet("clri", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc == 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fsys.fs.elk.RLock()
@@ -576,13 +667,15 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] label addr [type state epoch epochClose tag]"
 
 	flags := flag.NewFlagSet("label", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 1 && argc != 6 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fsys.fs.elk.RLock()
@@ -658,13 +751,15 @@ func fsysBlock(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] block addr offset [count [data]]"
 
 	flags := flag.NewFlagSet("block", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc < 2 || argc > 4 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fs := fsys.fs
@@ -742,13 +837,15 @@ func fsysBfree(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] bfree addr ..."
 
 	flags := flag.NewFlagSet("bfree", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc == 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fs := fsys.fs
@@ -794,13 +891,15 @@ func fsysDf(fsys *Fsys, argv []string) error {
 	var used, tot, bsize uint32
 
 	flags := flag.NewFlagSet("df", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fs := fsys.fs
@@ -844,8 +943,9 @@ func fsysClrep(fsys *Fsys, argv []string, ch int) error {
 	var usage string = "usage: [fsys name] clr%c addr offset ..."
 
 	flags := flag.NewFlagSet("clrep", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
@@ -995,13 +1095,15 @@ func fsysEpoch(fsys *Fsys, argv []string) error {
 	force := int(0)
 	remove := int(0)
 	flags := flag.NewFlagSet("epoch", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc > 1 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 	if argc > 0 {
 		low = strtoul(argv[0], 0)
@@ -1068,18 +1170,20 @@ func fsysCreate(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] create path uid gid perm"
 
 	flags := flag.NewFlagSet("create", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 4 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	mode, ok := fsysParseMode(argv[3])
 	if !ok {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	if mode&ModeSnapshot != 0 {
 		return fmt.Errorf("create - cannot create with snapshot bit set")
@@ -1143,13 +1247,15 @@ func fsysStat(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] stat files..."
 
 	flags := flag.NewFlagSet("stat", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc == 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fsys.fs.elk.RLock()
@@ -1178,13 +1284,15 @@ func fsysWstat(fsys *Fsys, argv []string) error {
 	var usage string = "usage: [fsys name] wstat file elem uid gid mode length\n" + "\tuse - for any field to mean don't change"
 
 	flags := flag.NewFlagSet("wstat", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 6 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	fsys.fs.elk.RLock()
@@ -1354,8 +1462,9 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 	}
 
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	for _, arg := range flags.Args() {
 		switch arg {
@@ -1381,7 +1490,7 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 			fsck.walksnapshots = true
 		default:
 			consPrintf("unknown option '%s'\n", arg)
-			return fmt.Errorf(usage)
+			return EUsage
 		}
 	}
 
@@ -1418,8 +1527,9 @@ func fsysVenti(name string, argv []string) error {
 	var usage string = "usage: [fsys name] venti [address]"
 
 	flags := flag.NewFlagSet("venti", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
@@ -1430,7 +1540,7 @@ func fsysVenti(name string, argv []string) error {
 	} else if argc == 1 {
 		host = argv[0]
 	} else {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 
 	fsys, err := _fsysGet(name)
@@ -1528,6 +1638,7 @@ func fsysOpen(name string, argv []string) error {
 	var usage string = "usage: fsys main open [-APVWr] [-c ncache]"
 
 	flags := flag.NewFlagSet("open", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	var (
 		Aflag = flags.Bool("A", false, "run with no authentication")
 		Pflag = flags.Bool("P", false, "run with no permission checking")
@@ -1538,7 +1649,7 @@ func fsysOpen(name string, argv []string) error {
 		cflag = flags.Uint("c", 1000, "allocate an in-memory cache of `ncache` blocks")
 	)
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 
 	noventi := *Vflag
@@ -1549,7 +1660,7 @@ func fsysOpen(name string, argv []string) error {
 	}
 
 	if flags.NArg() != 0 {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 
 	fsys, err := _fsysGet(name)
@@ -1618,13 +1729,15 @@ func fsysUnconfig(name string, argv []string) error {
 	var usage string = "usage: fsys name unconfig"
 
 	flags := flag.NewFlagSet("unconfig", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc != 0 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	sbox.lock.Lock()
@@ -1661,13 +1774,15 @@ func fsysConfig(name string, argv []string) error {
 	var usage string = "usage: fsys name config [dev]"
 
 	flags := flag.NewFlagSet("config", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc > 1 {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	var part string
@@ -1771,8 +1886,9 @@ func cmdFsys(argv []string) error {
 	var usage string = "usage: fsys [name ...]"
 
 	flags := flag.NewFlagSet("fsys", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()

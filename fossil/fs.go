@@ -53,13 +53,12 @@ type Snap struct {
 	fs          *Fs
 	tick        *time.Ticker
 	lk          *sync.Mutex
-	snapMinutes uint
-	archMinute  uint
-	snapLife    uint
-	lastSnap    uint32
-	lastArch    uint32
-	lastCleanup uint32
-	ignore      uint
+	archAfter   time.Duration
+	snapFreq    time.Duration
+	snapLife    time.Duration
+	lastSnap    time.Time
+	lastArch    time.Time
+	lastCleanup time.Time
 }
 
 func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
@@ -344,9 +343,8 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 	} else {
 		/*
 		 * Just a temporary snapshot
-		 * We'll use /snapshot/yyyy/mmdd/hhmm.
+		 * We'll use /snapshot/yyyy/mmdd/hh:mm.
 		 * There may well be a better naming scheme.
-		 * (I'd have used hh:mm but ':' is reserved in Microsoft file systems.)
 		 */
 		var err error
 		dir, err = openFile(fs, "/snapshot")
@@ -382,8 +380,8 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		}
 		dir = f
 
-		/* hhmm[.#] */
-		s = fmt.Sprintf("%02d%02d", now.Hour(), now.Minute())
+		/* hh:mm[.#] */
+		s = fmt.Sprintf("%02d:%02d", now.Hour(), now.Minute())
 		for n := 0; ; n++ {
 			if n != 0 {
 				s += fmt.Sprintf(".%d", n)
@@ -401,25 +399,22 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 	}
 }
 
-func (fs *Fs) needArch(archMinute uint) bool {
-	then := time.Now().Unix()
-	now := time.Unix(then, 0).Local()
+func (fs *Fs) needArch(archAfter time.Duration) bool {
+	now := time.Now()
+	elapsed := time.Since(now.Truncate(24 * time.Hour))
 
 	/* back up to yesterday if necessary */
-	if uint(now.Hour()) < archMinute/60 || uint(now.Hour()) == archMinute/60 && uint(now.Minute()) < archMinute%60 {
-		now = time.Unix(then-86400, 0).Local()
+	if elapsed < archAfter {
+		now = now.Add(-24 * time.Hour)
 	}
 
-	buf := fmt.Sprintf("/archive/%d/%02d%02d", now.Year(), now.Month()+1, now.Day())
-	need := bool(true)
+	buf := fmt.Sprintf("/archive/%d/%02d%02d", now.Year(), now.Month(), now.Day())
 
 	fs.elk.RLock()
 	defer fs.elk.RUnlock()
 
-	var err error
-	var f *File
-	f, err = openFile(fs, buf)
-	if err == nil {
+	need := true
+	if f, err := openFile(fs, buf); err == nil {
 		need = false
 		f.decRef()
 	}
@@ -859,7 +854,7 @@ func (fs *Fs) metaFlush() {
 	}
 }
 
-func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
+func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
 	dee, err := deeOpen(f)
 	if err != nil {
 		return 0
@@ -881,7 +876,7 @@ func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
 			if err == nil {
 				var e, ee Entry
 				if err := ff.getSources(&e, &ee); err != nil {
-					if de.mtime >= savetime && e.snap != 0 {
+					if de.mtime >= uint32(savetime.Unix()) && e.snap != 0 {
 						if e.snap < *plo {
 							*plo = e.snap
 						}
@@ -910,8 +905,8 @@ func fsEsearch1(f *File, path string, savetime uint32, plo *uint32) int {
 	return n
 }
 
-func (fs *Fs) esearch(path_ string, savetime uint32, plo *uint32) int {
-	f, err := openFile(fs, path_)
+func (fs *Fs) esearch(path string, savetime time.Time, plo *uint32) int {
+	f, err := openFile(fs, path)
 	if err != nil {
 		return 0
 	}
@@ -928,12 +923,12 @@ func (fs *Fs) esearch(path_ string, savetime uint32, plo *uint32) int {
 	}
 
 	deCleanup(&de)
-	n := fsEsearch1(f, path_, savetime, plo)
+	n := fsEsearch1(f, path, savetime, plo)
 	f.decRef()
 	return n
 }
 
-func (fs *Fs) snapshotCleanup(age uint32) {
+func (fs *Fs) snapshotCleanup(age time.Duration) {
 	/*
 	 * Find the best low epoch we can use,
 	 * given that we need to save all the unventied archives
@@ -941,8 +936,8 @@ func (fs *Fs) snapshotCleanup(age uint32) {
 	 */
 	fs.elk.RLock()
 	lo := fs.ehi
-	fs.esearch("/archive", 0, &lo)
-	fs.esearch("/snapshot", uint32(time.Now().Unix())-age*60, &lo)
+	fs.esearch("/archive", time.Time{}, &lo)
+	fs.esearch("/snapshot", time.Now().Add(-age), &lo)
 	fs.elk.RUnlock()
 
 	fs.epochLow(lo)
@@ -1034,40 +1029,44 @@ func (fs *Fs) snapshotRemove() {
 }
 
 func snapEvent(s *Snap) {
-	now := uint32(time.Now().Unix()) / 60
+	now := time.Now()
+	elapsed := time.Since(now.Truncate(24 * time.Hour))
 
 	s.lk.Lock()
 	defer s.lk.Unlock()
 
 	/*
-	 * Snapshots happen every snapMinutes minutes.
+	 * Snapshots happen every snapFreq.
 	 * If we miss a snapshot (for example, because we
 	 * were down), we wait for the next one.
 	 */
-	if s.snapMinutes != ^uint(0) && s.snapMinutes != 0 && uint(now)%s.snapMinutes == 0 && now != s.lastSnap {
-		dprintf("snaphot started\n")
-		if err := s.fs.snapshot("", "", false); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: snap: %v\n", argv0, err)
+	if s.snapFreq > 0 {
+		snapminute := int(elapsed.Minutes())%int(s.snapFreq.Minutes()) == 0
+		if snapminute && now.Sub(s.lastSnap) > time.Minute {
+			dprintf("snaphot started\n")
+			if err := s.fs.snapshot("", "", false); err != nil {
+				fmt.Fprintf(os.Stderr, "%s: snap: %v\n", argv0, err)
+			}
+			dprintf("snapshot finished\n")
+			s.lastSnap = now
 		}
-		dprintf("snapshot finished\n")
-		s.lastSnap = now
 	}
 
 	/*
-	 * Archival snapshots happen at archMinute.
+	 * Archival snapshots happen daily, at 00:00 + s.archAfter.
 	 * If we miss an archive (for example, because we
 	 * were down), we do it as soon as possible.
 	 */
-	tm := time.Unix(int64(now)*60, 0).Local()
-	min := uint(tm.Hour())*60 + uint(tm.Minute())
-	if s.archMinute != ^uint(0) {
-		need := bool(false)
-		if min == s.archMinute && now != s.lastArch {
+	if s.archAfter >= 0 {
+		need := false
+		if int(elapsed.Minutes()) == int(s.archAfter.Minutes()) && now.Sub(s.lastArch) > time.Minute {
 			need = true
 		}
-		if s.lastArch == 0 {
-			s.lastArch = 1
-			if s.fs.needArch(s.archMinute) {
+
+		// if s.lastArch hasn't been initialized, check the filesystem
+		if s.lastArch.IsZero() {
+			s.lastArch = s.lastArch.Add(1)
+			if s.fs.needArch(s.archAfter) {
 				need = true
 			}
 		}
@@ -1081,28 +1080,24 @@ func snapEvent(s *Snap) {
 	/*
 	 * Snapshot cleanup happens every snaplife or every day.
 	 */
-	snaplife := uint32(s.snapLife)
-
-	if snaplife == ^uint32(0) {
-		snaplife = 24 * 60
+	snaplife := s.snapLife
+	if snaplife < 0 {
+		snaplife = 24 * time.Hour
 	}
-	if s.lastCleanup+snaplife < now {
-		dprintf("snapclean started\n")
-		s.fs.snapshotCleanup(uint32(s.snapLife))
-		dprintf("snapclean finished\n")
+	if s.lastCleanup.Add(snaplife).Before(now) {
+		s.fs.snapshotCleanup(s.snapLife)
 		s.lastCleanup = now
 	}
 }
 
 func snapInit(fs *Fs) *Snap {
 	s := &Snap{
-		fs:          fs,
-		tick:        time.NewTicker(10 * time.Second),
-		lk:          new(sync.Mutex),
-		snapMinutes: ^uint(0),
-		archMinute:  ^uint(0),
-		snapLife:    ^uint(0),
-		ignore:      5 * 2, /* wait five minutes for clock to stabilize */
+		fs:        fs,
+		tick:      time.NewTicker(10 * time.Second),
+		lk:        new(sync.Mutex),
+		archAfter: -1,
+		snapFreq:  -1,
+		snapLife:  -1,
 	}
 
 	// TODO(jnj): leakes goroutine? loop does not terminate when ticker
@@ -1116,30 +1111,31 @@ func snapInit(fs *Fs) *Snap {
 	return s
 }
 
-func snapGetTimes(s *Snap, arch, snap, snaplen *uint32) {
+func snapGetTimes(s *Snap) (arch, snap, snaplife time.Duration) {
 	if s == nil {
-		*snap = ^uint32(0)
-		*arch = ^uint32(0)
-		*snaplen = ^uint32(0)
+		arch = -1
+		snap = -1
+		snaplife = -1
 		return
 	}
 
 	s.lk.Lock()
-	*snap = uint32(s.snapMinutes)
-	*arch = uint32(s.archMinute)
-	*snaplen = uint32(s.snapLife)
+	arch = s.archAfter
+	snap = s.snapFreq
+	snaplife = s.snapLife
 	s.lk.Unlock()
+	return
 }
 
-func snapSetTimes(s *Snap, arch, snap, snaplen uint32) {
+func snapSetTimes(s *Snap, arch, snap, snaplife time.Duration) {
 	if s == nil {
 		return
 	}
 
 	s.lk.Lock()
-	s.snapMinutes = uint(snap)
-	s.archMinute = uint(arch)
-	s.snapLife = uint(snaplen)
+	s.archAfter = arch
+	s.snapFreq = snap
+	s.snapLife = snaplife
 	s.lk.Unlock()
 }
 
