@@ -1948,12 +1948,12 @@ func cacheFlush(c *Cache, wait bool) {
 	c.lk.Lock()
 	if wait {
 		for c.ndirty != 0 {
-			//	consPrintf("cacheFlush: %d dirty blocks, uhead %p\n",
+			//	printf("cacheFlush: %d dirty blocks, uhead %p\n",
 			//		c->ndirty, c->uhead);
 			c.flush.Signal()
 			c.flushwait.Wait()
 		}
-		//	consPrintf("cacheFlush: done (uhead %p)\n", c->ndirty, c->uhead);
+		//	printf("cacheFlush: done (uhead %p)\n", c->ndirty, c->uhead);
 	} else if c.ndirty != 0 {
 		c.flush.Signal()
 	}

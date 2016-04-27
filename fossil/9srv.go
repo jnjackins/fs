@@ -1,10 +1,10 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"syscall"
 
@@ -119,21 +119,20 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 }
 
 func cmdSrv(argv []string) error {
-	var usage = errors.New("usage: srv [-APWdp] [service]")
+	var usage = "Usage: srv [-APWdp] [service]"
 
 	flags := flag.NewFlagSet("srv", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	var (
-		Aflag = flags.Bool("A", false, "run with no authentication")
-		Iflag = flags.Bool("I", false, "run with IP check")
-		NFlag = flags.Bool("N", false, "allow connections from \"none\"")
-		Pflag = flags.Bool("P", false, "run with no permission checking")
-		Wflag = flags.Bool("W", false, "allow wstat to make arbitrary changes to the user and group fields")
-		dflag = flags.Bool("d", false, "remove the named service")
+		Aflag = flags.Bool("A", false, "Run with no authentication.")
+		Iflag = flags.Bool("I", false, "Run with IP check.")
+		NFlag = flags.Bool("N", false, "Allow connections from \"none\".")
+		Pflag = flags.Bool("P", false, "Run with no permission checking.")
+		Wflag = flags.Bool("W", false, "Allow wstat to make arbitrary changes to the user and group fields.")
+		dflag = flags.Bool("d", false, "Remove the named service.")
 	)
-	flags.Usage = func() {
-	}
 	if err := flags.Parse(argv[1:]); err != nil {
-		return usage
+		return EUsage
 	}
 
 	var conflags int
@@ -161,12 +160,12 @@ func cmdSrv(argv []string) error {
 
 	switch argc {
 	default:
-		return usage
-
+		flags.Usage()
+		return EUsage
 	case 0:
 		srvbox.lock.RLock()
 		for srv := srvbox.head; srv != nil; srv = srv.next {
-			consPrintf("\t%s\t%d\n", srv.service, srv.srvfd)
+			printf("\t%s\t%d\n", srv.service, srv.srvfd)
 		}
 		srvbox.lock.RUnlock()
 		return nil

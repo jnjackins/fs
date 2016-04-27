@@ -34,8 +34,6 @@ type Cons struct {
 	oq      *Q /* points to console.oq */
 }
 
-var currfsysname string
-
 var console struct {
 	iq     *Q     /* input */
 	oq     *Q     /* output */
@@ -280,7 +278,7 @@ func consProc() {
 			console.l = console.l[:console.nl]
 			if console.nl != 0 {
 				if err := cliExec(string(console.l)); err != nil {
-					consPrintf("%v\n", err)
+					printf("%v\n", err)
 				}
 			}
 

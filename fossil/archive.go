@@ -440,7 +440,7 @@ func archThread(a *Arch) {
 		blockPut(b)
 		a.fs.elk.Unlock()
 
-		consPrintf("archive vac:%v\n", p.score)
+		printf("archive vac:%v\n", p.score)
 	}
 
 Done:

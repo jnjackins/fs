@@ -131,7 +131,7 @@ func cmd9pTopen(f *plan9.Fcall, argv []string) error {
 
 func cmd9pTwalk(f *plan9.Fcall, argv []string) error {
 	if len(argv) < 2 {
-		return fmt.Errorf("usage: Twalk tag fid newfid [name...]")
+		return fmt.Errorf("Usage: Twalk tag fid newfid [name...]")
 	}
 
 	f.Fid = uint32(strtol(argv[0], 0))
@@ -191,12 +191,16 @@ type Cmd9p struct {
 }
 
 func cmd9p(argv []string) error {
-	usage := errors.New("usage: 9p T-message ...")
+	usage := errors.New("Usage: 9p T-message ...")
 
 	flags := flag.NewFlagSet("9p", flag.ContinueOnError)
-	err := flags.Parse(argv[1:])
-	if err != nil || flags.NArg() < 1 {
-		return usage
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	if err := flags.Parse(argv[1:]); err != nil {
+		return EUsage
+	}
+	if flags.NArg() < 1 {
+		flags.Usage()
+		return EUsage
 	}
 	argv = flags.Args()
 
@@ -213,7 +217,7 @@ func cmd9p(argv []string) error {
 
 	argv = argv[1:]
 	if cmd9pTmsg[i].argc != 0 && len(argv) != cmd9pTmsg[i].argc {
-		return fmt.Errorf("usage: %s %s", cmd9pTmsg[i].name, cmd9pTmsg[i].usage)
+		return fmt.Errorf("Usage: %s %s", cmd9pTmsg[i].name, cmd9pTmsg[i].usage)
 	}
 
 	var t plan9.Fcall
@@ -237,25 +241,29 @@ func cmd9p(argv []string) error {
 		return fmt.Errorf("%s: write error: %v", cmd9pTmsg[i].name, err)
 	}
 
-	consPrintf("\t-> %F\n", &t)
+	printf("\t-> %F\n", &t)
 
 	f, err := plan9.ReadFcall(cmdbox.conns[0])
 	if err != nil {
 		return fmt.Errorf("%s: error reading fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
-	consPrintf("\t<- %F\n", &f)
+	printf("\t<- %F\n", &f)
 
 	return nil
 }
 
 func cmdDot(argv []string) error {
-	usage := "usage: . file"
+	usage := "Usage: . file"
 
 	flags := flag.NewFlagSet(".", flag.ContinueOnError)
-	err := flags.Parse(argv[1:])
-	if err != nil || flags.NArg() != 1 {
-		return fmt.Errorf(usage)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	if err := flags.Parse(argv[1:]); err != nil {
+		return EUsage
+	}
+	if flags.NArg() != 1 {
+		flags.Usage()
+		return EUsage
 	}
 	argv = flags.Args()
 
@@ -284,7 +292,7 @@ func cmdDot(argv []string) error {
 		for _, line := range strings.Split(string(buf), "\n") {
 			if err := cliExec(line); err != nil {
 				r = 0
-				consPrintf("%s: %v\n", line, err)
+				printf("%s: %v\n", line, err)
 			}
 		}
 	}
@@ -296,33 +304,37 @@ func cmdDot(argv []string) error {
 }
 
 func cmdDflag(argv []string) error {
-	usage := "usage: dflag"
+	usage := "Usage: dflag"
 
 	flags := flag.NewFlagSet("dflag", flag.ContinueOnError)
-	err := flags.Parse(argv[1:])
-	if err != nil || flags.NArg() != 0 {
-		return fmt.Errorf(usage)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	if err := flags.Parse(argv[1:]); err != nil {
+		return EUsage
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return EUsage
 	}
 
 	*Dflag = !*Dflag
-	consPrintf("dflag %v\n", *Dflag)
+	printf("dflag %v\n", *Dflag)
 
 	return nil
 }
 
 func cmdEcho(argv []string) error {
-	usage := "usage: echo [-n] ..."
+	usage := "Usage: echo [-n] ..."
 
 	flags := flag.NewFlagSet("echo", flag.ContinueOnError)
-	nflag := flags.Bool("n", false, "do not print trailing newline")
-	err := flags.Parse(argv[1:])
-	if err != nil {
-		return fmt.Errorf(usage)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	nflag := flags.Bool("n", false, "Do not print trailing newline.")
+	if err := flags.Parse(argv[1:]); err != nil {
+		return EUsage
 	}
 
-	consPrintf(strings.Join(flags.Args(), " "))
+	printf(strings.Join(flags.Args(), " "))
 	if !*nflag {
-		consPrintf("\n")
+		printf("\n")
 	}
 
 	return nil
@@ -337,19 +349,22 @@ const (
 )
 
 func cmdBind(argv []string) error {
-	usage := "usage: bind [-b|-a|-c|-bc|-ac] new old"
+	usage := "Usage: bind [-b|-a|-c|-bc|-ac] new old"
 
 	flags := flag.NewFlagSet("echo", flag.ContinueOnError)
-	after := flags.Bool("a", false, "after")
-	before := flags.Bool("b", false, "before")
-	create := flags.Bool("c", false, "create")
-	err := flags.Parse(argv[1:])
-	if err != nil {
-		return fmt.Errorf(usage)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	var (
+		before = flags.Bool("b", false, "Add the new directory to the beginning of the union directory old.")
+		after  = flags.Bool("a", false, "Add the new directory to the end of union directory old.")
+		create = flags.Bool("c", false, "Permit creation in a union directory.")
+	)
+	if err := flags.Parse(fixFlags(argv[1:])); err != nil {
+		return EUsage
 	}
 
 	if flags.NArg() != 2 || *after && *before {
-		return fmt.Errorf(usage)
+		flags.Usage()
+		return EUsage
 	}
 
 	var bindFlags int

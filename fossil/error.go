@@ -36,4 +36,5 @@ var (
 	ESnapRO        = errors.New("snapshot is read only")
 	ETooBig        = errors.New("file too big")
 	EVentiIO       = errors.New("venti i/o error")
+	EUsage         = errors.New("error parsing command")
 )

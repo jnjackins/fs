@@ -95,18 +95,17 @@ func lstnAlloc(address string, flags int) (*Lstn, error) {
 }
 
 func cmdLstn(argv []string) error {
-	var usage = errors.New("usage: listen [-dIN] [address]")
+	var usage = errors.New("Usage: listen [-dIN] [address]")
 
 	flags := flag.NewFlagSet("listen", flag.ContinueOnError)
-	flags.Usage = func() {}
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
 	var (
 		dflag = flags.Bool("d", false, "Remove the listener at the given address.")
 		Iflag = flags.Bool("I", false, "Reject disallowed IP addresses.")
 		Nflag = flags.Bool("N", false, "Allow connections from none at any time.")
 	)
-	err := flags.Parse(argv[1:])
-	if err != nil {
-		return usage
+	if err := flags.Parse(argv[1:]); err != nil {
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
@@ -121,12 +120,12 @@ func cmdLstn(argv []string) error {
 
 	switch argc {
 	default:
-		return usage
+		return EUsage
 
 	case 0:
 		lbox.lock.RLock()
 		for lstn := lbox.head; lstn != nil; lstn = lstn.next {
-			consPrintf("\t%s\n", lstn.address)
+			printf("\t%s\n", lstn.address)
 		}
 		lbox.lock.RUnlock()
 

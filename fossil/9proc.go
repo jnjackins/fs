@@ -571,12 +571,12 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 }
 
 func cmdMsg(argv []string) error {
-	var usage = errors.New("usage: msg [-m nmsg] [-p nproc]")
+	var usage = errors.New("Usage: msg [-m nmsg] [-p nproc]")
 
 	flags := flag.NewFlagSet("msg", flag.ContinueOnError)
-	flags.Usage = func() {}
-	maxmsg := flags.Uint("m", 0, "nmsg")
-	maxproc := flags.Uint("p", 0, "nproc")
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	maxmsg := flags.Uint("m", 0, "Set the maximum internal 9P message queue size to `nmsg`.")
+	maxproc := flags.Uint("p", 0, "Set the maximum number of processes for handling 9P messages to `nproc`.")
 	if err := flags.Parse(argv[1:]); err != nil {
 		return usage
 	}
@@ -602,8 +602,8 @@ func cmdMsg(argv []string) error {
 	nprocstarve := mbox.nprocstarve
 	mbox.rlock.Unlock()
 
-	consPrintf("\tmsg -m %d -p %d\n", *maxmsg, *maxproc)
-	consPrintf("\tnmsg %d nmsgstarve %d nproc %d nprocstarve %d\n", nmsg, nmsgstarve, nproc, nprocstarve)
+	printf("\tmsg -m %d -p %d\n", *maxmsg, *maxproc)
+	printf("\tnmsg %d nmsgstarve %d nproc %d nprocstarve %d\n", nmsg, nmsgstarve, nproc, nprocstarve)
 
 	return nil
 }
@@ -671,10 +671,13 @@ func fidMergeSort(f *Fid) *Fid {
 }
 
 func cmdWho(argv []string) error {
-	var usage string = "usage: who"
+	var usage string = "Usage: who"
 
 	flags := flag.NewFlagSet("who", flag.ContinueOnError)
-	flags.Parse(argv[1:])
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	if err := flags.Parse(argv[1:]); err != nil {
+		return EUsage
+	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf(usage)
 	}
@@ -694,7 +697,7 @@ func cmdWho(argv []string) error {
 	}
 
 	for con := cbox.chead; con != nil; con = con.cnext {
-		consPrintf("\t%-*s %-*s", l1, con.name, l2, con.remote)
+		printf("\t%-*s %-*s", l1, con.name, l2, con.remote)
 		con.fidlock.Lock()
 		var last *Fid = nil
 		for i := 0; i < NFidHash; i++ {
@@ -710,11 +713,11 @@ func cmdWho(argv []string) error {
 		last = nil
 		for ; fid != nil; (func() { last = fid; fid = fid.sort })() {
 			if last == nil || fid.uname != last.uname {
-				consPrintf(" %q", fid.uname)
+				printf(" %q", fid.uname)
 			}
 		}
 		con.fidlock.Unlock()
-		consPrintf("\n")
+		printf("\n")
 	}
 
 	cbox.clock.RUnlock()
@@ -736,13 +739,13 @@ func msgInit() {
 }
 
 func cmdCon(argv []string) error {
-	var usage string = "usage: con [-m ncon]"
+	var usage string = "Usage: con [-m ncon]"
 
 	flags := flag.NewFlagSet("con", flag.ContinueOnError)
-	maxcon := flags.Int("m", 0, "ncon")
-	flags.Parse(argv[1:])
-	if *maxcon < 0 {
-		return fmt.Errorf(usage)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	maxcon := flags.Uint("m", 0, "Set the maximum number of connections to `ncon`.")
+	if err := flags.Parse(argv[1:]); err != nil {
+		return EUsage
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf(usage)
@@ -750,19 +753,19 @@ func cmdCon(argv []string) error {
 
 	cbox.clock.Lock()
 	if *maxcon > 0 {
-		cbox.maxcon = *maxcon
+		cbox.maxcon = int(*maxcon)
 	}
-	*maxcon = cbox.maxcon
+	*maxcon = uint(cbox.maxcon)
 	ncon := cbox.ncon
 	nconstarve := cbox.nconstarve
 	cbox.clock.Unlock()
 
-	consPrintf("\tcon -m %d\n", maxcon)
-	consPrintf("\tncon %d nconstarve %d\n", ncon, nconstarve)
+	printf("\tcon -m %d\n", *maxcon)
+	printf("\tncon %d nconstarve %d\n", ncon, nconstarve)
 
 	cbox.clock.RLock()
 	for con := cbox.chead; con != nil; con = con.cnext {
-		consPrintf("\t%s\n", con.name)
+		printf("\t%s\n", con.name)
 	}
 	cbox.clock.RUnlock()
 

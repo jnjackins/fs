@@ -71,39 +71,39 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	 */
 	if err := entryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
 		pname := p.name()
-		consPrintf("%s: %s %v: sourceAlloc: entryUnpack failed\n", fs.name, pname, b.score)
+		printf("%s: %s %v: sourceAlloc: entryUnpack failed\n", fs.name, pname, b.score)
 		goto Bad
 	}
 
 	if e.flags&venti.EntryActive == 0 {
 		pname := p.name()
 		if false {
-			consPrintf("%s: %s %v: sourceAlloc: not active\n", fs.name, pname, e.score)
+			printf("%s: %s %v: sourceAlloc: not active\n", fs.name, pname, e.score)
 		}
 		goto Bad
 	}
 
 	if e.psize < 256 || e.dsize < 256 {
 		pname := p.name()
-		consPrintf("%s: %s %v: sourceAlloc: psize %d or dsize %d < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
+		printf("%s: %s %v: sourceAlloc: psize %d or dsize %d < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
 		goto Bad
 	}
 
 	if int(e.depth) < sizeToDepth(e.size, int(e.psize), int(e.dsize)) {
 		pname := p.name()
-		consPrintf("%s: %s %v: sourceAlloc: depth %d size %llud "+"psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
+		printf("%s: %s %v: sourceAlloc: depth %d size %llud "+"psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
 		goto Bad
 	}
 
 	if (e.flags&venti.EntryLocal != 0) && e.tag == 0 {
 		pname := p.name()
-		consPrintf("%s: %s %v: sourceAlloc: flags %#x tag %#x\n", fs.name, pname, e.score, e.flags, e.tag)
+		printf("%s: %s %v: sourceAlloc: flags %#x tag %#x\n", fs.name, pname, e.score, e.flags, e.tag)
 		goto Bad
 	}
 
 	if int(e.dsize) > fs.blockSize || int(e.psize) > fs.blockSize {
 		pname := p.name()
-		consPrintf("%s: %s %v: sourceAlloc: psize %d or dsize %d "+"> blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
+		printf("%s: %s %v: sourceAlloc: psize %d or dsize %d "+"> blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
 		goto Bad
 	}
 
@@ -144,7 +144,7 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 
 	r.epoch = epoch
 
-	//	consPrintf("sourceAlloc: have %v be.%d fse.%d %s\n", b->score,
+	//	printf("sourceAlloc: have %v be.%d fse.%d %s\n", b->score,
 	//		b->l.epoch, r->fs->ehi, mode == OReadWrite? "rw": "ro");
 	copy(r.score[:], b.score[:venti.ScoreSize])
 
@@ -153,7 +153,7 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	r.epb = epb
 	r.tag = b.l.tag
 
-	//	consPrintf("%s: sourceAlloc: %p -> %v %d\n", r, r->score, r->offset);
+	//	printf("%s: sourceAlloc: %p -> %v %d\n", r, r->score, r->offset);
 
 	return r, nil
 
@@ -172,7 +172,7 @@ func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
 	}
 
 	if mode == OReadWrite && b.l.epoch != fs.ehi {
-		consPrintf("sourceRoot: fs->ehi = %d, b->l = %L\n", fs.ehi, &b.l)
+		printf("sourceRoot: fs->ehi = %d, b->l = %L\n", fs.ehi, &b.l)
 		blockPut(b)
 		return nil, EBadRoot
 	}

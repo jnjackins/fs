@@ -207,7 +207,7 @@ func (f *File) openSource(offset, gen uint32, dir bool, mode uint, issnapshot bo
 		rname := r.name()
 
 		fname := f.name()
-		consPrintf("%s: source %s for file %s: fileOpenSource: "+"dir mismatch %d %d\n", f.source.fs.name, rname, fname, r.dir, dir)
+		printf("%s: source %s for file %s: fileOpenSource: "+"dir mismatch %d %d\n", f.source.fs.name, rname, fname, r.dir, dir)
 
 		err = EBadMeta
 		goto Err

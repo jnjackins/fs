@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -20,7 +21,8 @@ const (
 )
 
 func cliExec(buf string) error {
-	argv := tokenize(buf)
+	// TODO: tokenize (handle quotes)
+	argv := strings.Fields(buf)
 
 	if len(argv) == 0 || argv[0][0] == '#' {
 		return nil
@@ -31,7 +33,7 @@ func cliExec(buf string) error {
 		if c.argv0 == argv[0] {
 			clibox.lock.Unlock()
 			err := c.cmd(argv)
-			if err != nil {
+			if err != nil && err != EUsage {
 				return err
 			}
 			return nil

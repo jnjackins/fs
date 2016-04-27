@@ -1005,7 +1005,7 @@ func rTattach(m *Msg) error {
 
 	// used by sources to reject connections from some countries
 	//if (fid.con.flags&ConIPCheck != 0) && conIPCheck(fid.con) == 0 {
-	//	consPrintf("reject %s from %s: %R\n", fid.uname, fid.con.remote)
+	//	printf("reject %s from %s: %R\n", fid.uname, fid.con.remote)
 	//	fidClunk(fid)
 	//	return err
 	//}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -422,10 +421,10 @@ func uboxAddUser(box *Ubox, u *User) {
 }
 
 func uboxDump(box *Ubox) {
-	consPrintf("nuser %d len = %d\n", box.nuser, box.length)
+	printf("nuser %d len = %d\n", box.nuser, box.length)
 
 	for u := box.head; u != nil; u = u.next {
-		consPrintf("%v\n", u)
+		printf("%v\n", u)
 	}
 }
 
@@ -598,20 +597,22 @@ func usersFileRead(path string) error {
 }
 
 func cmdUname(argv []string) error {
-	var createfmt string = "fsys main create /active/usr/%s %s %s d775"
-	var usage string = "usage: uname [-d] uname [uid|:uid|%%newname|=leader|+member|-member]"
+	const createfmt = "fsys main create /active/usr/%s %s %s d775"
+	var usage string = "Usage: uname [-d] uname [uid|:uid|%%newname|=leader|+member|-member]"
 
 	flags := flag.NewFlagSet("wstat", flag.ContinueOnError)
-	dflag := flags.Bool("d", false, "")
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	dflag := flags.Bool("d", false, "Dump the contents of user table without making any changes.")
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
 	argv = flags.Args()
 	argc := flags.NArg()
 
 	if argc < 1 {
 		if !*dflag {
-			return errors.New(usage)
+			flags.Usage()
+			return EUsage
 		}
 		ubox.lock.RLock()
 		uboxDump(ubox.box)
@@ -633,7 +634,7 @@ func cmdUname(argv []string) error {
 			return err
 		}
 
-		consPrintf("\t%v\n", u)
+		printf("\t%v\n", u)
 		ubox.lock.RUnlock()
 		return nil
 	}
@@ -777,23 +778,24 @@ func cmdUname(argv []string) error {
 }
 
 func cmdUsers(argv []string) error {
-	var usage string = "usage: users [-d | -r file] [-w]"
+	var usage string = "Usage: users [-d | -r file] [-w]"
 
 	flags := flag.NewFlagSet("wstat", flag.ContinueOnError)
-	dflag := flags.Bool("d", false, "")
-	rflag := flags.String("r", "", "file")
-	wflag := flags.Bool("w", false, "")
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	var (
+		dflag = flags.Bool("d", false, "Reset the user table with the default.")
+		rflag = flags.String("r", "", "Read a user table from `file`, located in the \"main\" filesystem.")
+		wflag = flags.Bool("w", false, "Write the tables to /active/adm/users on the \"main\" filesystem.")
+	)
 	if err := flags.Parse(argv[1:]); err != nil {
-		return fmt.Errorf(usage)
+		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return EUsage
+	}
 
 	file := *rflag
-
-	if argc != 0 {
-		return fmt.Errorf(usage)
-	}
 
 	if *dflag && file != "" {
 		return fmt.Errorf("cannot use -d and -r together")
@@ -809,7 +811,7 @@ func cmdUsers(argv []string) error {
 
 	ubox.lock.RLock()
 	box := ubox.box
-	consPrintf("\tnuser %d len %d\n", box.nuser, box.length)
+	printf("\tnuser %d len %d\n", box.nuser, box.length)
 
 	var err error
 	if *wflag {
