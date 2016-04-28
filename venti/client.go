@@ -126,6 +126,10 @@ func (z *Session) Ping() error {
 }
 
 func (z *Session) Hello() error {
+	return z._hello(false)
+}
+
+func (z *Session) _hello(locked bool) error {
 	var p *Packet
 	var buf [10]uint8
 	var sid string
@@ -160,12 +164,14 @@ func (z *Session) Hello() error {
 		return EProtocolBotch_client
 	}
 
-	z.lk.Lock()
+	if !locked {
+		z.lk.Lock()
+		defer z.lk.Unlock()
+	}
 	z.sid = sid
 	z.auth.state = AuthOK
 	//z.inHash = nil
 	//z.outHash = nil
-	z.lk.Unlock()
 
 	return nil
 }

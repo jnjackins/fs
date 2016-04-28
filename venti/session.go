@@ -103,12 +103,13 @@ func newSession() *Session {
 
 func (z *Session) Reset() {
 	z.lk.Lock()
+	defer z.lk.Unlock()
+
 	z.cstate = StateAlloc
 	if z.conn != nil {
 		z.conn.Close()
 		z.conn = nil
 	}
-	z.lk.Unlock()
 }
 
 func (z *Session) Connected() bool {
@@ -121,6 +122,8 @@ func (z *Session) Disconnect(errno int) {
 
 	z.Debug("Disconnect\n")
 	z.lk.Lock()
+	defer z.lk.Unlock()
+
 	if z.cstate == StateConnected && errno == 0 && z.bl == nil {
 		/* clean shutdown */
 		p = packetAlloc()
@@ -136,7 +139,6 @@ func (z *Session) Disconnect(errno int) {
 	}
 	z.conn = nil
 	z.cstate = StateClosed
-	z.lk.Unlock()
 }
 
 func (z *Session) Close() {
@@ -162,23 +164,24 @@ func (z *Session) GetSid() string {
 
 func (z *Session) SetDebug(debug bool) bool {
 	z.lk.Lock()
+	defer z.lk.Unlock()
+
 	old := z.debug
 	z.debug = debug
-	z.lk.Unlock()
 	return old
 }
 
 func (z *Session) SetConn(conn net.Conn) error {
 	z.lk.Lock()
+	defer z.lk.Unlock()
+
 	if z.cstate != StateAlloc {
-		z.lk.Unlock()
 		return errors.New("bad state")
 	}
 	if z.conn != nil {
 		z.conn.Close()
 	}
 	z.conn = conn
-	z.lk.Unlock()
 	return nil
 }
 
@@ -202,13 +205,13 @@ func GetCryptoStrength(s *Session) int {
 
 func (z *Session) SetCompression(conn net.Conn) error {
 	z.lk.Lock()
+	defer z.lk.Unlock()
+
 	if z.cstate != StateAlloc {
-		z.lk.Unlock()
 		return errors.New("bad state")
 	}
 
 	z.conn = conn
-	z.lk.Unlock()
 	return nil
 }
 
@@ -426,19 +429,20 @@ func AddString(p *Packet, s string) error {
 
 func (z *Session) Connect(password string) error {
 	z.lk.Lock()
+	defer z.lk.Unlock()
 	if z.cstate != StateAlloc {
-		z.lk.Unlock()
 		return errors.New("bad session state")
 	}
 
 	if z.conn == nil {
-		z.lk.Unlock()
 		return z.connErr
 	}
 
 	/* be a little anal */
 	z.inLock.Lock()
 	z.outLock.Lock()
+	defer z.inLock.Unlock()
+	defer z.outLock.Unlock()
 
 	version := "venti-"
 	for i := range Versions {
@@ -467,18 +471,17 @@ func (z *Session) Connect(password string) error {
 
 	z.Debug("version = %d: %s\n", z.version, z.GetVersion())
 
-	z.inLock.Unlock()
-	z.outLock.Unlock()
 	z.cstate = StateConnected
-	z.lk.Unlock()
 
 	if z.bl != nil {
 		return nil
 	}
 
-	if err = z.Hello(); err != nil {
+	err = z._hello(true)
+	if err != nil {
 		goto Err
 	}
+
 	return nil
 
 Err:
@@ -486,9 +489,6 @@ Err:
 		z.conn.Close()
 	}
 	z.conn = nil
-	z.inLock.Unlock()
-	z.outLock.Unlock()
 	z.cstate = StateClosed
-	z.lk.Unlock()
 	return err
 }
