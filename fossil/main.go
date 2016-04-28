@@ -25,9 +25,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, "\nOptions:")
 		flag.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\nCommands:")
-		fmt.Fprintln(os.Stderr, "\tcons [-c cmd] [-f partition] [-m %]")
-		fmt.Fprintln(os.Stderr, "\tfmt  [-b blocksize] [-h host] [-l label] [-v score] [-y] file")
-		fmt.Fprintln(os.Stderr, "\tfsck [-f] [-c cachesize] [-h host] file")
+		fmt.Fprintln(os.Stderr, "\tstart [-c cmd] [-f partition] [-m %]")
+		fmt.Fprintln(os.Stderr, "\tformat  [-b blocksize] [-h host] [-l label] [-v score] [-y] file")
+		fmt.Fprintln(os.Stderr, "\tcheck [-f] [-c cachesize] [-h host] file")
 		os.Exit(1)
 	}
 
@@ -36,14 +36,16 @@ func main() {
 		flag.Usage()
 	}
 
-	argv0 = flag.Arg(0)
+	// global
+	argv0 = flag.Arg(0) + " " + flag.Arg(1)
+
 	argv := flag.Args()[1:]
-	switch argv0 {
-	case "cons":
+	switch flag.Arg(0) {
+	case "start":
 		start(argv)
-	case "fmt":
+	case "format":
 		format(argv)
-	case "fsck":
+	case "check":
 		check(argv)
 	default:
 		flag.Usage()

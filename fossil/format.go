@@ -16,18 +16,6 @@ const badSize = ^uint64(0)
 
 var qid uint64 = 1
 
-func confirm(msg string) bool {
-	fmt.Fprintf(os.Stderr, "%s [y/n]: ", msg)
-	line, _, err := bufio.NewReader(os.Stdin).ReadLine()
-	if err != nil {
-		return false
-	}
-	if line[0] == 'y' {
-		return true
-	}
-	return false
-}
-
 func format(argv []string) {
 	flags := flag.NewFlagSet("format", flag.ExitOnError)
 	flags.Usage = func() {
@@ -47,9 +35,7 @@ func format(argv []string) {
 		// to reformat my file system accidentally.
 		yflag = flags.Bool("y", false, "Yes mode. If set, format will not prompt for confirmation.")
 	)
-	if err := flags.Parse(argv); err != nil {
-		flag.Usage()
-	}
+	flags.Parse(argv)
 
 	bsize := unittoull(*bflag)
 	if bsize == badSize {
@@ -143,6 +129,18 @@ func format(argv []string) {
 
 		*Dflag = old
 	}
+}
+
+func confirm(msg string) bool {
+	fmt.Fprintf(os.Stderr, "%s [y/n]: ", msg)
+	line, _, err := bufio.NewReader(os.Stdin).ReadLine()
+	if err != nil {
+		return false
+	}
+	if line[0] == 'y' {
+		return true
+	}
+	return false
 }
 
 func partition(fd int, bsize int, h *Header) {
@@ -375,7 +373,7 @@ func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ int, buf []by
 func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uint32) {
 	score, err := venti.ParseScore(s)
 	if err != nil {
-		log.Fatalf("bad score '%s': %v", s, err)
+		log.Fatalf("bad score %q: %v", s, err)
 	}
 
 	z, err := venti.Dial(host, false)

@@ -2,11 +2,14 @@
 # Setup new venti and fossil filesystems, and run fossil in console mode.
 # Run with -D to run fossil in debug mode.
 
-go install sigint.ca/fs/fossil
+set -e
+
+go install -race sigint.ca/fs/fossil
 
 export venti=127.0.0.1
 export NAMESPACE=$(pwd)
 
+./clean.sh
 if mount |grep -q fuse
 	then echo "waiting for stale mounts to be cleaned up…"
 	while mount |grep -q fuse; do sleep 5; done
@@ -22,7 +25,7 @@ $PLAN9/bin/venti/fmtindex venti.conf
 $PLAN9/bin/venti/venti -w
 
 dd if=/dev/zero of=fossil.part bs=8192 count=1000
-fossil fmt -y fossil.part
+fossil format -y fossil.part
 mkdir active snap archive
 
 (
@@ -43,4 +46,11 @@ jumps over the lazy dog
 EOF
 ) &
 
-fossil $1 cons -c '. flproto'
+fossil="fossil $DEBUG start"
+if test "$1" == "9"; then
+	fossil="$PLAN9/bin/fossil/fossil $DEBUG -t"
+	shift
+fi
+
+$fossil -c '. flproto'
+

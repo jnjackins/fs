@@ -1,5 +1,5 @@
 fsys main config fossil.part
-fsys main open -AWP
+fsys main open -AWPV
 fsys main
-snaptime -a 0000 -s 10 -t 120
+snaptime -s 10 -t 120
 srv fossilsrv

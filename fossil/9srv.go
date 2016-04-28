@@ -83,7 +83,7 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 		err := syscall.Fstat(srv.srvfd, &st)
 		if err == nil {
 			srvbox.lock.Unlock()
-			return nil, fmt.Errorf("srv: already serving '%s'", service)
+			return nil, fmt.Errorf("srv: already serving %q", service)
 		}
 		srvFree(srv)
 		break
@@ -186,7 +186,7 @@ func cmdSrv(argv []string) error {
 		srvbox.lock.Unlock()
 
 		if srv == nil {
-			return fmt.Errorf("srv: '%s' not found", argv[0])
+			return fmt.Errorf("srv: %q not found", argv[0])
 		}
 		return nil
 	}

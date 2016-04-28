@@ -12,33 +12,11 @@ import (
 
 var bout *bufio.Writer
 
-func flprintf(fmt_ string, args ...interface{}) int {
-	n, _ := fmt.Fprintf(bout, fmt_, args...)
-	return n
-}
-
-func flclre(_ *Fsck, b *Block, o int) {
-	fmt.Fprintf(bout, "# clre %#x %d\n", b.addr, o)
-}
-
-func flclrp(_ *Fsck, b *Block, o int) {
-	fmt.Fprintf(bout, "# clrp %#x %d\n", b.addr, o)
-}
-
-func flclri(_ *Fsck, name string, _ *MetaBlock, _ int, _ *Block) {
-	fmt.Fprintf(bout, "# clri %s\n", name)
-}
-
-func flclose(_ *Fsck, b *Block, epoch uint32) {
-	fmt.Fprintf(bout, "# bclose %#x %d\n", b.addr, epoch)
-}
-
 func check(argv []string) {
-	fsck := new(Fsck)
-	fsck.useventi = true
+	fsck := &Fsck{useventi: true}
 	bout = bufio.NewWriter(os.Stdout)
 
-	flags := flag.NewFlagSet("check", flag.ContinueOnError)
+	flags := flag.NewFlagSet("check", flag.ExitOnError)
 	var (
 		cflag = flags.Int("c", 1000, "Keep a cache of `ncache`.")
 		fflag = flags.Bool("f", false, "Toggle fast mode.")
@@ -50,10 +28,7 @@ func check(argv []string) {
 		flags.PrintDefaults()
 		os.Exit(1)
 	}
-	err := flags.Parse(argv)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
+	flags.Parse(argv)
 
 	csize := *cflag
 	fsck.useventi = !*fflag
@@ -87,4 +62,25 @@ func check(argv []string) {
 	fsck.check(fs)
 
 	bout.Flush()
+}
+
+func flprintf(fmt_ string, args ...interface{}) int {
+	n, _ := fmt.Fprintf(bout, fmt_, args...)
+	return n
+}
+
+func flclre(_ *Fsck, b *Block, o int) {
+	fmt.Fprintf(bout, "# clre %#x %d\n", b.addr, o)
+}
+
+func flclrp(_ *Fsck, b *Block, o int) {
+	fmt.Fprintf(bout, "# clrp %#x %d\n", b.addr, o)
+}
+
+func flclri(_ *Fsck, name string, _ *MetaBlock, _ int, _ *Block) {
+	fmt.Fprintf(bout, "# clri %s\n", name)
+}
+
+func flclose(_ *Fsck, b *Block, epoch uint32) {
+	fmt.Fprintf(bout, "# bclose %#x %d\n", b.addr, epoch)
 }

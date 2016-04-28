@@ -46,6 +46,8 @@ var console struct {
 
 func consClose(cons *Cons) {
 	cons.lock.Lock()
+	defer cons.lock.Unlock()
+
 	cons.closed = true
 
 	cons.ref--
@@ -53,10 +55,10 @@ func consClose(cons *Cons) {
 		cons.iq.lock.Lock()
 		cons.iq.full.Signal()
 		cons.iq.lock.Unlock()
+
 		cons.oq.lock.Lock()
 		cons.oq.empty.Signal()
 		cons.oq.lock.Unlock()
-		cons.lock.Unlock()
 		return
 	}
 
@@ -70,7 +72,6 @@ func consClose(cons *Cons) {
 		cons.conn = nil
 	}
 
-	cons.lock.Unlock()
 	console.nopens--
 }
 

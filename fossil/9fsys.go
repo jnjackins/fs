@@ -1806,7 +1806,7 @@ func fsysXXX(name string, argv []string) error {
 	}
 
 	if fsyscmd[i].cmd == "" {
-		return fmt.Errorf("unknown command - '%s'", argv[0])
+		return fmt.Errorf("unknown command - %q", argv[0])
 	}
 
 	/* some commands want the name... */

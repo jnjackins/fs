@@ -14,6 +14,66 @@ var (
 	foptname string = "/none/such"
 )
 
+func start(argv []string) {
+	flags := flag.NewFlagSet("serve", flag.ExitOnError)
+	flags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [-t] [-c cmd] [-f partition] [-m %%]\n", argv0)
+		flags.PrintDefaults()
+		os.Exit(1)
+	}
+	var (
+		cflag = flags.String("c", "", "Execute the console command `cmd`.")
+		fflag = flags.String("f", "", "Read and execute console commands stored in the Fossil disk `file`.")
+		mflag = flags.Int("m", 30, "Allocate `%` percent of the available free RAM for buffers.")
+		tflag = flags.Bool("t", true, "Connect to the console on startup.")
+	)
+	flags.Parse(argv)
+
+	var cmd []string
+	if *cflag != "" {
+		currfsysname = *cflag
+		cmd = append(cmd, *cflag)
+	}
+	if *fflag != "" {
+		foptname = *fflag
+		currfsysname = foptname
+		cmd = readCmdPart(*fflag, cmd)
+	}
+	mempcnt = *mflag
+	if mempcnt <= 0 || mempcnt >= 100 {
+		flags.Usage()
+	}
+
+	if flags.NArg() != 0 {
+		flags.Usage()
+	}
+
+	consInit()
+	cliInit()
+	msgInit()
+	conInit()
+	cmdInit()
+	fsysInit()
+	exclInit()
+	fidInit()
+
+	srvInit()
+	lstnInit()
+	usersInit()
+
+	for i := 0; i < len(cmd); i++ {
+		if err := cliExec(cmd[i]); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", cmd[i], err)
+		}
+	}
+
+	if *tflag {
+		if err := consTTY(); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+		}
+	}
+}
+
 func readCmdPart(file string, cmd []string) []string {
 	fd, err := os.Open(file)
 	if err != nil {
@@ -57,64 +117,4 @@ func readCmdPart(file string, cmd []string) []string {
 
 func isspace(c byte) bool {
 	return unicode.IsSpace(rune(c))
-}
-
-func start(argv []string) {
-	flags := flag.NewFlagSet("serve", flag.ExitOnError)
-	flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-c cmd] [-f partition] [-m %%]\n", argv0)
-		flags.PrintDefaults()
-		os.Exit(1)
-	}
-	var (
-		cflag = flags.String("c", "", "execute the console command `cmd`")
-		fflag = flags.String("f", "", "read and execute console commands stored in the Fossil disk `file`")
-		mflag = flags.Int("m", 30, "allocate `%` percent of the available free RAM for buffers")
-	)
-	err := flags.Parse(argv)
-	if err != nil {
-		flags.Usage()
-	}
-
-	var cmd []string
-	if *cflag != "" {
-		currfsysname = *cflag
-		cmd = append(cmd, *cflag)
-	}
-	if *fflag != "" {
-		foptname = *fflag
-		currfsysname = foptname
-		cmd = readCmdPart(*fflag, cmd)
-	}
-	mempcnt = *mflag
-	if mempcnt <= 0 || mempcnt >= 100 {
-		flags.Usage()
-	}
-
-	if flags.NArg() != 0 {
-		flags.Usage()
-	}
-
-	consInit()
-	cliInit()
-	msgInit()
-	conInit()
-	cmdInit()
-	fsysInit()
-	exclInit()
-	fidInit()
-
-	srvInit()
-	lstnInit()
-	usersInit()
-
-	for i := 0; i < len(cmd); i++ {
-		if err := cliExec(cmd[i]); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", cmd[i], err)
-		}
-	}
-
-	if err := consTTY(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-	}
 }

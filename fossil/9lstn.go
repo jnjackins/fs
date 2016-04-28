@@ -65,7 +65,7 @@ func lstnAlloc(address string, flags int) (*Lstn, error) {
 		if lstn.address != address {
 			continue
 		}
-		return nil, fmt.Errorf("listen: already serving '%s'", address)
+		return nil, fmt.Errorf("listen: already serving %q", address)
 	}
 
 	l, err := net.Listen("tcp", address)
@@ -102,7 +102,7 @@ func cmdLstn(argv []string) error {
 	var (
 		dflag = flags.Bool("d", false, "Remove the listener at the given address.")
 		Iflag = flags.Bool("I", false, "Reject disallowed IP addresses.")
-		Nflag = flags.Bool("N", false, "Allow connections from none at any time.")
+		Nflag = flags.Bool("N", false, "Allow connections from \"none\" at any time.")
 	)
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
@@ -155,7 +155,7 @@ func cmdLstn(argv []string) error {
 		lbox.lock.Unlock()
 
 		if lstn == nil {
-			return fmt.Errorf("listen: '%s' not found", argv[0])
+			return fmt.Errorf("listen: %q not found", argv[0])
 		}
 	}
 
