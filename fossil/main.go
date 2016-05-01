@@ -37,7 +37,7 @@ func main() {
 	}
 
 	// global
-	argv0 = flag.Arg(0) + " " + flag.Arg(1)
+	argv0 = os.Args[0] + " " + flag.Arg(0)
 
 	argv := flag.Args()[1:]
 	switch flag.Arg(0) {
