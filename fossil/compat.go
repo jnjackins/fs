@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"math/rand"
-	"os"
 	"strconv"
 	"time"
 )
@@ -117,11 +115,6 @@ func auth_getinfo(rpc *AuthRpc) (*AuthInfo, error)                   { panic("un
 func auth_freeAI(ai *AuthInfo)                                       { panic("unimplemented") }
 func auth_freerpc(rpc *AuthRpc)                                      { panic("unimplemented") }
 func auth_allocrpc(afd int) *AuthRpc                                 { panic("unimplemented") }
-
-func (b *Block) canLock() bool {
-	fmt.Fprintln(os.Stderr, "TODO canLock")
-	return false
-}
 
 // fixFlags converts ["-abc", "-d"] to ["-a", "-b", "-c", "-d"]
 func fixFlags(argv []string) []string {

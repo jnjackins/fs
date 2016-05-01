@@ -375,12 +375,8 @@ func cacheBumpBlock(c *Cache) *Block {
 /*
  * look for a particular version of the block in the memory cache.
  */
-func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lockfailure *int) (*Block, error) {
+func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool) (*Block, error) {
 	h := addr % uint32(c.hashSize)
-
-	if lockfailure != nil {
-		*lockfailure = 0
-	}
 
 	/*
 	 * look for the block in the cache
@@ -396,21 +392,21 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lock
 
 	if b == nil || b.vers != vers {
 		c.lk.Unlock()
+		// TODO(jnj): blockPut?
 		return nil, errors.New("miss")
 	}
-
-	// TODO(jnj): revisit (canLock is broken)
-	if !waitlock && !b.canLock() {
-		*lockfailure = 1
-		c.lk.Unlock()
-		return nil, errors.New("miss")
-	}
-
 	heapDel(b)
 	b.ref++
 	c.lk.Unlock()
 
-	if waitlock {
+	if !waitlock {
+		then := time.Now()
+		b.lock()
+		took := time.Since(then)
+		if took > 5*time.Millisecond {
+			printf("cacheLocalLookup: waitlock=false, but waited %v for lock\n", took)
+		}
+	} else {
 		b.lock()
 	}
 	atomic.StoreInt32(&b.nlock, 1)
@@ -418,7 +414,7 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool, lock
 	for {
 		switch b.iostate {
 		default:
-			panic("abort")
+			panic("bad iostate")
 		case BioEmpty,
 			BioLabel,
 			BioClean,
@@ -1104,7 +1100,6 @@ func blockWrite(b *Block, waitlock bool) bool {
 	pp := &b.prior
 	var bb *Block
 	var err error
-	var lockfail int
 	for p := *pp; p != nil; p = *pp {
 		if p.index >= 0 {
 			/* more recent dependency has succeeded; this one can go */
@@ -1113,12 +1108,8 @@ func blockWrite(b *Block, waitlock bool) bool {
 			}
 		}
 
-		lockfail = 0
-		bb, err = cacheLocalLookup(c, p.part, p.addr, p.vers, waitlock, &lockfail)
+		bb, err = cacheLocalLookup(c, p.part, p.addr, p.vers, waitlock)
 		if err != nil {
-			if lockfail != 0 {
-				return false
-			}
 			/* block not in cache => was written already */
 			dmap[p.index/8] |= 1 << uint(p.index%8)
 			goto ignblock
@@ -1804,7 +1795,7 @@ func (a BAddrSorter) Less(i, j int) bool {
 }
 
 /*
- * Scan the block list for dirty blocks; add them to the list c->baddr.
+ * Scan the block list for dirty blocks; add them to the list c.baddr.
  */
 func flushFill(c *Cache) {
 	c.lk.Lock()
@@ -1813,7 +1804,7 @@ func flushFill(c *Cache) {
 		return
 	}
 
-	ndirty := int(0)
+	ndirty := 0
 	var i int
 	for i = 0; i < c.nblocks; i++ {
 		p := &c.baddr[i]
@@ -1866,7 +1857,7 @@ func cacheFlushBlock(c *Cache) bool {
 		}
 		p := &c.baddr[c.br]
 		c.br++
-		b, _ := cacheLocalLookup(c, p.part, p.addr, p.vers, Waitlock, nil)
+		b, _ := cacheLocalLookup(c, p.part, p.addr, p.vers, Waitlock)
 		if b != nil && blockWrite(b, Nowaitlock) {
 			c.nflush++
 			blockPut(b)
