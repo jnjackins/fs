@@ -378,6 +378,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 	var pr, r, mr *Source
 
 	if err := f.lock(); err != nil {
+		err = fmt.Errorf("create %s: %v", elem, err)
 		return nil, err
 	}
 	defer f.unlock()
@@ -389,24 +390,25 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 	for ff = f.down; ff != nil; ff = ff.next {
 		if elem == ff.dir.elem && !ff.removed {
 			ff = nil
-			err = EExists
+			err = fmt.Errorf("create %s: %s", elem, EExists)
 			goto Err1
 		}
 	}
 
 	ff, err = dirLookup(f, elem)
 	if err == nil {
-		err = EExists
+		err = fmt.Errorf("create %s: %s", elem, EExists)
 		goto Err1
 	}
 
 	pr = f.source
 	if pr.mode != OReadWrite {
-		err = EReadOnly
+		err = fmt.Errorf("create %s: %s", elem, EReadOnly)
 		goto Err1
 	}
 
 	if err = f.source.lock2(f.msource, -1); err != nil {
+		err = fmt.Errorf("create %s: %v", elem, err)
 		goto Err1
 	}
 
@@ -415,11 +417,13 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 
 	r, err = pr.create(pr.dsize, isdir, 0)
 	if err != nil {
+		err = fmt.Errorf("create %s: %v", elem, err)
 		goto Err
 	}
 	if isdir {
 		mr, err = pr.create(pr.dsize, false, r.offset)
 		if err != nil {
+			err = fmt.Errorf("create %s: %v", elem, err)
 			goto Err
 		}
 	}
@@ -435,6 +439,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 
 	dir.size = 0
 	if err = f.fs.nextQid(&dir.qid); err != nil {
+		err = fmt.Errorf("create %s: %v", elem, err)
 		goto Err
 	}
 	dir.uid = uid
@@ -447,6 +452,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 	dir.mode = mode
 
 	if ff.boff = f.metaAlloc(dir, 0); ff.boff == NilBlock {
+		err = fmt.Errorf("create %s: %v", elem, err)
 		goto Err
 	}
 
@@ -459,6 +465,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 
 	if mode&ModeTemporary != 0 {
 		if err = r.lock2(mr, -1); err != nil {
+			err = fmt.Errorf("create %s: %v", elem, err)
 			goto Err1
 		}
 		ff.setTmp(1)
@@ -1110,54 +1117,43 @@ Err1:
 }
 
 func (f *File) metaRemove(uid string) error {
-	var b *Block
-	var mb *MetaBlock
-	var me MetaEntry
-	var i int
-	var err error
-
 	up := f.up
 
 	up.wAccess(uid)
 
 	f.metaLock()
+	defer f.metaUnlock()
 
 	up.msource.lock(OReadWrite)
-	b, err = up.msource.block(f.boff, OReadWrite)
+	defer up.msource.unlock()
+
+	b, err := up.msource.block(f.boff, OReadWrite)
 	if err != nil {
-		goto Err
+		return fmt.Errorf("metaRemove: %v", err)
+	}
+	defer blockPut(b)
+
+	mb, err := unpackMetaBlock(b.data, up.msource.dsize)
+	if err != nil {
+		return fmt.Errorf("metaRemove: %v", err)
 	}
 
-	mb, err = unpackMetaBlock(b.data, up.msource.dsize)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "unpackMetaBlock: %v\n", err)
-		goto Err
-	}
-
+	var i int
+	var me MetaEntry
 	if err = mb.search(f.dir.elem, &i, &me); err != nil {
-		fmt.Fprintf(os.Stderr, "mb.search: %v\n", err)
-		goto Err
+		return fmt.Errorf("metaRemove: %v", err)
 	}
 
 	mb.delete(i)
 	mb.pack()
-	up.msource.unlock()
 
 	blockDirty(b)
-	blockPut(b)
 
 	f.removed = true
 	f.boff = NilBlock
 	f.dirty = false
 
-	f.metaUnlock()
 	return nil
-
-Err:
-	up.msource.unlock()
-	blockPut(b)
-	f.metaUnlock()
-	return err
 }
 
 /* assume file is locked, assume f->msource is locked */

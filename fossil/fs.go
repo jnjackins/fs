@@ -310,7 +310,7 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		if err != nil {
 			return nil, err
 		}
-		now := time.Now().Local()
+		now := time.Now()
 
 		/* yyyy */
 		s := fmt.Sprintf("%d", now.Year())
@@ -326,16 +326,17 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 
 		/* mmdd[#] */
 		s = fmt.Sprintf("%02d%02d", now.Month(), now.Day())
+		post := ""
 		for n := 0; ; n++ {
 			if n != 0 {
-				s += fmt.Sprintf(".%d", n)
+				post = fmt.Sprintf(".%d", n)
 			}
-			f, err = dir.walk(s)
+			f, err = dir.walk(s + post)
 			if err == nil {
 				f.decRef()
 				continue
 			}
-			f, err = dir.create(s, ModeDir|ModeSnapshot|0555, "adm")
+			f, err = dir.create(s+post, ModeDir|ModeSnapshot|0555, "adm")
 			break
 		}
 		dir.decRef()
@@ -352,8 +353,7 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		now := time.Now().Local()
+		now := time.Now()
 
 		/* yyyy */
 		s := fmt.Sprintf("%d", now.Year())
@@ -383,16 +383,17 @@ func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
 
 		/* hhmm[.#] */
 		s = fmt.Sprintf("%02d%02d", now.Hour(), now.Minute())
+		post := ""
 		for n := 0; ; n++ {
 			if n != 0 {
-				s += fmt.Sprintf(".%d", n)
+				post = fmt.Sprintf(".%d", n)
 			}
-			f, err = dir.walk(s)
+			f, err = dir.walk(s + post)
 			if err == nil {
 				f.decRef()
 				continue
 			}
-			f, err = dir.create(s, ModeDir|ModeSnapshot|0555, "adm")
+			f, err = dir.create(s+post, ModeDir|ModeSnapshot|0555, "adm")
 			break
 		}
 		dir.decRef()
@@ -556,13 +557,13 @@ func saveQid(fs *Fs) error {
 	return nil
 }
 
-func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
+func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	var src, dst *File
 
 	assert(fs.mode == OReadWrite)
 
 	if fs.halted {
-		return fmt.Errorf("file system is halted")
+		return fmt.Errorf("snapshot: file system is halted")
 	}
 
 	/*
@@ -577,10 +578,20 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	if srcpath == "" {
 		srcpath = "/active"
 	}
+
+	defer func() {
+		if src != nil {
+			src.decRef()
+		}
+		if dst != nil {
+			dst.decRef()
+		}
+	}()
+
 	var err error
 	src, err = openFile(fs, srcpath)
 	if err != nil {
-		goto Err
+		return fmt.Errorf("snapshot: %v", err)
 	}
 
 	/*
@@ -619,10 +630,10 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	 * In this state, it's perfectly okay to make more pointers to sb and mb.
 	 */
 	if err = bumpEpoch(fs, false); err != nil {
-		goto Err
+		return fmt.Errorf("snapshot: %v", err)
 	}
 	if err = src.walkSources(); err != nil {
-		goto Err
+		return fmt.Errorf("snapshot: %v", err)
 	}
 
 	/*
@@ -635,7 +646,7 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	 */
 	dst, err = openSnapshot(fs, dstpath, doarchive)
 	if err != nil {
-		goto Err
+		return fmt.Errorf("snapshot: %v", err)
 	}
 
 	/*
@@ -643,7 +654,7 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	 * to be src's.
 	 */
 	if err = dst.snapshot(src, fs.ehi-1, doarchive); err != nil {
-		goto Err
+		return fmt.Errorf("snapshot: %v", err)
 	}
 
 	src.decRef()
@@ -658,29 +669,19 @@ func (fs *Fs) snapshot(srcpath string, dstpath string, doarchive bool) error {
 	 */
 	if doarchive {
 		if err = saveQid(fs); err != nil {
-			goto Err
+			return fmt.Errorf("snapshot: %v", err)
 		}
 		if err = bumpEpoch(fs, true); err != nil {
-			goto Err
+			return fmt.Errorf("snapshot: %v", err)
 		}
 	}
 
-	/* BUG? can fs->arch fall out from under us here? */
+	/* BUG? can fs.arch fall out from under us here? */
 	if doarchive && fs.arch != nil {
 		archKick(fs.arch)
 	}
 
 	return nil
-
-Err:
-	fmt.Fprintf(os.Stderr, "%s: snapshot: %v\n", argv0, err)
-	if src != nil {
-		src.decRef()
-	}
-	if dst != nil {
-		dst.decRef()
-	}
-	return err
 }
 
 func (fs *Fs) vac(name string, score *venti.Score) error {
@@ -876,7 +877,7 @@ func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
 			ff, err := f.walk(de.elem)
 			if err == nil {
 				var e, ee Entry
-				if err := ff.getSources(&e, &ee); err != nil {
+				if err := ff.getSources(&e, &ee); err == nil {
 					if de.mtime >= uint32(savetime.Unix()) && e.snap != 0 {
 						if e.snap < *plo {
 							*plo = e.snap
@@ -970,7 +971,7 @@ func fsRsearch1(f *File, s string) int {
 			if err == nil {
 				ff.decRef()
 			} else if err == ESnapOld {
-				if err = f.clri(de.elem, "adm"); err != nil {
+				if err = f.clri(de.elem, "adm"); err == nil {
 					n--
 				}
 			}
@@ -979,7 +980,7 @@ func fsRsearch1(f *File, s string) int {
 			if err == nil {
 				t := fmt.Sprintf("%s/%s", s, de.elem)
 				if fsRsearch1(ff, t) == 0 {
-					if err = ff.remove("adm"); err != nil {
+					if err = ff.remove("adm"); err == nil {
 						n--
 					}
 				}

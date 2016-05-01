@@ -1047,8 +1047,7 @@ func (r *Source) lock2(rr *Source, mode int) error {
 
 func (r *Source) unlock() {
 	if r.b == nil {
-		fmt.Fprintf(os.Stderr, "source.unlock: already unlocked\n")
-		panic("abort")
+		panic("source.unlock: already unlocked")
 	}
 
 	b := r.b

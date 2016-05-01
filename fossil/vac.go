@@ -162,7 +162,7 @@ func (mb *MetaBlock) search(elem string, ri *int, me *MetaEntry) error {
 	*ri = b /* b is the index to insert this entry */
 	*me = MetaEntry{}
 
-	return ENoFile
+	return fmt.Errorf("search %q: %s", elem, ENoFile)
 }
 
 func initMetaBlock(p []byte, maxSize int, nEntries int) *MetaBlock {
@@ -262,9 +262,7 @@ func (mb *MetaBlock) delete(i int) {
 	p := mb.buf[MetaHeaderSize+i*MetaIndexSize:]
 	n := (mb.nindex - i - 1) * MetaIndexSize
 	copy(p[:n], p[MetaIndexSize:])
-	for i = 0; i < MetaIndexSize; i++ {
-		p[n+i] = 0
-	}
+	memset(p[n:n+MetaIndexSize], 0)
 	mb.nindex--
 }
 

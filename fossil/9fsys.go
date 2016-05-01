@@ -159,7 +159,9 @@ func _fsysGet(name string) (*Fsys, error) {
 	var fsys *Fsys
 	for fsys = sbox.head; fsys != nil; fsys = fsys.next {
 		if name == fsys.name {
+			fsys.lock.Lock()
 			fsys.ref++
+			fsys.lock.Unlock()
 			break
 		}
 	}
@@ -399,21 +401,19 @@ func fsysSnapClean(fsys *Fsys, argv []string) error {
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
 	}
-	argv = flags.Args()
-	argc := flags.NArg()
-	if argc > 1 {
+	if flags.NArg() > 1 {
 		flags.Usage()
 		return EUsage
 	}
 
 	var life time.Duration
-	var err error
-	if argc == 1 {
-		life, err = time.ParseDuration(argv[0])
+	if flags.NArg() == 1 {
+		min, err := strconv.ParseUint(flags.Arg(0), 0, 0)
 		if err != nil {
 			flags.Usage()
 			return EUsage
 		}
+		life = time.Duration(min) * time.Minute
 	} else {
 		_, _, life = snapGetTimes(fsys.fs.snap)
 	}
