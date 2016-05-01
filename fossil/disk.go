@@ -85,9 +85,9 @@ func (b *Block) lock() {
 		//}
 		stack := make([]byte, 5*1024)
 		runtime.Stack(stack, false)
-		lockmaplk.Lock()
+		(&lockmaplk).Lock()
 		lockmap[b] = string(stack)
-		lockmaplk.Unlock()
+		(&lockmaplk).Unlock()
 	}
 }
 
@@ -98,24 +98,24 @@ func (b *Block) unlock() {
 		//	funcName := runtime.FuncForPC(pc).Name()
 		//	dprintf("block %v unlocked by %s:%d (%v)\n", b, file, line, funcName)
 		//}
-		lockmaplk.Lock()
+		(&lockmaplk).Lock()
 		delete(lockmap, b)
-		lockmaplk.Unlock()
+		(&lockmaplk).Unlock()
 	}
 }
 
 var (
-	lockmaplk *sync.Mutex
+	lockmaplk sync.Mutex
 	lockmap   map[*Block]string
 )
 
 func watchlocks() {
 	for range time.NewTicker(10 * time.Second).C {
-		lockmaplk.Lock()
+		(&lockmaplk).Lock()
 		for b, stack := range lockmap {
 			dprintf("block %v is locked!\n%s\n\n", b, stack)
 		}
-		lockmaplk.Unlock()
+		(&lockmaplk).Unlock()
 	}
 }
 
@@ -348,8 +348,9 @@ func (d *Disk) thread() {
 	//vtThreadSetName("disk")
 
 	if *Dflag {
-		lockmaplk = new(sync.Mutex)
+		(&lockmaplk).Lock()
 		lockmap = make(map[*Block]string)
+		(&lockmaplk).Unlock()
 		go watchlocks()
 	}
 
