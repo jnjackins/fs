@@ -315,7 +315,7 @@ func cacheCheck(c *Cache) {
  * locate the block with the oldest second to last use.
  * remove it from the heap, and fix up the heap.
  */
-/* called with c->lk held */
+/* called with c.lk held */
 func cacheBumpBlock(c *Cache) *Block {
 	/*
 	 * locate the block with the oldest second to last use.
@@ -516,7 +516,7 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	for {
 		switch b.iostate {
 		default:
-			panic("abort")
+			panic("bad iostate")
 		case BioLabel:
 			if mode == OOverWrite {
 				/*
@@ -623,7 +623,7 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 
 	switch b.iostate {
 	default:
-		panic("abort")
+		panic("bad iostate")
 	case BioEmpty:
 		n, err := c.z.Read(score, vtType[typ], b.data[:c.size])
 		if err != nil {
@@ -988,7 +988,7 @@ func blockDependency(b *Block, bb *Block, index int, score *venti.Score, e *Entr
 	p.old.score = new(venti.Score)
 	if p.index >= 0 {
 		/*
-		 * This test would just be b->l.type==BtDir except
+		 * This test would just be b.l.typ == BtDir except
 		 * we need to exclude the super block.
 		 */
 		if b.l.typ == BtDir && b.part == PartData {
@@ -1047,7 +1047,7 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
 	copy(buf, b.data[:b.c.size])
 	for p := b.prior; p != nil; p = p.next {
 		/*
-		 * we know p->index >= 0 because blockWrite has vetted this block for us.
+		 * we know p.index >= 0 because blockWrite has vetted this block for us.
 		 */
 		assert(p.index >= 0)
 		assert(b.part == PartSuper || (b.part == PartData && b.l.typ != BtData))
@@ -1118,7 +1118,7 @@ func blockWrite(b *Block, waitlock bool) bool {
 		/*
 		 * same version of block is still in cache.
 		 *
-		 * the assertion is true because the block still has version p->vers,
+		 * the assertion is true because the block still has version p.vers,
 		 * which means it hasn't been written out since we last saw it.
 		 */
 		if bb.iostate != BioDirty {
@@ -1160,12 +1160,10 @@ func blockWrite(b *Block, waitlock bool) bool {
 	return true
 }
 
-/*
- * Change the I/O state of block b.
- * Just an assignment except for magic in
- * switch statement (read comments there).
- */
-func blockSetIOState(b *Block, iostate int) {
+// Change the I/O state of block b.
+// Just an assignment except for magic in
+// switch statement (read comments there).
+func blockSetIOState(b *Block, iostate int32) {
 	if false {
 		fmt.Fprintf(os.Stderr, "%s: iostate part=%d addr=%x %s->%s\n", argv0, b.part, b.addr, bioStr(b.iostate), bioStr(iostate))
 	}
@@ -1175,7 +1173,7 @@ func blockSetIOState(b *Block, iostate int) {
 	dowakeup := false
 	switch iostate {
 	default:
-		panic("abort")
+		panic("bad iostate")
 	case BioEmpty:
 		assert(b.uhead == nil)
 	case BioLabel:
@@ -1197,7 +1195,13 @@ func blockSetIOState(b *Block, iostate int) {
 		if b.iostate == BioDirty || b.iostate == BioWriting {
 			c.lk.Lock()
 			c.ndirty--
-			b.iostate = iostate /* change here to keep in sync with ndirty */
+
+			// change here to keep in sync with ndirty.
+			// flushThread checks block iostates without a lock;
+			// set it atomically so that flushThread can fetch without
+			// setting off the race detector.
+			atomic.StoreInt32(&b.iostate, iostate)
+
 			b.vers = c.vers
 			c.vers++
 			if b.uhead != nil {
@@ -1238,14 +1242,16 @@ func blockSetIOState(b *Block, iostate int) {
 		b.ref++
 		c.lk.Unlock()
 
-		/*
-		 * Oops.
-		 */
+	// Oops.
 	case BioReadError,
 		BioVentiError:
 		dowakeup = true
 	}
-	b.iostate = iostate
+
+	// flushThread checks block iostates without a lock;
+	// set it atomically so that flushThread can fetch without
+	// setting off the race detector.
+	atomic.StoreInt32(&b.iostate, iostate)
 
 	// Now that the state has changed, we can wake the waiters.
 	if dowakeup {
@@ -1587,7 +1593,7 @@ func bsStr(state int) string {
 	return s
 }
 
-func bioStr(iostate int) string {
+func bioStr(iostate int32) string {
 	switch iostate {
 	default:
 		return "Unknown!!"
@@ -1794,9 +1800,7 @@ func (a BAddrSorter) Less(i, j int) bool {
 	return false
 }
 
-/*
- * Scan the block list for dirty blocks; add them to the list c.baddr.
- */
+// Scan the block list for dirty blocks; add them to the list c.baddr.
 func flushFill(c *Cache) {
 	c.lk.Lock()
 	if c.ndirty == 0 {
@@ -1812,10 +1816,14 @@ func flushFill(c *Cache) {
 		if b.part == PartError {
 			continue
 		}
-		if b.iostate == BioDirty || b.iostate == BioWriting {
+		// fetching iostate here is racy, but it's okay to wait until
+		// next time to flush if we get an old value. fetch atomically
+		// to silence the race detector. stores are also done atomically.
+		iostate := atomic.LoadInt32(&b.iostate)
+		if iostate == BioDirty || iostate == BioWriting {
 			ndirty++
 		}
-		if b.iostate != BioDirty {
+		if iostate != BioDirty {
 			continue
 		}
 		p.part = b.part

@@ -68,7 +68,7 @@ type Block struct {
 	prior *BList /* list of blocks before this one */
 
 	ionext  *Block
-	iostate int
+	iostate int32
 	ioready *sync.Cond
 }
 
@@ -385,7 +385,7 @@ func (d *Disk) thread() {
 		assert(nlock == 1)
 		switch b.iostate {
 		default:
-			panic("abort")
+			panic("bad iostate")
 		case BioReading:
 			if err := d.readRaw(b.part, b.addr, b.data); err != nil {
 				fmt.Fprintf(os.Stderr, "fossil: disk.readRaw failed: fd=%d score=%v: part=%s block=%d: %v\n",
