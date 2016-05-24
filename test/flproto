@@ -2,4 +2,4 @@ fsys main config fossil.part
 fsys main open -AWPV
 fsys main
 snaptime -s 10 -t 120
-srv fossilsrv
+srv fossil.srv

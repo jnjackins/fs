@@ -1,9 +1,11 @@
 #!/bin/bash
+
 # Setup new venti and fossil filesystems, and run fossil in console mode.
 # Run with -D to run fossil in debug mode.
 
 set -e
 
+echo "building"
 go install -race sigint.ca/fs/fossil
 
 export venti=127.0.0.1
@@ -17,35 +19,29 @@ fi
 
 trap "./clean.sh" SIGINT SIGTERM
 
-dd if=/dev/zero of=arenas.part bs=8192 count=2000 2>/dev/null
-dd if=/dev/zero of=isect.part bs=8192 count=100 2>/dev/null
+echo "formatting venti partitions"
+dd if=/dev/zero of=arenas.part bs=8192 count=200000 2>/dev/null
+dd if=/dev/zero of=isect.part bs=8192 count=10000 2>/dev/null
 $PLAN9/bin/venti/fmtarenas arenas arenas.part 2>/dev/null
 $PLAN9/bin/venti/fmtisect isect isect.part 2>/dev/null
 $PLAN9/bin/venti/fmtindex venti.conf 2>/dev/null
-$PLAN9/bin/venti/venti -w
 
-dd if=/dev/zero of=fossil.part bs=8192 count=1000 2>/dev/null
-fossil format -y fossil.part
+echo "starting venti"
+$PLAN9/bin/venti/venti -w 2>/dev/null
+
+echo "formatting fossil partition"
+dd if=/dev/zero of=fossil.part bs=8192 count=100000 2>/dev/null
+fossil format -b 4K -y fossil.part
 mkdir active snap archive
 
 (
 	sleep 2;
-	9pfuse -a main/active fossilsrv active;
-	9pfuse -a main/snapshot fossilsrv snap;
-	9pfuse -a main/archive fossilsrv archive;
+	9pfuse -a main/active fossil.srv active;
+	9pfuse -a main/snapshot fossil.srv snap;
+	9pfuse -a main/archive fossil.srv archive;
 ) &
 
-(
-	sleep 3;
-	mkdir active/dir{1,2}
-	mkdir active/dir{1,2}/dir{3,4}
-	touch  active/file1 active/dir1/file2 active/dir2/dir3/file3
-	cat > active/dir2/file4 <<EOF
-the quick brown fox
-jumps over the lazy dog
-EOF
-) &
-
+echo "starting fossil"
 fossil="fossil $DEBUG start"
 if test "$1" == "9"; then
 	fossil="$PLAN9/bin/fossil/fossil $DEBUG -t"
@@ -53,4 +49,3 @@ if test "$1" == "9"; then
 fi
 
 $fossil -c '. flproto'
-
