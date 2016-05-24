@@ -29,8 +29,8 @@ var rFcall = [plan9.Tmax]func(*Msg) error{
 	plan9.Tattach:  rTattach,  // attach - establish a connection
 	plan9.Tflush:   rTflush,   // flush - abort a message
 	plan9.Twalk:    rTwalk,    // walk - descend a directory hierarchy
-	plan9.Topen:    rTopen,    // open - prepare a fid for I/O on a new file
-	plan9.Tcreate:  rTcreate,  // create - prepare a fid for I/O on an new file
+	plan9.Topen:    rTopen,    // open - prepare a fid for I/O on an existing file
+	plan9.Tcreate:  rTcreate,  // create - prepare a fid for I/O on a new file
 	plan9.Tread:    rTread,    // read - transfer data from a file
 	plan9.Twrite:   rTwrite,   // write - transfer data to a file
 	plan9.Tclunk:   rTclunk,   // clunk - forget about a fid
@@ -109,35 +109,27 @@ func rTwstat(m *Msg) error {
 	if err != nil {
 		return err
 	}
+	defer fidPut(fid)
 
-	uid := string("")
-	gid := uid
+	var uid, gid string
 
-	var de DirEntry
-	var gl int
-	var oldmode uint32
-	var op int
-	var tsync int
-	var wstatallow int
-	var dir *plan9.Dir
 	if fid.uname == unamenone || (fid.qid.Type&plan9.QTAUTH != 0) {
-		err = EPermission
-		goto error0
+		return EPermission
 	}
 
 	if fid.file.isRoFs() || !groupWriteMember(fid.uname) {
-		err = fmt.Errorf("read-only filesystem")
-		goto error0
+		return fmt.Errorf("read-only filesystem")
 	}
 
-	if err = fid.file.getDir(&de); err != nil {
-		goto error0
+	var de DirEntry
+	if err := fid.file.getDir(&de); err != nil {
+		return err
 	}
+	defer deCleanup(&de)
 
-	dir, err = plan9.UnmarshalDir(m.t.Stat)
+	dir, err := plan9.UnmarshalDir(m.t.Stat)
 	if err != nil {
-		err = fmt.Errorf("wstat -- protocol botch: %v", err)
-		goto error
+		return fmt.Errorf("wstat -- protocol botch: %v", err)
 	}
 
 	/*
@@ -152,12 +144,11 @@ func rTwstat(m *Msg) error {
 	 * 'Op' flags there are changed fields, i.e. it's not a no-op.
 	 * 'Tsync' flags all fields are defaulted.
 	 */
-	tsync = 1
+	tsync := 1
 
 	if dir.Qid.Path != ^uint64(0) {
 		if dir.Qid.Path != de.qid {
-			err = fmt.Errorf("wstat -- attempt to change qid.path")
-			goto error
+			return fmt.Errorf("wstat -- attempt to change qid.path")
 		}
 
 		tsync = 0
@@ -165,23 +156,20 @@ func rTwstat(m *Msg) error {
 
 	if dir.Qid.Vers != ^uint32(0) {
 		if dir.Qid.Vers != de.mcount {
-			err = fmt.Errorf("wstat -- attempt to change qid.vers")
-			goto error
+			return fmt.Errorf("wstat -- attempt to change qid.vers")
 		}
 
 		tsync = 0
 	}
 
 	if dir.Muid != "" {
-		uid := uidByUname(dir.Muid)
+		uid = uidByUname(dir.Muid)
 		if uid == "" {
-			err = fmt.Errorf("wstat -- unknown muid")
-			goto error
+			return fmt.Errorf("wstat -- unknown muid")
 		}
 
 		if uid != de.mid {
-			err = fmt.Errorf("wstat -- attempt to change muid")
-			goto error
+			return fmt.Errorf("wstat -- attempt to change muid")
 		}
 
 		uid = ""
@@ -193,14 +181,12 @@ func rTwstat(m *Msg) error {
 	 */
 	if dir.Qid.Type != ^uint8(0) && dir.Mode != ^plan9.Perm(0) {
 		if dir.Qid.Type != uint8((dir.Mode>>24)&0xFF) {
-			err = fmt.Errorf("wstat -- qid.Type/mode mismatch")
-			goto error
+			return fmt.Errorf("wstat -- qid.Type/mode mismatch")
 		}
 	}
 
-	op = 0
-
-	oldmode = de.mode
+	op := 0
+	oldmode := de.mode
 	if dir.Qid.Type != ^uint8(0) || dir.Mode != ^plan9.Perm(0) {
 		/*
 		 * .qid.Type or .mode isn't defaulted, check for unknown bits.
@@ -209,8 +195,7 @@ func rTwstat(m *Msg) error {
 			dir.Mode = plan9.Perm(dir.Qid.Type)<<24 | plan9.Perm(de.mode&0777)
 		}
 		if dir.Mode&^(plan9.DMDIR|plan9.DMAPPEND|plan9.DMEXCL|plan9.DMTMP|0777) != 0 {
-			err = fmt.Errorf("wstat -- unknown bits in qid.Type/mode")
-			goto error
+			return fmt.Errorf("wstat -- unknown bits in qid.Type/mode: %#o", dir.Mode)
 		}
 
 		/*
@@ -232,8 +217,7 @@ func rTwstat(m *Msg) error {
 		}
 
 		if (de.mode^mode)&ModeDir != 0 {
-			err = fmt.Errorf("wstat -- attempt to change directory bit")
-			goto error
+			return fmt.Errorf("wstat -- attempt to change directory bit")
 		}
 
 		if de.mode&(ModeAppend|ModeExclusive|ModeTemporary|0777) != mode {
@@ -261,13 +245,11 @@ func rTwstat(m *Msg) error {
 			 * If we're changing the append bit, it's okay.
 			 */
 			if de.mode&oldmode&ModeAppend != 0 {
-				err = fmt.Errorf("wstat -- attempt to change length of append-only file")
-				goto error
+				return fmt.Errorf("wstat -- attempt to change length of append-only file")
 			}
 
 			if de.mode&ModeDir != 0 {
-				err = fmt.Errorf("wstat -- attempt to change length of directory")
-				goto error
+				return fmt.Errorf("wstat -- attempt to change length of directory")
 			}
 
 			de.size = dir.Length
@@ -285,26 +267,24 @@ func rTwstat(m *Msg) error {
 	if dir.Gid != "" {
 		gid = uidByUname(dir.Gid)
 		if gid == "" {
-			err = fmt.Errorf("wstat -- unknown gid")
-			goto error
+			return fmt.Errorf("wstat -- unknown gid")
 		}
 		tsync = 0
 	} else {
 		gid = de.gid
 	}
 
-	wstatallow = (bool2int(fsysWstatAllow(fid.fsys) || (m.con.flags&ConWstatAllow != 0)))
+	wstatallow := (fsysWstatAllow(fid.fsys) || (m.con.flags&ConWstatAllow != 0))
 
 	/*
 	 * 'Gl' counts whether neither, one or both groups are led.
 	 */
-	gl = bool2int(groupLeader(gid, fid.uname))
+	gl := bool2int(groupLeader(gid, fid.uname))
 	gl += bool2int(groupLeader(de.gid, fid.uname))
 
-	if op != 0 && wstatallow == 0 {
+	if op != 0 && !wstatallow {
 		if fid.uid != de.uid && gl == 0 {
-			err = fmt.Errorf("wstat -- not owner or group leader")
-			goto error
+			return fmt.Errorf("wstat -- not owner or group leader")
 		}
 	}
 
@@ -314,9 +294,8 @@ func rTwstat(m *Msg) error {
 	 * If gid is nil here then
 	 */
 	if gid != de.gid {
-		if wstatallow == 0 && (fid.uid != de.uid || !groupMember(gid, fid.uname)) && gl != 2 {
-			err = fmt.Errorf("wstat -- not owner and not group leaders")
-			goto error
+		if !wstatallow && (fid.uid != de.uid || !groupMember(gid, fid.uname)) && gl != 2 {
+			return fmt.Errorf("wstat -- not owner and not group leaders")
 		}
 		de.gid = gid
 		op = 1
@@ -330,11 +309,11 @@ func rTwstat(m *Msg) error {
 	 */
 	if dir.Name != "" {
 		if err = checkValidFileName(dir.Name); err != nil {
-			goto error
+			return err
 		}
 		if dir.Name != de.elem {
 			if err = permParent(fid, PermW); err != nil {
-				goto error
+				return err
 			}
 			de.elem = dir.Name
 			op = 1
@@ -347,19 +326,16 @@ func rTwstat(m *Msg) error {
 	 * Check for permission to change owner - must be god.
 	 */
 	if dir.Uid != "" {
-		uid := uidByUname(dir.Uid)
+		uid = uidByUname(dir.Uid)
 		if uid == "" {
-			err = fmt.Errorf("wstat -- unknown uid")
-			goto error
+			return fmt.Errorf("wstat -- unknown uid")
 		}
 		if uid != de.uid {
-			if wstatallow == 0 {
-				err = fmt.Errorf("wstat -- not owner")
-				goto error
+			if !wstatallow {
+				return fmt.Errorf("wstat -- not owner")
 			}
 			if uid == uidnoworld {
-				err = EPermission
-				goto error
+				return EPermission
 			}
 			de.uid = uid
 			op = 1
@@ -380,12 +356,7 @@ func rTwstat(m *Msg) error {
 		 */
 	}
 
-error:
-	deCleanup(&de)
-
-error0:
-	fidPut(fid)
-	return err
+	return nil
 }
 
 func rTstat(m *Msg) error {
@@ -404,7 +375,6 @@ func rTstat(m *Msg) error {
 			Muid:  fid.uname,
 		}
 		dir.Mtime = dir.Atime
-
 		buf, err := dir.Bytes()
 		if err != nil {
 			err = fmt.Errorf("stat QTAUTH botch")

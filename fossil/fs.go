@@ -1045,11 +1045,9 @@ func snapEvent(s *Snap) {
 	if s.snapFreq > 0 {
 		snapminute := int(elapsed.Minutes())%int(s.snapFreq.Minutes()) == 0
 		if snapminute && now.Sub(s.lastSnap) > time.Minute {
-			dprintf("snaphot started\n")
 			if err := s.fs.snapshot("", "", false); err != nil {
 				fmt.Fprintf(os.Stderr, "%s: snap: %v\n", argv0, err)
 			}
-			dprintf("snapshot finished\n")
 			s.lastSnap = now
 		}
 	}
