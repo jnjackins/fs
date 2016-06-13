@@ -420,7 +420,7 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool) (*Bl
 			BioClean,
 			BioDirty:
 			if b.vers != vers {
-				blockPut(b)
+				b.put()
 				return nil, errors.New("miss")
 			}
 			return b, nil
@@ -428,10 +428,10 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool) (*Bl
 			BioWriting:
 			b.ioready.Wait()
 		case BioVentiError:
-			blockPut(b)
+			b.put()
 			return nil, fmt.Errorf("venti i/o error block %#.8x", addr)
 		case BioReadError:
-			blockPut(b)
+			b.put()
 			return nil, fmt.Errorf("error reading block %#.8x", addr)
 		}
 	}
@@ -502,14 +502,14 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 
 	if part == PartData && b.iostate == BioEmpty {
 		if err := readLabel(c, &b.l, addr); err != nil {
-			blockPut(b)
+			b.put()
 			return nil, err
 		}
-		blockSetIOState(b, BioLabel)
+		b.setIOState(BioLabel)
 	}
 
 	if epoch != 0 && b.l.epoch != epoch {
-		blockPut(b)
+		b.put()
 		return nil, ELabelMismatch
 	}
 
@@ -536,8 +536,8 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 			BioWriting:
 			b.ioready.Wait()
 		case BioReadError:
-			blockSetIOState(b, BioEmpty)
-			blockPut(b)
+			b.setIOState(BioEmpty)
+			b.put()
 			return nil, fmt.Errorf("error reading block %#.8x", addr)
 		}
 	}
@@ -560,7 +560,7 @@ func cacheLocalData(c *Cache, addr uint32, typ int, tag uint32, mode int, epoch 
 	}
 	if int(b.l.typ) != typ || b.l.tag != tag {
 		fmt.Fprintf(os.Stderr, "%s: cacheLocalData: addr=%d type got %d exp %d: tag got %x exp %x\n", argv0, addr, b.l.typ, typ, b.l.tag, tag)
-		blockPut(b)
+		b.put()
 		return nil, ELabelMismatch
 	}
 
@@ -627,25 +627,25 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 	case BioEmpty:
 		n, err := c.z.Read(score, vtType[typ], b.data[:c.size])
 		if err != nil {
-			blockSetIOState(b, BioVentiError)
-			blockPut(b)
+			b.setIOState(BioVentiError)
+			b.put()
 			return nil, fmt.Errorf("venti error reading block %v: %v", score, err)
 		}
 		if err := venti.Sha1Check(score, b.data[:n]); err != nil {
-			blockSetIOState(b, BioVentiError)
-			blockPut(b)
+			b.setIOState(BioVentiError)
+			b.put()
 			return nil, fmt.Errorf("venti error: wrong score: %v: %v", score, err)
 		}
 		venti.ZeroExtend(vtType[typ], b.data, n, c.size)
-		blockSetIOState(b, BioClean)
+		b.setIOState(BioClean)
 		return b, nil
 	case BioClean:
 		return b, nil
 	case BioVentiError:
-		blockPut(b)
+		b.put()
 		return nil, fmt.Errorf("venti i/o error or wrong score, block %v", score)
 	case BioReadError:
-		blockPut(b)
+		b.put()
 		return nil, fmt.Errorf("error reading block %v", b.score)
 	}
 	/* NOT REACHED */
@@ -681,7 +681,7 @@ func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint3
 			addr = 0
 			nwrap++
 			if nwrap >= 2 {
-				blockPut(b)
+				b.put()
 				err = fmt.Errorf("disk is full")
 
 				/*
@@ -698,7 +698,7 @@ func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint3
 		}
 
 		if addr%n == 0 {
-			blockPut(b)
+			b.put()
 			b, err = cacheLocal(c, PartLabel, addr/n, OReadOnly)
 			if err != nil {
 				fl.last = addr
@@ -722,7 +722,7 @@ func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint3
 	}
 
 Found:
-	blockPut(b)
+	b.put()
 	b, err = cacheLocal(c, PartData, addr, OOverWrite)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx3 %v\n", argv0, err)
@@ -736,9 +736,9 @@ Found:
 	lab.state = BsAlloc
 	lab.epoch = epoch
 	lab.epochClose = ^uint32(0)
-	if err := blockSetLabel(b, &lab, true); err != nil {
+	if err := b.setLabel(&lab, true); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx4 %v\n", argv0, err)
-		blockPut(b)
+		b.put()
 		return nil, err
 	}
 
@@ -780,7 +780,7 @@ func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
 	var err error
 	for addr = 0; addr < fl.end; addr++ {
 		if addr%n == 0 {
-			blockPut(b)
+			b.put()
 			b, err = cacheLocal(c, PartLabel, addr/n, OReadOnly)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: flCountUsed: loading %x: %v\n", argv0, addr/n, err)
@@ -803,7 +803,7 @@ func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
 		nused++
 	}
 
-	blockPut(b)
+	b.put()
 	if addr == fl.end {
 		fl.nused = nused
 		fl.epochLow = epochLow
@@ -825,7 +825,7 @@ func cacheLocalSize(c *Cache, part int) uint32 {
 	return c.disk.size(part)
 }
 
-func blockDupLock(b *Block) {
+func (b *Block) dupLock() {
 	nlock := atomic.LoadInt32(&b.nlock)
 	assert(nlock > 0)
 	atomic.AddInt32(&b.nlock, 1)
@@ -835,7 +835,7 @@ func blockDupLock(b *Block) {
  * we're done with the block.
  * unlock it.  can't use it after calling this.
  */
-func blockPut(b *Block) {
+func (b *Block) put() {
 	if b == nil {
 		return
 	}
@@ -848,7 +848,7 @@ func blockPut(b *Block) {
 
 	// b.nlock should probably stay at zero while
 	// the block is unlocked, but disk.thread and vtSleep
-	// conspire to assume that they can just b.lock(); blockPut(b),
+	// conspire to assume that they can just b.lock(); b.put(),
 	// so we have to keep b.nlock set to 1 even
 	// when the block is unlocked.
 	assert(nlock == 0)
@@ -892,7 +892,7 @@ func blockPut(b *Block) {
 /*
  * set the label associated with a block.
  */
-func _blockSetLabel(b *Block, l *Label) (*Block, error) {
+func (b *Block) _setLabel(l *Label) (*Block, error) {
 	c := b.c
 	assert(b.part == PartData)
 	assert(b.iostate == BioLabel || b.iostate == BioClean || b.iostate == BioDirty)
@@ -900,18 +900,18 @@ func _blockSetLabel(b *Block, l *Label) (*Block, error) {
 	a := b.addr / lpb
 	bb, err := cacheLocal(c, PartLabel, a, OReadWrite)
 	if err != nil {
-		blockPut(b)
+		b.put()
 		return nil, err
 	}
 
 	b.l = *l
 	labelPack(l, bb.data, int(b.addr%lpb))
-	blockDirty(bb)
+	bb.dirty()
 	return bb, nil
 }
 
-func blockSetLabel(b *Block, l *Label, allocating bool) error {
-	lb, err := _blockSetLabel(b, l)
+func (b *Block) setLabel(l *Label, allocating bool) error {
+	lb, err := b._setLabel(l)
 	if err != nil {
 		return err
 	}
@@ -936,9 +936,9 @@ func blockSetLabel(b *Block, l *Label, allocating bool) error {
 	 *		by direct calls to _blockSetLabel.
 	 */
 	if allocating {
-		blockDependency(b, lb, -1, nil, nil)
+		b.dependency(lb, -1, nil, nil)
 	}
-	blockPut(lb)
+	lb.put()
 	return nil
 }
 
@@ -948,7 +948,7 @@ func blockSetLabel(b *Block, l *Label, allocating bool) error {
  * at that index in the block.  Save the old value so we
  * can write a safer ``old'' version of the block if pressed.
  */
-func blockDependency(b *Block, bb *Block, index int, score *venti.Score, e *Entry) {
+func (b *Block) dependency(bb *Block, index int, score *venti.Score, e *Entry) {
 	if bb.iostate == BioClean {
 		return
 	}
@@ -1012,7 +1012,7 @@ func blockDependency(b *Block, bb *Block, index int, score *venti.Score, e *Entr
  * it implies that the callers cannot have any of our priors locked,
  * but this is hard to avoid in some cases.
  */
-func blockDirty(b *Block) error {
+func (b *Block) dirty() error {
 	c := b.c
 
 	assert(b.part != PartVenti)
@@ -1039,7 +1039,7 @@ func blockDirty(b *Block) error {
  * copy of b that is safe to write out.  (diskThread will make sure the block
  * remains marked as dirty.)
  */
-func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
+func (b *Block) rollback(buf []byte) (p []byte, dirty bool) {
 	/* easy case */
 	if b.prior == nil {
 		return b.data, false
@@ -1087,7 +1087,7 @@ func blockRollback(b *Block, buf []byte) (p []byte, dirty bool) {
  *
  *	Otherwise, bail.
  */
-func blockWrite(b *Block, waitlock bool) bool {
+func (b *Block) write(waitlock bool) bool {
 	c := b.c
 
 	if b.iostate != BioDirty {
@@ -1130,7 +1130,7 @@ func blockWrite(b *Block, waitlock bool) bool {
 			}
 		}
 
-		blockPut(bb)
+		bb.put()
 
 		if p.index < 0 {
 			/*
@@ -1164,7 +1164,7 @@ func blockWrite(b *Block, waitlock bool) bool {
 // Change the I/O state of block b.
 // Just an assignment except for magic in
 // switch statement (read comments there).
-func blockSetIOState(b *Block, iostate int32) {
+func (b *Block) setIOState(iostate int32) {
 	if false {
 		fmt.Fprintf(os.Stderr, "%s: iostate part=%d addr=%x %s->%s\n", argv0, b.part, b.addr, bioStr(b.iostate), bioStr(iostate))
 	}
@@ -1302,14 +1302,14 @@ func blockSetIOState(b *Block, iostate int32) {
  * set the BsCopied bit in the label and force that to disk *before*
  * the copy gets written out.
  */
-func blockCopy(b *Block, tag, ehi, elo uint32) (*Block, error) {
+func (b *Block) copy(tag, ehi, elo uint32) (*Block, error) {
 	if (b.l.state&BsClosed != 0) || b.l.epoch >= ehi {
 		fmt.Fprintf(os.Stderr, "%s: blockCopy %#x %v but fs is [%d,%d]\n", argv0, b.addr, b.l, elo, ehi)
 	}
 
 	bb, err := cacheAllocBlock(b.c, int(b.l.typ), tag, ehi, elo)
 	if err != nil {
-		blockPut(b)
+		b.put()
 		return nil, err
 	}
 
@@ -1323,29 +1323,29 @@ func blockCopy(b *Block, tag, ehi, elo uint32) (*Block, error) {
 		if b.part == PartData { /* not the superblock */
 			l := b.l
 			l.state |= BsCopied
-			lb, err := _blockSetLabel(b, &l)
+			lb, err := b._setLabel(&l)
 			if err != nil {
 				/* can't set label => can't copy block */
-				blockPut(b)
+				b.put()
 
 				l.typ = BtMax
 				l.state = BsFree
 				l.epoch = 0
 				l.epochClose = 0
 				l.tag = 0
-				blockSetLabel(bb, &l, false)
-				blockPut(bb)
+				bb.setLabel(&l, false)
+				bb.put()
 				return nil, err
 			}
 
-			blockDependency(bb, lb, -1, nil, nil)
-			blockPut(lb)
+			bb.dependency(lb, -1, nil, nil)
+			lb.put()
 		}
 	}
 
 	copy(bb.data, b.data[:b.c.size])
-	blockDirty(bb)
-	blockPut(b)
+	bb.dirty()
+	b.put()
 	return bb, nil
 }
 
@@ -1359,7 +1359,7 @@ func blockCopy(b *Block, tag, ehi, elo uint32) (*Block, error) {
  *
  * If b depends on bb, it doesn't anymore, so we remove bb from the prior list.
  */
-func blockRemoveLink(b *Block, addr uint32, typ int, tag uint32, recurse bool) {
+func (b *Block) removeLink(addr uint32, typ int, tag uint32, recurse bool) {
 	var p *BList
 
 	/* remove bb from prior list */
@@ -1445,7 +1445,7 @@ func doRemoveLink(c *Cache, p *BList) {
 	/* sanity check */
 	if b.l.epoch > p.epoch {
 		fmt.Fprintf(os.Stderr, "%s: doRemoveLink: strange epoch %d > %d\n", argv0, b.l.epoch, p.epoch)
-		blockPut(b)
+		b.put()
 		return
 	}
 
@@ -1480,7 +1480,7 @@ func doRemoveLink(c *Cache, p *BList) {
 			bl.recurse = true
 
 			/* give up the block lock - share with others */
-			blockPut(b)
+			b.put()
 
 			doRemoveLink(c, &bl)
 			b, err = cacheLocalData(c, p.addr, int(p.typ), p.tag, OReadOnly, 0)
@@ -1499,12 +1499,12 @@ func doRemoveLink(c *Cache, p *BList) {
 		if l.epoch == c.fl.epochLow {
 			c.fl.nused--
 		}
-		blockSetLabel(b, &l, false)
+		b.setLabel(&l, false)
 		c.fl.lk.Unlock()
 	} else {
-		blockSetLabel(b, &l, false)
+		b.setLabel(&l, false)
 	}
-	blockPut(b)
+	b.put()
 }
 
 /*
@@ -1731,16 +1731,16 @@ func readLabel(c *Cache, l *Label, addr uint32) error {
 	a := addr / uint32(lpb)
 	b, err := cacheLocal(c, PartLabel, a, OReadOnly)
 	if err != nil {
-		blockPut(b)
+		b.put()
 		return err
 	}
 
 	if err := labelUnpack(l, b.data, int(addr%uint32(lpb))); err != nil {
-		blockPut(b)
+		b.put()
 		return err
 	}
 
-	blockPut(b)
+	b.put()
 	return nil
 }
 
@@ -1867,13 +1867,13 @@ func cacheFlushBlock(c *Cache) bool {
 		p := &c.baddr[c.br]
 		c.br++
 		b, _ := cacheLocalLookup(c, p.part, p.addr, p.vers, Waitlock)
-		if b != nil && blockWrite(b, Nowaitlock) {
+		if b != nil && b.write(Nowaitlock) {
 			c.nflush++
-			blockPut(b)
+			b.put()
 			return true
 		}
 		if b != nil {
-			blockPut(b)
+			b.put()
 		}
 
 		/*

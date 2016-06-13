@@ -73,12 +73,12 @@ func dirLookup(f *File, elem string) (*File, error) {
 	for bo := uint32(0); bo < nb; bo++ {
 		b, err := meta.block(bo, OReadOnly)
 		if err != nil {
-			blockPut(b)
+			b.put()
 			return nil, err
 		}
 		mb, err := unpackMetaBlock(b.data, meta.dsize)
 		if err != nil {
-			blockPut(b)
+			b.put()
 			return nil, err
 		}
 		var i int
@@ -87,17 +87,17 @@ func dirLookup(f *File, elem string) (*File, error) {
 			ff := allocFile(f.fs)
 			if err = mb.deUnpack(&ff.dir, &me); err != nil {
 				ff.free()
-				blockPut(b)
+				b.put()
 				return nil, err
 			}
 
-			blockPut(b)
+			b.put()
 			ff.boff = bo
 			ff.mode = f.mode
 			ff.issnapshot = f.issnapshot
 			return ff, nil
 		}
-		blockPut(b)
+		b.put()
 	}
 	return nil, ENoFile
 }
@@ -162,13 +162,13 @@ func rootFile(r *Source) (*File, error) {
 	if err = mb.deUnpack(&root.dir, &me); err != nil {
 		goto Err
 	}
-	blockPut(b)
+	b.put()
 	root.rAccess()
 
 	return root, nil
 
 Err:
-	blockPut(b)
+	b.put()
 	if r0 != nil {
 		r0.close()
 	}
@@ -559,7 +559,7 @@ func (f *File) read(cnt int, offset int64) ([]byte, error) {
 		bn++
 		cnt -= n
 		p = p[n:]
-		blockPut(b)
+		b.put()
 	}
 
 	return buf[:len(buf)-len(p)], nil
@@ -593,7 +593,7 @@ func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
 	if err != nil {
 		return err
 	}
-	defer blockPut(b)
+	defer b.put()
 
 	e, err := s.getEntry()
 	if err != nil {
@@ -608,7 +608,7 @@ func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
 	} else {
 		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:venti.ScoreSize])
 	}
-	blockDirty(b)
+	b.dirty()
 	return nil
 }
 
@@ -694,8 +694,8 @@ func (f *File) write(buf []byte, cnt int, offset int64, uid string) (int, error)
 		ntotal += n
 		offset += int64(n)
 		bn++
-		blockDirty(b)
-		blockPut(b)
+		b.dirty()
+		b.put()
 	}
 	if offset > eof {
 		if err := s.setSize(uint64(offset)); err != nil {
@@ -994,7 +994,7 @@ func (f *File) metaFlush2(oelem string) int {
 	if err != nil {
 		return -1
 	}
-	defer blockPut(b)
+	defer b.put()
 
 	mb, err := unpackMetaBlock(b.data, fp.msource.dsize)
 	if err != nil {
@@ -1022,7 +1022,7 @@ func (f *File) metaFlush2(oelem string) int {
 		mb.dePack(&f.dir, &me)
 		mb.insert(i, &me)
 		mb.pack()
-		blockDirty(b)
+		b.dirty()
 		f.dirty = false
 
 		return 1
@@ -1041,7 +1041,7 @@ func (f *File) metaFlush2(oelem string) int {
 	if boff == NilBlock {
 		/* mbResize might have modified block */
 		mb.pack()
-		blockDirty(b)
+		b.dirty()
 		return -1
 	}
 
@@ -1052,9 +1052,9 @@ func (f *File) metaFlush2(oelem string) int {
 	bb, _ := fp.msource.block(f.boff, OReadWrite)
 	mb.delete(i)
 	mb.pack()
-	blockDependency(b, bb, -1, nil, nil)
-	blockPut(bb)
-	blockDirty(b)
+	b.dependency(bb, -1, nil, nil)
+	bb.put()
+	b.dirty()
 
 	f.dirty = false
 
@@ -1076,7 +1076,7 @@ func (f *File) metaRemove(uid string) error {
 	if err != nil {
 		return fmt.Errorf("metaRemove: %v", err)
 	}
-	defer blockPut(b)
+	defer b.put()
 
 	mb, err := unpackMetaBlock(b.data, up.msource.dsize)
 	if err != nil {
@@ -1092,7 +1092,7 @@ func (f *File) metaRemove(uid string) error {
 	mb.delete(i)
 	mb.pack()
 
-	blockDirty(b)
+	b.dirty()
 
 	f.removed = true
 	f.boff = NilBlock
@@ -1122,13 +1122,13 @@ func (f *File) checkEmpty() error {
 			err = ENotEmpty
 			goto Err
 		}
-		blockPut(b)
+		b.put()
 	}
 
 	return nil
 
 Err:
-	blockPut(b)
+	b.put()
 	return err
 }
 
@@ -1304,7 +1304,7 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	if err != nil {
 		return err
 	}
-	defer blockPut(b)
+	defer b.put()
 
 	var e Entry
 	if err = entryUnpack(&e, b.data, int(elem)); err != nil {
@@ -1335,7 +1335,7 @@ func deeFill(dee *DirEntryEnum) error {
 	meta := f.msource
 
 	b, err := meta.block(dee.boff, OReadOnly)
-	defer blockPut(b)
+	defer b.put()
 	if err != nil {
 		return err
 	}
@@ -1460,7 +1460,7 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 		if n <= nn && mb.nindex < mb.maxindex {
 			break
 		}
-		blockPut(b)
+		b.put()
 		b = nil
 	}
 
@@ -1480,7 +1480,7 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 		/* mb.alloc might have changed block */
 		mb.pack()
 
-		blockDirty(b)
+		b.dirty()
 		err = EBadMeta
 		goto Err
 	}
@@ -1496,27 +1496,27 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 	/* meta block depends on super block for qid ... */
 	bb, err = cacheLocal(b.c, PartSuper, 0, OReadOnly)
 
-	blockDependency(b, bb, -1, nil, nil)
-	blockPut(bb)
+	b.dependency(bb, -1, nil, nil)
+	bb.put()
 
 	/* ... and one or two dir entries */
 	epb = s.dsize / venti.EntrySize
 
 	bb, err = s.block(dir.entry/uint32(epb), OReadOnly)
-	blockDependency(b, bb, -1, nil, nil)
-	blockPut(bb)
+	b.dependency(bb, -1, nil, nil)
+	bb.put()
 	if dir.mode&ModeDir != 0 {
 		bb, err = s.block(dir.mentry/uint32(epb), OReadOnly)
-		blockDependency(b, bb, -1, nil, nil)
-		blockPut(bb)
+		b.dependency(bb, -1, nil, nil)
+		bb.put()
 	}
 
-	blockDirty(b)
-	blockPut(b)
+	b.dirty()
+	b.put()
 	return bo
 
 Err:
-	blockPut(b)
+	b.put()
 	return NilBlock
 }
 
@@ -1632,12 +1632,12 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 		return err
 	}
 	if err := entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
-		blockPut(b)
+		b.put()
 		return err
 	}
 
 	epoch := b.l.epoch
-	blockPut(b)
+	b.put()
 
 	if checkepoch {
 		var b *Block
@@ -1647,7 +1647,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 			if b.l.epoch >= epoch {
 				fmt.Fprintf(os.Stderr, "warning: entry %p epoch not older %#.8x/%d %v/%d in getEntry\n", r, b.addr, b.l.epoch, r.score, epoch)
 			}
-			blockPut(b)
+			b.put()
 		}
 	}
 
@@ -1664,7 +1664,7 @@ func setEntry(r *Source, e *Entry) error {
 	}
 	var oe Entry
 	if err := entryUnpack(&oe, b.data, int(r.offset%uint32(r.epb))); err != nil {
-		blockPut(b)
+		b.put()
 		return err
 	}
 
@@ -1672,9 +1672,9 @@ func setEntry(r *Source, e *Entry) error {
 	entryPack(e, b.data, int(r.offset%uint32(r.epb)))
 
 	/* BUG b should depend on the entry pointer */
-	blockDirty(b)
+	b.dirty()
 
-	blockPut(b)
+	b.put()
 	return nil
 }
 

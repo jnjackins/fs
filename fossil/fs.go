@@ -104,12 +104,12 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	}
 	var super Super
 	if err = superUnpack(&super, b.data); err != nil {
-		blockPut(b)
+		b.put()
 		fs.close()
 		return nil, fmt.Errorf("bad super block: %v", err)
 	}
 
-	blockPut(b)
+	b.put()
 
 	fs.ehi = super.epochHigh
 	fs.elo = super.epochLow
@@ -134,12 +134,12 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		}
 
 		if b.l.epoch == fs.ehi {
-			blockPut(b)
+			b.put()
 			fs.close()
 			return nil, errors.New("bad root source block")
 		}
 
-		b, err = blockCopy(b, RootTag, fs.ehi, fs.elo)
+		b, err = b.copy(RootTag, fs.ehi, fs.elo)
 		if err != nil {
 			fs.close()
 			return nil, err
@@ -151,17 +151,17 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		var bs *Block
 		bs, err = cacheLocal(fs.cache, PartSuper, 0, OReadWrite)
 		if err != nil {
-			blockPut(b)
+			b.put()
 			fs.close()
 			return nil, fmt.Errorf("cacheLocal: %v", err)
 		}
 
 		superPack(&super, bs.data)
-		blockDependency(bs, b, 0, &oscore, nil)
-		blockPut(b)
-		blockDirty(bs)
-		blockRemoveLink(bs, venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
-		blockPut(bs)
+		bs.dependency(b, 0, &oscore, nil)
+		b.put()
+		bs.dirty()
+		bs.removeLink(venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
+		bs.put()
 		fs.source, err = sourceRoot(fs, super.active, mode)
 		if err != nil {
 			fs.close()
@@ -247,7 +247,7 @@ func superGet(c *Cache, super *Super) (*Block, error) {
 
 	if err = superUnpack(super, b.data); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: superGet: superUnpack failed: %v\n", argv0, err)
-		blockPut(b)
+		b.put()
 		return nil, err
 	}
 
@@ -256,9 +256,9 @@ func superGet(c *Cache, super *Super) (*Block, error) {
 
 func superWrite(b *Block, super *Super, forceWrite int) {
 	superPack(super, b.data)
-	blockDirty(b)
+	b.dirty()
 	if forceWrite != 0 {
-		for !blockWrite(b, Waitlock) {
+		for !b.write(Waitlock) {
 			/* this should no longer happen */
 			fmt.Fprintf(os.Stderr, "%s: could not write super block; waiting 10 seconds\n", argv0)
 			time.Sleep(10 * time.Second)
@@ -443,7 +443,7 @@ func (fs *Fs) epochLow(low uint32) error {
 	super.epochLow = low
 	fs.elo = low
 	superWrite(bs, &super, 1)
-	blockPut(bs)
+	bs.put()
 
 	return nil
 }
@@ -474,7 +474,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	}
 	copy(e.score[:], b.score[:venti.ScoreSize])
 
-	b, err = blockCopy(b, RootTag, fs.ehi+1, fs.elo)
+	b, err = b.copy(RootTag, fs.ehi+1, fs.elo)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: bumpEpoch: blockCopy: %v\n", argv0, err)
 		return err
@@ -485,7 +485,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 		fmt.Fprintf(os.Stderr, "%s: snapshot root from %d to %d\n", argv0, oldaddr, b.addr)
 	}
 	entryPack(&e, b.data, 1)
-	blockDirty(b)
+	b.dirty()
 
 	/*
 	 * Update the superblock with the new root and epoch.
@@ -515,8 +515,8 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	var oscore venti.Score
 	venti.LocalToGlobal(oldaddr, &oscore)
 
-	blockDependency(bs, b, 0, &oscore, nil)
-	blockPut(b)
+	bs.dependency(b, 0, &oscore, nil)
+	b.put()
 
 	/*
 	 * We force the super block to disk so that super.epochHigh gets updated.
@@ -532,8 +532,8 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 */
 	superWrite(bs, &super, 1)
 
-	blockRemoveLink(bs, venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
-	blockPut(bs)
+	bs.removeLink(venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
+	bs.put()
 
 	return nil
 }
@@ -548,7 +548,7 @@ func saveQid(fs *Fs) error {
 		return err
 	}
 	qidMax := super.qid
-	blockPut(b)
+	b.put()
 
 	if err := fs.file.setQidSpace(0, qidMax); err != nil {
 		return err
@@ -842,7 +842,7 @@ func (fs *Fs) nextQid(qid *uint64) error {
 	 */
 	superWrite(b, &super, 0)
 
-	blockPut(b)
+	b.put()
 	return nil
 }
 

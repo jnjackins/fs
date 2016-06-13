@@ -284,14 +284,14 @@ func (d *Disk) queue(b *Block) {
 
 func (d *Disk) read(b *Block) {
 	assert(b.iostate == BioEmpty || b.iostate == BioLabel)
-	blockSetIOState(b, BioReading)
+	b.setIOState(BioReading)
 	d.queue(b)
 }
 
 func (d *Disk) write(b *Block) {
 	assert(atomic.LoadInt32(&b.nlock) == 1)
 	assert(b.iostate == BioDirty)
-	blockSetIOState(b, BioWriting)
+	b.setIOState(BioWriting)
 	d.queue(b)
 }
 
@@ -390,25 +390,25 @@ func (d *Disk) thread() {
 			if err := d.readRaw(b.part, b.addr, b.data); err != nil {
 				fmt.Fprintf(os.Stderr, "fossil: (*Disk).readRaw failed: fd=%d score=%v: part=%s block=%d: %v\n",
 					d.fd, b.score, partname[b.part], b.addr, err)
-				blockSetIOState(b, BioReadError)
+				b.setIOState(BioReadError)
 			} else {
-				blockSetIOState(b, BioClean)
+				b.setIOState(BioClean)
 			}
 		case BioWriting:
 			buf := make([]byte, d.h.blockSize)
-			p, dirty := blockRollback(b, buf)
+			p, dirty := b.rollback(buf)
 			if err := d.writeRaw(b.part, b.addr, p); err != nil {
 				fmt.Fprintf(os.Stderr, "fossil: (*Disk).writeRaw failed: fd=%d score=%v: date=%s part=%s block=%d: %v\n",
 					d.fd, b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
 				break
 			}
 			if dirty {
-				blockSetIOState(b, BioDirty)
+				b.setIOState(BioDirty)
 			} else {
-				blockSetIOState(b, BioClean)
+				b.setIOState(BioClean)
 			}
 		}
-		blockPut(b) /* remove extra reference, unlock */
+		b.put() /* remove extra reference, unlock */
 		d.lk.Lock()
 		d.nqueue--
 		if d.nqueue == QueueSize-1 {

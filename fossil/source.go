@@ -160,7 +160,7 @@ func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer blockPut(b)
+	defer b.put()
 
 	if mode == OReadWrite && b.l.epoch != fs.ehi {
 		printf("sourceRoot: fs.ehi=%d, b.l=%v\n", fs.ehi, &b.l)
@@ -185,7 +185,7 @@ func (r *Source) open(offset uint32, mode int, issnapshot bool) (*Source, error)
 	if err != nil {
 		return nil, err
 	}
-	defer blockPut(b)
+	defer b.put()
 	return allocSource(r.fs, b, r, offset, mode, issnapshot)
 }
 
@@ -225,7 +225,7 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 			}
 		}
 
-		blockPut(b)
+		b.put()
 		if offset == size {
 			fmt.Fprintf(os.Stderr, "sourceCreate: cannot happen\n")
 			return nil, fmt.Errorf("sourceCreate: cannot happen")
@@ -251,18 +251,18 @@ Found:
 	e.snap = 0
 	e.archive = false
 	entryPack(&e, b.data, i)
-	blockDirty(b)
+	b.dirty()
 
 	offset = bn*uint32(epb) + uint32(i)
 	if offset+1 > size {
 		if err := r.setDirSize(offset + 1); err != nil {
-			blockPut(b)
+			b.put()
 			return nil, err
 		}
 	}
 
 	rr, err := allocSource(r.fs, b, r, offset, OReadWrite, false)
-	blockPut(b)
+	b.put()
 	return rr, err
 }
 
@@ -279,7 +279,7 @@ func (r *Source) kill(doremove bool) error {
 
 	if !doremove && e.size == 0 {
 		/* already truncated */
-		blockPut(b)
+		b.put()
 		return nil
 	}
 
@@ -305,11 +305,11 @@ func (r *Source) kill(doremove bool) error {
 	e.tag = 0
 	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
 	entryPack(&e, b.data, int(r.offset%uint32(r.epb)))
-	blockDirty(b)
+	b.dirty()
 	if addr != NilBlock {
-		blockRemoveLink(b, addr, typ, tag, true)
+		b.removeLink(addr, typ, tag, true)
 	}
-	blockPut(b)
+	b.put()
 
 	if doremove {
 		r.unlock()
@@ -336,7 +336,7 @@ func (r *Source) getSize() uint64 {
 	if err != nil {
 		return 0
 	}
-	blockPut(b)
+	b.put()
 
 	return e.size
 }
@@ -359,7 +359,7 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 	for typ&BtLevelMask != 0 {
 		if b.addr == NilBlock || b.l.epoch != r.fs.ehi {
 			/* not worth copying the block just so we can zero some of it */
-			blockPut(b)
+			b.put()
 			return err
 		}
 
@@ -373,9 +373,9 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 			copy(score[:], b.data[i*venti.ScoreSize:])
 			addr = venti.GlobalToLocal(&score)
 			copy(b.data[i*venti.ScoreSize:], venti.ZeroScore[:venti.ScoreSize])
-			blockDirty(b)
+			b.dirty()
 			if addr != NilBlock {
-				blockRemoveLink(b, addr, typ-1, e.tag, true)
+				b.removeLink(addr, typ-1, e.tag, true)
 			}
 		}
 
@@ -384,7 +384,7 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 
 		size = size % ptrsz
 		if size == 0 {
-			blockPut(b)
+			b.put()
 			return nil
 		}
 
@@ -392,7 +392,7 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 		typ--
 		var score venti.Score
 		copy(score[:], b.data[i*venti.ScoreSize:])
-		blockPut(b)
+		b.put()
 		b, err = cacheGlobal(r.fs.cache, &score, typ, e.tag, OReadWrite)
 		if err != nil {
 			return err
@@ -400,7 +400,7 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 	}
 
 	if b.addr == NilBlock || b.l.epoch != r.fs.ehi {
-		blockPut(b)
+		b.put()
 		return err
 	}
 
@@ -409,10 +409,10 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 		for i := uint64(0); i < uint64(e.dsize)-size; i++ {
 			b.data[size:][i] = 0
 		}
-		blockDirty(b)
+		b.dirty()
 	}
 
-	blockPut(b)
+	b.put()
 	return nil
 }
 
@@ -434,7 +434,7 @@ func (r *Source) setSize(size uint64) error {
 
 	/* quick out */
 	if e.size == size {
-		blockPut(b)
+		b.put()
 		return nil
 	}
 
@@ -442,12 +442,12 @@ func (r *Source) setSize(size uint64) error {
 
 	if depth < int(e.depth) {
 		if err := r.shrinkDepth(b, &e, depth); err != nil {
-			blockPut(b)
+			b.put()
 			return err
 		}
 	} else if depth > int(e.depth) {
 		if err := r.growDepth(b, &e, depth); err != nil {
-			blockPut(b)
+			b.put()
 			return err
 		}
 	}
@@ -458,8 +458,8 @@ func (r *Source) setSize(size uint64) error {
 
 	e.size = size
 	entryPack(&e, b.data, int(r.offset%uint32(r.epb)))
-	blockDirty(b)
-	blockPut(b)
+	b.dirty()
+	b.put()
 
 	return nil
 }
@@ -491,7 +491,7 @@ func (r *Source) getEntry() (*Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	blockPut(b)
+	b.put()
 
 	return &e, nil
 }
@@ -508,13 +508,13 @@ func (r *Source) setEntry(e *Entry) error {
 		return err
 	}
 	entryPack(e, b.data, int(r.offset%uint32(r.epb)))
-	blockDirty(b)
-	blockPut(b)
+	b.dirty()
+	b.put()
 
 	return nil
 }
 
-func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) {
+func (p *Block) walk(index int, mode int, fs *Fs, e *Entry) (*Block, error) {
 	var b *Block
 	var typ int
 	var err error
@@ -555,29 +555,29 @@ func blockWalk(p *Block, index int, mode int, fs *Fs, e *Entry) (*Block, error) 
 	}
 
 	addr := b.addr
-	b, err = blockCopy(b, e.tag, fs.ehi, fs.elo)
+	b, err = b.copy(e.tag, fs.ehi, fs.elo)
 	if err != nil {
 		return nil, err
 	}
 
 	assert(b.l.epoch == fs.ehi)
 
-	blockDirty(b)
+	b.dirty()
 	if p.l.typ == BtDir {
 		copy(e.score[:], b.score[:])
 		entryPack(e, p.data, index)
-		blockDependency(p, b, index, nil, &oe)
+		p.dependency(b, index, nil, &oe)
 	} else {
 		var oscore venti.Score
 		copy(oscore[:], p.data[index*venti.ScoreSize:][:venti.ScoreSize])
 		copy(p.data[index*venti.ScoreSize:], b.score[:])
-		blockDependency(p, b, index, &oscore, nil)
+		p.dependency(b, index, &oscore, nil)
 	}
 
-	blockDirty(p)
+	p.dirty()
 
 	if addr != NilBlock {
-		blockRemoveLink(p, addr, typ, e.tag, false)
+		p.removeLink(addr, typ, e.tag, false)
 	}
 
 	return b, nil
@@ -626,16 +626,16 @@ func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
 		typ++
 		e.tag = tag
 		e.flags |= venti.EntryLocal
-		blockDependency(bb, b, 0, venti.ZeroScore, nil)
-		blockPut(b)
+		bb.dependency(b, 0, venti.ZeroScore, nil)
+		b.put()
 		b = bb
-		blockDirty(b)
+		b.dirty()
 	}
 
 	entryPack(e, p.data, int(r.offset%uint32(r.epb)))
-	blockDependency(p, b, int(r.offset%uint32(r.epb)), nil, &oe)
-	blockPut(b)
-	blockDirty(p)
+	p.dependency(b, int(r.offset%uint32(r.epb)), nil, &oe)
+	b.put()
+	p.dirty()
 
 	if int(e.depth) == depth {
 		return nil
@@ -681,7 +681,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 			break
 		}
 		if ob != nil && ob != rb {
-			blockPut(ob)
+			ob.put()
 		}
 		ob = b
 		b = nb
@@ -690,7 +690,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 	}
 
 	if b == rb {
-		blockPut(rb)
+		rb.put()
 		return errors.New("XXX")
 	}
 
@@ -715,25 +715,25 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 	}
 	copy(e.score[:], b.score[:venti.ScoreSize])
 	entryPack(e, p.data, int(r.offset%uint32(r.epb)))
-	blockDependency(p, b, int(r.offset%uint32(r.epb)), nil, &oe)
-	blockDirty(p)
+	p.dependency(b, int(r.offset%uint32(r.epb)), nil, &oe)
+	p.dirty()
 
 	/* (ii) */
 	copy(ob.data, venti.ZeroScore[:venti.ScoreSize])
 
-	blockDependency(ob, p, 0, b.score, nil)
-	blockDirty(ob)
+	ob.dependency(p, 0, b.score, nil)
+	ob.dirty()
 
 	/* (iii) */
 	if rb.addr != NilBlock {
-		blockRemoveLink(p, rb.addr, int(rb.l.typ), rb.l.tag, true)
+		p.removeLink(rb.addr, int(rb.l.typ), rb.l.tag, true)
 	}
 
-	blockPut(rb)
+	rb.put()
 	if ob != nil && ob != rb {
-		blockPut(ob)
+		ob.put()
 	}
-	blockPut(b)
+	b.put()
 
 	if d == depth {
 		return nil
@@ -764,7 +764,7 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 	}
 
 	if r.issnapshot && (e.flags&venti.EntryNoArchive != 0) {
-		blockPut(b)
+		b.put()
 		return nil, ENotArchived
 	}
 
@@ -772,7 +772,7 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 		if e.tag == 0 {
 			e.tag = tag
 		} else if e.tag != tag {
-			blockPut(b)
+			b.put()
 			fmt.Fprintf(os.Stderr, "tag mismatch\n")
 			return nil, fmt.Errorf("tag mismatch")
 		}
@@ -783,7 +783,7 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 	var i int
 	for i = 0; bn > 0; i++ {
 		if i >= venti.PointerDepth {
-			blockPut(b)
+			b.put()
 			return nil, EBadAddr
 		}
 
@@ -793,12 +793,12 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 
 	if i > int(e.depth) {
 		if mode == OReadOnly {
-			blockPut(b)
+			b.put()
 			return nil, EBadAddr
 		}
 
 		if err = r.growDepth(b, &e, i); err != nil {
-			blockPut(b)
+			b.put()
 			return nil, err
 		}
 	}
@@ -806,8 +806,8 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 	index[e.depth] = int(r.offset % uint32(r.epb))
 
 	for i := int(e.depth); i >= early; i-- {
-		bb, err := blockWalk(b, index[i], m, r.fs, &e)
-		blockPut(b)
+		bb, err := b.walk(index[i], m, r.fs, &e)
+		b.put()
 		if err != nil {
 			return nil, err
 		}
@@ -990,7 +990,7 @@ func (r *Source) lock2(rr *Source, mode int) error {
 			rr.tag = b.l.tag
 			rr.epoch = rr.fs.ehi
 		}
-		blockDupLock(b)
+		b.dupLock()
 		bb = b
 	} else if r.parent == rr.parent || r.offset > rr.offset {
 		bb, err = rr.loadBlock(mode)
@@ -1006,10 +1006,10 @@ func (r *Source) lock2(rr *Source, mode int) error {
 
 	if err != nil {
 		if b != nil {
-			blockPut(b)
+			b.put()
 		}
 		if bb != nil {
-			blockPut(bb)
+			bb.put()
 		}
 		return err
 	}
@@ -1030,7 +1030,7 @@ func (r *Source) unlock() {
 
 	b := r.b
 	r.b = nil
-	blockPut(b)
+	b.put()
 }
 
 func (r *Source) load(e *Entry) (*Block, error) {
@@ -1043,7 +1043,7 @@ func (r *Source) load(e *Entry) (*Block, error) {
 		return nil, ERemoved
 	}
 
-	blockDupLock(b)
+	b.dupLock()
 	return b, nil
 }
 

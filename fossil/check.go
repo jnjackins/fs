@@ -89,7 +89,7 @@ func (chk *Fsck) check(fs *Fs) {
 		chk.printf("could not load super block: %v", err)
 		return
 	}
-	blockPut(b)
+	b.put()
 
 	chk.hint = super.active
 	checkEpochs(chk)
@@ -152,7 +152,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 		errorf(chk, "could not read root block %#.8x: %v", a, err)
 		return
 	}
-	defer blockPut(b)
+	defer b.put()
 
 	/* no one should point at root blocks */
 	setBit(chk.amap, a)
@@ -364,7 +364,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 
 Exit:
 	chk.walkdepth--
-	blockPut(bb)
+	bb.put()
 	return ret
 }
 
@@ -410,7 +410,7 @@ func checkLeak(chk *Fsck) {
 		chk.close(chk, b, 0)
 		chk.nclose++
 		setBit(chk.amap, a)
-		blockPut(b)
+		b.put()
 	}
 
 	chk.printf("fsys blocks: total=%d used=%d(%.1f%%) free=%d(%.1f%%) lost=%d(%.1f%%)\n",
@@ -551,7 +551,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
 			warnf(chk, "previously reported error in block %ux is in file %s", b.addr, name)
 		}
 
-		blockPut(b)
+		b.put()
 	}
 }
 
@@ -611,12 +611,12 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 		mb, err := unpackMetaBlock(b.data, meta.dsize)
 		if err != nil {
 			errorf(chk, "could not unpack meta block: %s[%d]: %v", name, o, err)
-			blockPut(b)
+			b.put()
 			continue
 		}
 		if !chkMetaBlock(mb) {
 			errorf(chk, "bad meta block: %s[%d]", name, o)
-			blockPut(b)
+			b.put()
 			continue
 		}
 
@@ -676,7 +676,7 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 			deCleanup(&de)
 			deCleanup(&de)
 		}
-		blockPut(b)
+		b.put()
 	}
 
 	nb = source.getDirSize()
@@ -695,7 +695,7 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 				chk.clre(chk, b, int(o%uint32(source.dsize/venti.EntrySize)))
 				chk.nclre++
 			}
-			blockPut(b)
+			b.put()
 		}
 		r.close()
 	}

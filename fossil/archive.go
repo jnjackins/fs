@@ -263,7 +263,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 					copy((*data)[(w.n-1)*venti.ScoreSize:], p.score[:venti.ScoreSize])
 				}
 				if data == &b.data {
-					blockDirty(b)
+					b.dirty()
 					/*
 					 * If b is in the active tree, then we need to note that we've
 					 * just removed addr from the active tree (replacing it with the
@@ -279,7 +279,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 					 * are not treated as in the active tree.
 					 */
 					if b.l.state&BsCopied == 0 && (e == nil || e.snap == 0) {
-						blockRemoveLink(b, addr, int(p.l.typ), p.l.tag, false)
+						b.removeLink(addr, int(p.l.typ), p.l.tag, false)
 					}
 				}
 			}
@@ -299,7 +299,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 			p.nreal++
 			l := b.l
 			l.state |= BsVenti
-			if err = blockSetLabel(b, &l, false); err != nil {
+			if err = b.setLabel(&l, false); err != nil {
 				ret = ArchFailure
 				goto Out
 			}
@@ -318,7 +318,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 
 Out:
 	p.depth--
-	blockPut(b)
+	b.put()
 	return ret, err
 }
 
@@ -349,11 +349,11 @@ func archThread(a *Arch) {
 			super.current = addr
 			super.next = NilBlock
 			superPack(&super, b.data)
-			blockDirty(b)
+			b.dirty()
 		} else {
 			addr = super.current
 		}
-		blockPut(b)
+		b.put()
 		a.fs.elk.Unlock()
 
 		if addr == NilBlock {
@@ -436,8 +436,8 @@ func archThread(a *Arch) {
 		super.current = NilBlock
 		copy(super.last[:], p.score[:venti.ScoreSize])
 		superPack(&super, b.data)
-		blockDirty(b)
-		blockPut(b)
+		b.dirty()
+		b.put()
 		a.fs.elk.Unlock()
 
 		printf("archive vac:%v\n", p.score)

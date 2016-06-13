@@ -659,7 +659,7 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 	if err != nil {
 		return err
 	}
-	defer blockPut(b)
+	defer b.put()
 
 	l := b.l
 	showOld := ""
@@ -686,13 +686,13 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 		}
 
 		printf("new: label %x %d %d %d %d %x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
-		bb, err := _blockSetLabel(b, &l)
+		bb, err := b._setLabel(&l)
 		if err != nil {
 			return err
 		}
 		n := 0
 		for {
-			if blockWrite(bb, Waitlock) {
+			if bb.write(Waitlock) {
 				for bb.iostate != BioClean {
 					assert(bb.iostate == BioWriting)
 					bb.ioready.Wait()
@@ -708,7 +708,7 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 			}
 			time.Sleep(5 * time.Second)
 		}
-		blockPut(bb)
+		bb.put()
 	}
 
 	return nil
@@ -760,7 +760,7 @@ func fsysBlock(fsys *Fsys, argv []string) error {
 	if err != nil {
 		return fmt.Errorf("cacheLocal %x: %v", addr, err)
 	}
-	defer blockPut(b)
+	defer b.put()
 
 	prefix := ""
 	if argc == 4 {
@@ -794,7 +794,7 @@ func fsysBlock(fsys *Fsys, argv []string) error {
 
 		copy(b.data[offset:], buf)
 		printf("\tnew: block %x %d %d %.*X\n", addr, offset, count, count, b.data[offset:])
-		blockDirty(b)
+		b.dirty()
 	}
 
 	return nil
@@ -842,11 +842,11 @@ func fsysBfree(fsys *Fsys, argv []string) error {
 			l.tag = 0
 			l.epoch = 0
 			l.epochClose = 0
-			if err := blockSetLabel(b, &l, false); err != nil {
+			if err := b.setLabel(&l, false); err != nil {
 				printf("freeing %x: %v\n", addr, err)
 			}
 		}
-		blockPut(b)
+		b.put()
 		argc--
 		argv = argv[1:]
 	}
@@ -964,8 +964,8 @@ func fsysClrep(fsys *Fsys, argv []string, ch rune) error {
 		copy(b.data[offset*sz:], zero[:sz])
 	}
 
-	blockDirty(b)
-	blockPut(b)
+	b.dirty()
+	b.put()
 
 	return nil
 }
@@ -1368,7 +1368,7 @@ func fsckClri(fsck *Fsck, name string, mb *MetaBlock, i int, b *Block) {
 
 	mb.delete(i)
 	mb.pack()
-	blockDirty(b)
+	b.dirty()
 }
 
 func fsckClose(fsck *Fsck, b *Block, epoch uint32) {
@@ -1388,7 +1388,7 @@ func fsckClose(fsck *Fsck, b *Block, epoch uint32) {
 		l.state = BsFree
 	}
 
-	if err := blockSetLabel(b, &l, false); err != nil {
+	if err := b.setLabel(&l, false); err != nil {
 		printf("%x setlabel: %v\n", b.addr, err)
 	}
 }
@@ -1404,7 +1404,7 @@ func fsckClre(fsck *Fsck, b *Block, offset int) {
 
 	e := Entry{score: new(venti.Score)}
 	entryPack(&e, b.data, offset)
-	blockDirty(b)
+	b.dirty()
 }
 
 func fsckClrp(fsck *Fsck, b *Block, offset int) {
@@ -1417,7 +1417,7 @@ func fsckClrp(fsck *Fsck, b *Block, offset int) {
 	}
 
 	copy(b.data[offset*venti.ScoreSize:], venti.ZeroScore[:venti.ScoreSize])
-	blockDirty(b)
+	b.dirty()
 }
 
 func fsysCheck(fsys *Fsys, argv []string) error {
@@ -1477,7 +1477,7 @@ func fsysCheck(fsys *Fsys, argv []string) error {
 			goto Out
 		}
 
-		blockPut(b)
+		b.put()
 		if super.current != NilBlock {
 			printf("cannot check fs while archiver is running; wait for it to finish\n")
 			goto Out
