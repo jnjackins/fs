@@ -333,7 +333,6 @@ func openFile(fs *Fs, path string) (*File, error) {
 }
 
 func (f *File) setTmp(istmp int) {
-	var e Entry
 	var r *Source
 
 	for i := 0; i < 2; i++ {
@@ -345,7 +344,8 @@ func (f *File) setTmp(istmp int) {
 		if r == nil {
 			continue
 		}
-		if err := r.getEntry(&e); err != nil {
+		e, err := r.getEntry()
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "sourceGetEntry failed (cannot happen): %v\n", err)
 			continue
 		}
@@ -355,7 +355,7 @@ func (f *File) setTmp(istmp int) {
 		} else {
 			e.flags &^= venti.EntryNoArchive
 		}
-		if err := r.setEntry(&e); err != nil {
+		if err := r.setEntry(e); err != nil {
 			fmt.Fprintf(os.Stderr, "sourceSetEntry failed (cannot happen): %v\n", err)
 			continue
 		}
@@ -595,8 +595,8 @@ func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
 	}
 	defer blockPut(b)
 
-	var e Entry
-	if err := s.getEntry(&e); err != nil {
+	e, err := s.getEntry()
+	if err != nil {
 		return err
 	}
 	if b.l.typ == BtDir {
@@ -604,7 +604,7 @@ func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
 		assert(e.tag == tag || e.tag == 0)
 		e.tag = tag
 		e.flags |= venti.EntryLocal
-		entryPack(&e, b.data, int(f.source.offset%uint32(f.source.epb)))
+		entryPack(e, b.data, int(f.source.offset%uint32(f.source.epb)))
 	} else {
 		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:venti.ScoreSize])
 	}

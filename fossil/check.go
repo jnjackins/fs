@@ -423,7 +423,7 @@ func checkLeak(chk *Fsck) {
 /*
  * Check that all sources in the tree are accessible.
  */
-func openSource(chk *Fsck, s *Source, name string, bm []byte, offset uint32, gen uint32, dir bool, mb *MetaBlock, i int, b *Block) (*Source, error) {
+func openSource(chk *Fsck, s *Source, name string, bm []byte, offset, gen uint32, dir bool, mb *MetaBlock, i int, b *Block) (*Source, error) {
 	var r *Source
 	var err error
 
@@ -524,8 +524,8 @@ func scanSource(chk *Fsck, name string, r *Source) {
 	if !chk.useventi && venti.GlobalToLocal(r.score) == NilBlock {
 		return
 	}
-	var e Entry
-	if err := r.getEntry(&e); err != nil {
+	e, err := r.getEntry()
+	if err != nil {
 		errorf(chk, "could not get entry for %s", name)
 		return
 	}
@@ -559,7 +559,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
  * Walk the source tree making sure that the BtData
  * sources containing directory entries are okay.
  */
-func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
+func chkDir(chk *Fsck, name string, source, meta *Source) {
 	if !chk.useventi &&
 		venti.GlobalToLocal(source.score) == NilBlock &&
 		venti.GlobalToLocal(meta.score) == NilBlock {
@@ -567,18 +567,20 @@ func chkDir(chk *Fsck, name string, source *Source, meta *Source) {
 	}
 
 	if err := source.lock2(meta, OReadOnly); err != nil {
-		warnf(chk, "could not lock sources for %s: %v", name, err)
+		warnf(chk, "could not lock sources for %q: %v", name, err)
 		return
 	}
-	var e1, e2 Entry
-	err := source.getEntry(&e1)
-	if err == nil {
-		err = meta.getEntry(&e2)
-	}
+	e1, err := source.getEntry()
 	if err != nil {
-		warnf(chk, "could not load entries for %s: %v", name, err)
+		warnf(chk, "could not load source entry for %q: %v", name, err)
 		return
 	}
+	e2, err := meta.getEntry()
+	if err != nil {
+		warnf(chk, "could not load meta entry for %q: %v", name, err)
+		return
+	}
+
 	a1 := venti.GlobalToLocal(e1.score)
 	a2 := venti.GlobalToLocal(e2.score)
 	if (!chk.useventi && a1 == NilBlock && a2 == NilBlock) ||

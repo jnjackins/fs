@@ -483,15 +483,17 @@ func (r *Source) getDirSize() uint32 {
 	return ds
 }
 
-func (r *Source) getEntry(e *Entry) error {
+func (r *Source) getEntry() (*Entry, error) {
 	assert(r.b != nil)
-	b, err := r.load(e)
+
+	var e Entry
+	b, err := r.load(&e)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	blockPut(b)
 
-	return nil
+	return &e, nil
 }
 
 /*
