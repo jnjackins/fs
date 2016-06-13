@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"strings"
 	"unicode"
 )
@@ -72,6 +73,8 @@ func start(argv []string) {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 		}
 	}
+
+	runtime.Goexit()
 }
 
 func readCmdPart(file string, cmd []string) []string {
