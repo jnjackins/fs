@@ -46,10 +46,9 @@ func (r *Source) isLocked() bool {
 }
 
 func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapshot bool) (*Source, error) {
-	var epb int
-
 	assert(p == nil || p.isLocked())
 
+	var epb int
 	if p == nil {
 		assert(offset == 0)
 		epb = 1
@@ -57,11 +56,8 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 		epb = p.dsize / venti.EntrySize
 	}
 
-	var e Entry
-	var epoch uint32
-	var r *Source
 	if b.l.typ != BtDir {
-		goto Bad
+		return nil, EBadEntry
 	}
 
 	/*
@@ -69,10 +65,11 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	 * can legitimately happen here. all the others
 	 * get prints.
 	 */
+	var e Entry
 	if err := entryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
 		pname := p.name()
 		printf("%s: %s %v: sourceAlloc: entryUnpack failed\n", fs.name, pname, b.score)
-		goto Bad
+		return nil, EBadEntry
 	}
 
 	if e.flags&venti.EntryActive == 0 {
@@ -80,34 +77,34 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 		if false {
 			printf("%s: %s %v: sourceAlloc: not active\n", fs.name, pname, e.score)
 		}
-		goto Bad
+		return nil, EBadEntry
 	}
 
 	if e.psize < 256 || e.dsize < 256 {
 		pname := p.name()
 		printf("%s: %s %v: sourceAlloc: psize %d or dsize %d < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
-		goto Bad
+		return nil, EBadEntry
 	}
 
 	if int(e.depth) < sizeToDepth(e.size, int(e.psize), int(e.dsize)) {
 		pname := p.name()
 		printf("%s: %s %v: sourceAlloc: depth %d size %llud "+"psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
-		goto Bad
+		return nil, EBadEntry
 	}
 
 	if (e.flags&venti.EntryLocal != 0) && e.tag == 0 {
 		pname := p.name()
 		printf("%s: %s %v: sourceAlloc: flags %#x tag %#x\n", fs.name, pname, e.score, e.flags, e.tag)
-		goto Bad
+		return nil, EBadEntry
 	}
 
 	if int(e.dsize) > fs.blockSize || int(e.psize) > fs.blockSize {
 		pname := p.name()
 		printf("%s: %s %v: sourceAlloc: psize %d or dsize %d "+"> blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
-		goto Bad
+		return nil, EBadEntry
 	}
 
-	epoch = b.l.epoch
+	epoch := b.l.epoch
 	if mode == OReadWrite {
 		if e.snap != 0 {
 			return nil, ESnapRO
@@ -118,12 +115,12 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 		}
 
 		if e.snap >= fs.ehi {
-			goto Bad
+			return nil, EBadEntry
 		}
 		epoch = e.snap
 	}
 
-	r = &Source{
+	r := &Source{
 		fs:         fs,
 		mode:       mode,
 		issnapshot: issnapshot,
@@ -156,10 +153,6 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	//	printf("%s: sourceAlloc: %p -> %v %d\n", r, r->score, r->offset);
 
 	return r, nil
-
-Bad:
-
-	return nil, EBadEntry
 }
 
 func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
@@ -226,15 +219,14 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 	var b *Block
 	var bn uint32
 	var e Entry
-	var err error
 	var i int
 	for {
 		bn = offset / uint32(epb)
-		b, err = r.block(bn, OReadWrite)
+		b, err := r.block(bn, OReadWrite)
 		if err != nil {
 			return nil, err
 		}
-		for i = int(offset % uint32(r.epb)); i < epb; i++ {
+		for i := int(offset % uint32(r.epb)); i < epb; i++ {
 			entryUnpack(&e, b.data, i)
 			if e.flags&venti.EntryActive == 0 && e.gen != ^uint32(0) {
 				goto Found
@@ -771,39 +763,32 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 		m = OReadWrite
 	}
 
-	var b *Block
 	var e Entry
-	var err error
-	b, err = r.load(&e)
+	b, err := r.load(&e)
 	if err != nil {
 		return nil, err
 	}
+	defer blockPut(b)
+
 	if r.issnapshot && (e.flags&venti.EntryNoArchive != 0) {
-		blockPut(b)
-		err := ENotArchived
-		return nil, err
+		return nil, ENotArchived
 	}
 
-	var bb *Block
-	var i int
-	var index [venti.PointerDepth + 1]int
-	var np int
 	if tag != 0 {
 		if e.tag == 0 {
 			e.tag = tag
 		} else if e.tag != tag {
 			fmt.Fprintf(os.Stderr, "tag mismatch\n")
-			err = fmt.Errorf("tag mismatch")
-			goto Err
+			return nil, fmt.Errorf("tag mismatch")
 		}
 	}
 
-	np = int(e.psize) / venti.ScoreSize
-	index = [venti.PointerDepth + 1]int{}
+	np := int(e.psize) / venti.ScoreSize
+	var index [venti.PointerDepth + 1]int
+	var i int
 	for i = 0; bn > 0; i++ {
 		if i >= venti.PointerDepth {
-			err = EBadAddr
-			goto Err
+			return nil, EBadAddr
 		}
 
 		index[i] = int(bn % uint32(np))
@@ -812,31 +797,30 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 
 	if i > int(e.depth) {
 		if mode == OReadOnly {
-			err = EBadAddr
-			goto Err
+			return nil, EBadAddr
 		}
 
 		if err = r.growDepth(b, &e, i); err != nil {
-			goto Err
+			return nil, err
 		}
 	}
 
 	index[e.depth] = int(r.offset % uint32(r.epb))
 
 	for i := int(e.depth); i >= early; i-- {
-		bb, err = blockWalk(b, index[i], m, r.fs, &e)
+		bb, err := blockWalk(b, index[i], m, r.fs, &e)
 		if err != nil {
-			goto Err
+			return nil, err
 		}
 		blockPut(b)
 		b = bb
 	}
 
-	return b, nil
+	// make deferred blockPut(b) a no-op
+	bb := b
+	b = nil
 
-Err:
-	blockPut(b)
-	return nil, err
+	return bb, nil
 }
 
 func (r *Source) block(bn uint32, mode int) (*Block, error) {
