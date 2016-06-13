@@ -40,8 +40,6 @@ var sbox struct {
 	curfsys string
 }
 
-var currfsysname string
-
 const FsysAll = "all"
 
 var (
@@ -1866,7 +1864,6 @@ func cmdFsys(argv []string) error {
 		if sbox.head == nil {
 			return errors.New("no current fsys")
 		}
-		currfsysname = sbox.head.name
 		for fsys := sbox.head; fsys != nil; fsys = fsys.next {
 			printf("\t%s\n", fsys.name)
 		}

@@ -32,12 +32,10 @@ func start(argv []string) {
 
 	var cmd []string
 	if *cflag != "" {
-		currfsysname = *cflag
 		cmd = append(cmd, *cflag)
 	}
 	if *fflag != "" {
 		foptname = *fflag
-		currfsysname = foptname
 		cmd = readCmdPart(*fflag, cmd)
 	}
 	mempcnt = *mflag
