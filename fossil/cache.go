@@ -764,11 +764,13 @@ func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
 	fl := c.fl
 	n := uint32(c.size / LabelSize)
 	*bsize = uint32(c.size)
+
 	fl.lk.Lock()
+	defer fl.lk.Unlock()
+
 	if fl.epochLow == epochLow {
 		*used = fl.nused
 		*total = fl.end
-		fl.lk.Unlock()
 		return
 	}
 
@@ -776,7 +778,6 @@ func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
 	var nused uint32
 	var addr uint32
 	var err error
-	var lab Label
 	for addr = 0; addr < fl.end; addr++ {
 		if addr%n == 0 {
 			blockPut(b)
@@ -787,6 +788,7 @@ func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
 			}
 		}
 
+		var lab Label
 		if err := labelUnpack(&lab, b.data, int(addr%n)); err != nil {
 			continue
 		}
@@ -809,7 +811,6 @@ func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
 
 	*used = nused
 	*total = fl.end
-	fl.lk.Unlock()
 	return
 }
 
