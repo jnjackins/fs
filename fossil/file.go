@@ -197,27 +197,21 @@ func (f *File) openSource(offset, gen uint32, dir bool, mode uint, issnapshot bo
 	if err != nil {
 		return nil, err
 	}
+
 	if r.gen != gen {
-		err = ERemoved
-		goto Err
+		r.close()
+		return nil, ERemoved
 	}
 
 	if r.dir != dir && r.mode != -1 {
 		/* this hasn't been as useful as we hoped it would be. */
-		rname := r.name()
+		printf("%s: source %s for file %s: (*File).openSource: dir mismatch %v %v\n",
+			f.source.fs.name, r.name(), f.name(), r.dir, dir)
 
-		fname := f.name()
-		printf("%s: source %s for file %s: fileOpenSource: "+"dir mismatch %d %d\n", f.source.fs.name, rname, fname, r.dir, dir)
-
-		err = EBadMeta
-		goto Err
+		r.close()
+		return nil, EBadMeta
 	}
-
 	return r, nil
-
-Err:
-	r.close()
-	return nil, err
 }
 
 func (f *File) _walk(elem string, partial bool) (*File, error) {
@@ -247,19 +241,16 @@ func (f *File) _walk(elem string, partial bool) (*File, error) {
 	}
 	defer f.unlock()
 
-	var ff *File
-	var err error
-
-	for ff = f.down; ff != nil; ff = ff.next {
+	for ff := f.down; ff != nil; ff = ff.next {
 		if elem == ff.dir.elem && !ff.removed {
 			ff.ref++
 			return ff, nil
 		}
 	}
 
-	ff, err = dirLookup(f, elem)
+	ff, err := dirLookup(f, elem)
 	if err != nil {
-		goto Err
+		return nil, err
 	}
 
 	if ff.dir.mode&ModeSnapshot != 0 {
@@ -279,14 +270,17 @@ func (f *File) _walk(elem string, partial bool) (*File, error) {
 		ff.partial = true
 	} else if ff.dir.mode&ModeDir != 0 {
 		if ff.source, err = f.openSource(ff.dir.entry, ff.dir.gen, true, uint(ff.mode), ff.issnapshot); err != nil {
-			goto Err
+			ff.decRef()
+			return nil, err
 		}
 		if ff.msource, err = f.openSource(ff.dir.mentry, ff.dir.mgen, false, uint(ff.mode), ff.issnapshot); err != nil {
-			goto Err
+			ff.decRef()
+			return nil, err
 		}
 	} else {
 		if ff.source, err = f.openSource(ff.dir.entry, ff.dir.gen, false, uint(ff.mode), ff.issnapshot); err != nil {
-			goto Err
+			ff.decRef()
+			return nil, err
 		}
 	}
 
@@ -300,12 +294,6 @@ func (f *File) _walk(elem string, partial bool) (*File, error) {
 	f.incRef()
 
 	return ff, nil
-
-Err:
-	if ff != nil {
-		ff.decRef()
-	}
-	return nil, err
 }
 
 func (f *File) walk(elem string) (*File, error) {
@@ -585,33 +573,31 @@ func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
 	if err := f.lock(); err != nil {
 		return err
 	}
+	defer f.unlock()
 
-	s := (*Source)(nil)
-	var b *Block
-	var e Entry
-	var err error
 	if f.dir.mode&ModeDir != 0 {
-		err = ENotFile
-		goto Err
+		return ENotFile
 	}
 
 	if f.source.mode != OReadWrite {
-		err = EReadOnly
-		goto Err
+		return EReadOnly
 	}
 
-	if err = f.source.lock(-1); err != nil {
-		goto Err
+	if err := f.source.lock(-1); err != nil {
+		return err
 	}
+	s := f.source
+	defer s.unlock()
 
-	s = f.source
-	b, err = s._block(bn, OReadWrite, 1, tag)
+	b, err := s._block(bn, OReadWrite, 1, tag)
 	if err != nil {
-		goto Err
+		return err
 	}
+	defer blockPut(b)
 
-	if err = s.getEntry(&e); err != nil {
-		goto Err
+	var e Entry
+	if err := s.getEntry(&e); err != nil {
+		return err
 	}
 	if b.l.typ == BtDir {
 		copy(e.score[:], score[:venti.ScoreSize])
@@ -623,42 +609,29 @@ func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
 		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:venti.ScoreSize])
 	}
 	blockDirty(b)
-	blockPut(b)
-	s.unlock()
-	f.unlock()
 	return nil
-
-Err:
-	if s != nil {
-		s.unlock()
-	}
-	f.unlock()
-	return err
 }
 
 func (f *File) setSize(size uint64) error {
 	if err := f.lock(); err != nil {
 		return err
 	}
-	var err error
+	defer f.unlock()
+
 	if f.dir.mode&ModeDir != 0 {
-		err = ENotFile
-		goto Err
+		return ENotFile
 	}
 
 	if f.source.mode != OReadWrite {
-		err = EReadOnly
-		goto Err
+		return EReadOnly
 	}
 
-	if err = f.source.lock(-1); err != nil {
-		goto Err
+	if err := f.source.lock(-1); err != nil {
+		return err
 	}
-	err = f.source.setSize(size)
+	err := f.source.setSize(size)
 	f.source.unlock()
 
-Err:
-	f.unlock()
 	return err
 }
 
@@ -697,9 +670,7 @@ func (f *File) write(buf []byte, cnt int, offset int64, uid string) (int, error)
 	bn := uint32(offset / int64(dsize))
 	off := int(offset % int64(dsize))
 	p := buf
-	var b *Block
 	var ntotal int
-	var err error
 	for cnt > 0 {
 		n := cnt
 		if n > dsize-off {
@@ -709,7 +680,7 @@ func (f *File) write(buf []byte, cnt int, offset int64, uid string) (int, error)
 		if n < dsize {
 			mode = OReadWrite
 		}
-		b, err = s.block(bn, mode)
+		b, err := s.block(bn, mode)
 		if err != nil {
 			if offset > eof {
 				s.setSize(uint64(offset))
@@ -788,6 +759,7 @@ func (f *File) setDir(dir *DirEntry, uid string) error {
 	if err := f.lock(); err != nil {
 		return err
 	}
+	defer f.unlock()
 
 	if f.source.mode != OReadWrite {
 		f.unlock()
@@ -795,40 +767,35 @@ func (f *File) setDir(dir *DirEntry, uid string) error {
 	}
 
 	f.metaLock()
+	defer f.metaUnlock()
 
 	/* check new name does not already exist */
-	var err error
-	var mask uint32
-	var oelem string
 	if f.dir.elem != dir.elem {
 		for ff := f.up.down; ff != nil; ff = ff.next {
 			if dir.elem == ff.dir.elem && !ff.removed {
-				err = EExists
-				goto Err
+				return EExists
 			}
 		}
 
-		var ff *File
-		ff, err = dirLookup(f.up, dir.elem)
+		ff, err := dirLookup(f.up, dir.elem)
 		if err == nil {
 			ff.decRef()
-			err = EExists
-			goto Err
+			return EExists
 		}
 	}
 
-	if err = f.source.lock2(f.msource, -1); err != nil {
-		goto Err
+	if err := f.source.lock2(f.msource, -1); err != nil {
+		return err
 	}
 	if !f.isDir() {
 		size := f.source.getSize()
 		if size != dir.size {
-			if err = f.source.setSize(dir.size); err != nil {
+			if err := f.source.setSize(dir.size); err != nil {
 				f.source.unlock()
 				if f.msource != nil {
 					f.msource.unlock()
 				}
-				goto Err
+				return err
 			}
 			/* commited to changing it now */
 		}
@@ -842,6 +809,7 @@ func (f *File) setDir(dir *DirEntry, uid string) error {
 		f.msource.unlock()
 	}
 
+	var oelem string
 	if f.dir.elem != dir.elem {
 		oelem = f.dir.elem
 		f.dir.elem = dir.elem
@@ -859,7 +827,7 @@ func (f *File) setDir(dir *DirEntry, uid string) error {
 	f.dir.atime = dir.atime
 
 	//fprint(2, "mode %x %x ", f->dir.mode, dir->mode);
-	mask = ^uint32(ModeDir | ModeSnapshot)
+	mask := ^uint32(ModeDir | ModeSnapshot)
 	f.dir.mode &^= mask
 	f.dir.mode |= mask & dir.mode
 	f.dirty = true
@@ -867,18 +835,9 @@ func (f *File) setDir(dir *DirEntry, uid string) error {
 
 	f.metaFlush2(oelem)
 
-	f.metaUnlock()
-	f.unlock()
-
 	f.up.wAccess(uid)
 
 	return nil
-
-Err:
-	f.metaUnlock()
-	f.unlock()
-	assert(err != nil)
-	return err
 }
 
 func (f *File) setQidSpace(offset uint64, max uint64) error {
@@ -1011,9 +970,6 @@ func (f *File) metaFlush(rec bool) int {
 
 /* assumes metaLock is held */
 func (f *File) metaFlush2(oelem string) int {
-	var me, me2 MetaEntry
-	var i, n int
-
 	if !f.dirty {
 		return 0
 	}
@@ -1029,29 +985,29 @@ func (f *File) metaFlush2(oelem string) int {
 	if err := fp.msource.lock(-1); err != nil {
 		return -1
 	}
+	defer fp.msource.unlock()
 
 	/* can happen if source is clri'ed out from under us */
-	var b, bb *Block
-	var boff uint32
-	var err error
-	var mb *MetaBlock
 	if f.boff == NilBlock {
-		goto Err1
+		return -1
 	}
-	b, err = fp.msource.block(f.boff, OReadWrite)
+	b, err := fp.msource.block(f.boff, OReadWrite)
 	if err != nil {
-		goto Err1
+		return -1
 	}
+	defer blockPut(b)
 
-	mb, err = unpackMetaBlock(b.data, fp.msource.dsize)
+	mb, err := unpackMetaBlock(b.data, fp.msource.dsize)
 	if err != nil {
-		goto Err
+		return -1
 	}
+	var i int
+	var me MetaEntry
 	if err := mb.search(oelem, &i, &me); err != nil {
-		goto Err
+		return -1
 	}
 
-	n = deSize(&f.dir)
+	n := deSize(&f.dir)
 	if false {
 		fmt.Fprintf(os.Stderr, "old size %d new size %d\n", me.size, n)
 	}
@@ -1061,14 +1017,13 @@ func (f *File) metaFlush2(oelem string) int {
 		mb.delete(i)
 
 		if f.dir.elem != oelem {
+			var me2 MetaEntry
 			mb.search(f.dir.elem, &i, &me2)
 		}
 		mb.dePack(&f.dir, &me)
 		mb.insert(i, &me)
 		mb.pack()
 		blockDirty(b)
-		blockPut(b)
-		fp.msource.unlock()
 		f.dirty = false
 
 		return 1
@@ -1083,37 +1038,28 @@ func (f *File) metaFlush2(oelem string) int {
 	 * will fit within the block.  i.e. this code should almost
 	 * never be executed.
 	 */
-	boff = fp.metaAlloc(&f.dir, f.boff+1)
+	boff := fp.metaAlloc(&f.dir, f.boff+1)
 	if boff == NilBlock {
 		/* mbResize might have modified block */
 		mb.pack()
 		blockDirty(b)
-		goto Err
+		return -1
 	}
 
 	fmt.Fprintf(os.Stderr, "fileMetaFlush moving entry from %d -> %d\n", f.boff, boff)
 	f.boff = boff
 
 	/* make sure deletion goes to disk after new entry */
-	bb, _ = fp.msource.block(f.boff, OReadWrite)
+	bb, _ := fp.msource.block(f.boff, OReadWrite)
 	mb.delete(i)
 	mb.pack()
 	blockDependency(b, bb, -1, nil, nil)
 	blockPut(bb)
 	blockDirty(b)
-	blockPut(b)
-	fp.msource.unlock()
 
 	f.dirty = false
 
 	return 1
-
-Err:
-	blockPut(b)
-
-Err1:
-	fp.msource.unlock()
-	return -1
 }
 
 func (f *File) metaRemove(uid string) error {

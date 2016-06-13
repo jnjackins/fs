@@ -220,9 +220,10 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 	var bn uint32
 	var e Entry
 	var i int
+	var err error
 	for {
 		bn = offset / uint32(epb)
-		b, err := r.block(bn, OReadWrite)
+		b, err = r.block(bn, OReadWrite)
 		if err != nil {
 			return nil, err
 		}
@@ -768,9 +769,9 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 	if err != nil {
 		return nil, err
 	}
-	defer blockPut(b)
 
 	if r.issnapshot && (e.flags&venti.EntryNoArchive != 0) {
+		blockPut(b)
 		return nil, ENotArchived
 	}
 
@@ -778,6 +779,7 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 		if e.tag == 0 {
 			e.tag = tag
 		} else if e.tag != tag {
+			blockPut(b)
 			fmt.Fprintf(os.Stderr, "tag mismatch\n")
 			return nil, fmt.Errorf("tag mismatch")
 		}
@@ -788,6 +790,7 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 	var i int
 	for i = 0; bn > 0; i++ {
 		if i >= venti.PointerDepth {
+			blockPut(b)
 			return nil, EBadAddr
 		}
 
@@ -797,10 +800,12 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 
 	if i > int(e.depth) {
 		if mode == OReadOnly {
+			blockPut(b)
 			return nil, EBadAddr
 		}
 
 		if err = r.growDepth(b, &e, i); err != nil {
+			blockPut(b)
 			return nil, err
 		}
 	}
@@ -810,17 +815,14 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 	for i := int(e.depth); i >= early; i-- {
 		bb, err := blockWalk(b, index[i], m, r.fs, &e)
 		if err != nil {
+			blockPut(b)
 			return nil, err
 		}
 		blockPut(b)
 		b = bb
 	}
 
-	// make deferred blockPut(b) a no-op
-	bb := b
-	b = nil
-
-	return bb, nil
+	return b, nil
 }
 
 func (r *Source) block(bn uint32, mode int) (*Block, error) {

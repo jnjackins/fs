@@ -189,12 +189,8 @@ func unpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 	}
 
 	magic := pack.U32GET(p)
-	var en int
-	var eo int
-	var omin int
-	var q []byte
 	if magic != MetaMagic && magic != MetaMagic-1 {
-		goto Err
+		return nil, EBadMeta
 	}
 	mb.size = int(pack.U16GET(p[4:]))
 	mb.free = int(pack.U16GET(p[6:]))
@@ -202,34 +198,31 @@ func unpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 	mb.nindex = int(pack.U16GET(p[10:]))
 	mb.botch = magic != MetaMagic
 	if mb.size > n {
-		goto Err
+		return nil, EBadMeta
 	}
 
-	omin = MetaHeaderSize + mb.maxindex*MetaIndexSize
+	omin := MetaHeaderSize + mb.maxindex*MetaIndexSize
 	if n < omin {
-		goto Err
+		return nil, EBadMeta
 	}
 
 	p = p[MetaHeaderSize:]
 
 	/* check the index table - ensures that meUnpack and meCmp never fail */
 	for i := int(0); i < mb.nindex; i++ {
-		eo = int(pack.U16GET(p))
-		en = int(pack.U16GET(p[2:]))
+		eo := int(pack.U16GET(p))
+		en := int(pack.U16GET(p[2:]))
 		if eo < omin || eo+en > mb.size || en < 8 {
-			goto Err
+			return nil, EBadMeta
 		}
-		q = mb.buf[eo:]
+		q := mb.buf[eo:]
 		if pack.U32GET(q) != DirMagic {
-			goto Err
+			return nil, EBadMeta
 		}
 		p = p[4:]
 	}
 
 	return mb, nil
-
-Err:
-	return nil, EBadMeta
 }
 
 func (mb *MetaBlock) pack() {
