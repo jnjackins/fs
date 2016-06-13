@@ -762,7 +762,6 @@ func (f *File) setDir(dir *DirEntry, uid string) error {
 	defer f.unlock()
 
 	if f.source.mode != OReadWrite {
-		f.unlock()
 		return EReadOnly
 	}
 

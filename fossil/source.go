@@ -227,7 +227,7 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 		if err != nil {
 			return nil, err
 		}
-		for i := int(offset % uint32(r.epb)); i < epb; i++ {
+		for i = int(offset % uint32(r.epb)); i < epb; i++ {
 			entryUnpack(&e, b.data, i)
 			if e.flags&venti.EntryActive == 0 && e.gen != ^uint32(0) {
 				goto Found
