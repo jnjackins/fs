@@ -241,14 +241,14 @@ func cmd9p(argv []string) error {
 		return fmt.Errorf("%s: write error: %v", cmd9pTmsg[i].name, err)
 	}
 
-	printf("\t-> %F\n", &t)
+	printf("\t-> %v\n", &t)
 
 	f, err := plan9.ReadFcall(cmdbox.conns[0])
 	if err != nil {
 		return fmt.Errorf("%s: error reading fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
-	printf("\t<- %F\n", &f)
+	printf("\t<- %v\n", &f)
 
 	return nil
 }

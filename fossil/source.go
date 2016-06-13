@@ -88,7 +88,7 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 
 	if int(e.depth) < sizeToDepth(e.size, int(e.psize), int(e.dsize)) {
 		pname := p.name()
-		printf("%s: %s %v: sourceAlloc: depth %d size %llud "+"psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
+		printf("%s: %s %v: sourceAlloc: depth %d size %d psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
 		return nil, EBadEntry
 	}
 
@@ -100,7 +100,7 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 
 	if int(e.dsize) > fs.blockSize || int(e.psize) > fs.blockSize {
 		pname := p.name()
-		printf("%s: %s %v: sourceAlloc: psize %d or dsize %d "+"> blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
+		printf("%s: %s %v: sourceAlloc: psize %d or dsize %d > blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
 		return nil, EBadEntry
 	}
 
@@ -156,24 +156,18 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 }
 
 func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
-	var b *Block
-	var err error
-
-	b, err = cacheLocalData(fs.cache, addr, BtDir, RootTag, mode, 0)
+	b, err := cacheLocalData(fs.cache, addr, BtDir, RootTag, mode, 0)
 	if err != nil {
 		return nil, err
 	}
+	defer blockPut(b)
 
 	if mode == OReadWrite && b.l.epoch != fs.ehi {
-		printf("sourceRoot: fs->ehi = %d, b->l = %L\n", fs.ehi, &b.l)
-		blockPut(b)
+		printf("sourceRoot: fs.ehi=%d, b.l=%v\n", fs.ehi, &b.l)
 		return nil, EBadRoot
 	}
 
-	var r *Source
-	r, err = allocSource(fs, b, nil, 0, mode, false)
-	blockPut(b)
-	return r, err
+	return allocSource(fs, b, nil, 0, mode, false)
 }
 
 func (r *Source) open(offset uint32, mode int, issnapshot bool) (*Source, error) {
@@ -187,15 +181,12 @@ func (r *Source) open(offset uint32, mode int, issnapshot bool) (*Source, error)
 
 	bn := offset / (uint32(r.dsize) / venti.EntrySize)
 
-	var b *Block
-	var err error
-	b, err = r.block(bn, mode)
+	b, err := r.block(bn, mode)
 	if err != nil {
 		return nil, err
 	}
-	r, err = allocSource(r.fs, b, r, offset, mode, issnapshot)
-	blockPut(b)
-	return r, err
+	defer blockPut(b)
+	return allocSource(r.fs, b, r, offset, mode, issnapshot)
 }
 
 func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
@@ -814,11 +805,10 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 
 	for i := int(e.depth); i >= early; i-- {
 		bb, err := blockWalk(b, index[i], m, r.fs, &e)
+		blockPut(b)
 		if err != nil {
-			blockPut(b)
 			return nil, err
 		}
-		blockPut(b)
 		b = bb
 	}
 

@@ -388,7 +388,7 @@ func (d *Disk) thread() {
 			panic("bad iostate")
 		case BioReading:
 			if err := d.readRaw(b.part, b.addr, b.data); err != nil {
-				fmt.Fprintf(os.Stderr, "fossil: disk.readRaw failed: fd=%d score=%v: part=%s block=%d: %v\n",
+				fmt.Fprintf(os.Stderr, "fossil: (*Disk).readRaw failed: fd=%d score=%v: part=%s block=%d: %v\n",
 					d.fd, b.score, partname[b.part], b.addr, err)
 				blockSetIOState(b, BioReadError)
 			} else {
@@ -398,8 +398,8 @@ func (d *Disk) thread() {
 			buf := make([]byte, d.h.blockSize)
 			p, dirty := blockRollback(b, buf)
 			if err := d.writeRaw(b.part, b.addr, p); err != nil {
-				fmt.Fprintf(os.Stderr, "fossil: disk.writeRaw failed: fd=%d score=%v: date=%s part=%s block=%d: %v\n",
-					d, b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
+				fmt.Fprintf(os.Stderr, "fossil: (*Disk).writeRaw failed: fd=%d score=%v: date=%s part=%s block=%d: %v\n",
+					d.fd, b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
 				break
 			}
 			if dirty {
