@@ -30,7 +30,7 @@ type Cache struct {
 
 	disk    *Disk
 	size    int /* block size */
-	ndmap   int /* size of per-block dirty pointer map used in blockWrite */
+	ndmap   int /* size of per-block dirty pointer map used in (*Block).write */
 	z       *venti.Session
 	now     uint32   /* ticks for usage timestamps */
 	heads   []*Block /* hash table for finding address */
@@ -392,7 +392,7 @@ func (c *Cache) localLookup(part int, addr, vers uint32, waitlock bool) (*Block,
 
 	if b == nil || b.vers != vers {
 		c.lk.Unlock()
-		// TODO(jnj): blockPut?
+		// TODO(jnj): b.put()?
 		return nil, errors.New("miss")
 	}
 	heapDel(b)
@@ -933,7 +933,7 @@ func (b *Block) setLabel(l *Label, allocating bool) error {
 	 *	- l.state is not checked when we load blocks.
 	 *	- the archiver cares deeply about l.state being
 	 *		BaActive vs. BaCopied, but that's handled
-	 *		by direct calls to _blockSetLabel.
+	 *		by direct calls to (*Block)._setLabel.
 	 */
 	if allocating {
 		b.dependency(lb, -1, nil, nil)
@@ -967,7 +967,7 @@ func (b *Block) dependency(bb *Block, index int, score *venti.Score, e *Entry) {
 	}
 
 	if bb.iostate != BioDirty {
-		fmt.Fprintf(os.Stderr, "%s: %d:%x:%d iostate is %d in blockDependency\n", argv0, bb.part, bb.addr, bb.l.typ, bb.iostate)
+		fmt.Fprintf(os.Stderr, "%s: %d:%x:%d iostate is %d in (*Block).dependency\n", argv0, bb.part, bb.addr, bb.l.typ, bb.iostate)
 		panic("abort")
 	}
 
@@ -1048,7 +1048,7 @@ func (b *Block) rollback(buf []byte) (p []byte, dirty bool) {
 	copy(buf, b.data[:b.c.size])
 	for p := b.prior; p != nil; p = p.next {
 		/*
-		 * we know p.index >= 0 because blockWrite has vetted this block for us.
+		 * we know p.index >= 0 because (*Block).write has vetted this block for us.
 		 */
 		assert(p.index >= 0)
 		assert(b.part == PartSuper || (b.part == PartData && b.l.typ != BtData))
@@ -1123,7 +1123,7 @@ func (b *Block) write(waitlock bool) bool {
 		 * which means it hasn't been written out since we last saw it.
 		 */
 		if bb.iostate != BioDirty {
-			fmt.Fprintf(os.Stderr, "%s: %d:%x:%d iostate is %d in blockWrite\n", argv0, bb.part, bb.addr, bb.l.typ, bb.iostate)
+			fmt.Fprintf(os.Stderr, "%s: %d:%x:%d iostate is %d in (*Block).write\n", argv0, bb.part, bb.addr, bb.l.typ, bb.iostate)
 			/* probably BioWriting if it happens? */
 			if bb.iostate == BioClean {
 				goto ignblock
@@ -1138,7 +1138,7 @@ func (b *Block) write(waitlock bool) bool {
 			 * b's dependency on bb, so just don't write b yet.
 			 */
 			if false {
-				fmt.Fprintf(os.Stderr, "%s: blockWrite skipping %d %x %d %d; need to write %d %x %d\n", argv0, b.part, b.addr, b.vers, b.l.typ, p.part, p.addr, bb.vers)
+				fmt.Fprintf(os.Stderr, "%s: (*Block).write skipping %d %x %d %d; need to write %d %x %d\n", argv0, b.part, b.addr, b.vers, b.l.typ, p.part, p.addr, bb.vers)
 			}
 			return false
 		}
@@ -1154,7 +1154,7 @@ func (b *Block) write(waitlock bool) bool {
 
 	/*
 	 * DiskWrite must never be called with a double-locked block.
-	 * This call to diskWrite is okay because blockWrite is only called
+	 * This call to diskWrite is okay because (*Block).write is only called
 	 * from the cache flush thread, which never double-locks a block.
 	 */
 	c.disk.write(b)
@@ -1222,7 +1222,7 @@ func (b *Block) setIOState(iostate int32) {
 		assert(b.uhead == nil)
 		dowakeup = true
 
-	// Wrote out an old version of the block (see blockRollback).
+	// Wrote out an old version of the block (see (*Block).rollback).
 	// Bump a version count, leave it dirty.
 	case BioDirty:
 		if b.iostate == BioWriting {
@@ -1234,7 +1234,7 @@ func (b *Block) setIOState(iostate int32) {
 		}
 
 	// Adding block to disk queue.  Bump reference count.
-	// diskThread decs the count later by calling blockPut.
+	// diskThread decs the count later by calling (*Block).put.
 	// This is here because we need to lock c->lk to
 	// manipulate the ref count.
 	case BioReading,
@@ -1292,9 +1292,9 @@ func (b *Block) setIOState(iostate int32) {
  * can't even update the in-memory copy, or the cache might
  * mistakenly give out b for reuse before p gets written.
  *
- * CacheAllocBlock's call to blockSetLabel records a "bb after lbb" dependency.
+ * (*Cache).allocBlock's call to (*Block).setLabel records a "bb after lbb" dependency.
  * The caller is expected to record a "p after bb" dependency
- * to finish (1), and also expected to call blockRemoveLink
+ * to finish (1), and also expected to call (*Block).removeLink
  * to arrange for (2) to happen once p is written.
  *
  * Until (2) happens, some pieces of the code (e.g., the archiver)
@@ -1304,7 +1304,7 @@ func (b *Block) setIOState(iostate int32) {
  */
 func (b *Block) copy(tag, ehi, elo uint32) (*Block, error) {
 	if (b.l.state&BsClosed != 0) || b.l.epoch >= ehi {
-		fmt.Fprintf(os.Stderr, "%s: blockCopy %#x %v but fs is [%d,%d]\n", argv0, b.addr, b.l, elo, ehi)
+		fmt.Fprintf(os.Stderr, "%s: (*Block).copy %#x %v but fs is [%d,%d]\n", argv0, b.addr, b.l, elo, ehi)
 	}
 
 	bb, err := b.c.allocBlock(int(b.l.typ), tag, ehi, elo)
@@ -1515,7 +1515,7 @@ func doRemoveLink(c *Cache, p *BList) {
 func blistAlloc(b *Block) *BList {
 	if b.iostate != BioDirty {
 		// should not happen anymore -
-		// blockDirty used to flush but no longer does.
+		// (*Block).dirty used to flush but no longer does.
 		assert(b.iostate == BioClean)
 		fmt.Fprintf(os.Stderr, "%s: blistAlloc: called on clean block\n", argv0)
 		return nil
@@ -1846,8 +1846,8 @@ func flushFill(c *Cache) {
  * This is not thread safe, i.e. it can't be called from multiple threads.
  *
  * It's okay how we use it, because it only gets called in
- * the flushThread.  And cacheFree, but only after
- * cacheFree has killed off the flushThread.
+ * the flushThread.  And (*Cache).free, but only after
+ * (*Cache).free has killed off the flushThread.
  */
 func (c *Cache) flushBlock() bool {
 	for {
@@ -1924,7 +1924,7 @@ func flushThread(c *Cache) {
 		if i == 0 && c.ndirty != 0 {
 			/*
 			 * All the blocks are being written right now -- there's nothing to do.
-			 * We might be spinning with cacheFlush though -- he'll just keep
+			 * We might be spinning with (*Cache).flush though -- he'll just keep
 			 * kicking us until c->ndirty goes down.  Probably we should sleep
 			 * on something that the diskThread can kick, but for now we'll
 			 * just pause for a little while waiting for disks to finish.
@@ -1948,12 +1948,12 @@ func (c *Cache) flush(wait bool) {
 	c.lk.Lock()
 	if wait {
 		for c.ndirty != 0 {
-			//	printf("cacheFlush: %d dirty blocks, uhead %p\n",
+			//	printf("(*Cache).flush: %d dirty blocks, uhead %p\n",
 			//		c->ndirty, c->uhead);
 			c.flushcond.Signal()
 			c.flushwait.Wait()
 		}
-		//	printf("cacheFlush: done (uhead %p)\n", c->ndirty, c->uhead);
+		//	printf("(*Cache).flush: done (uhead %p)\n", c->ndirty, c->uhead);
 	} else if c.ndirty != 0 {
 		c.flushcond.Signal()
 	}
