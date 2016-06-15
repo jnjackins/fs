@@ -978,7 +978,7 @@ func fsysClrp(fsys *Fsys, argv []string) error {
 
 // TODO(jnj): errors?
 func fsysEsearch1(f *File, s string, elo uint32) int {
-	dee, err := deeOpen(f)
+	dee, err := openDee(f)
 	if err != nil {
 		return 0
 	}
@@ -987,7 +987,7 @@ func fsysEsearch1(f *File, s string, elo uint32) int {
 	var de DirEntry
 	var e, ee Entry
 	for {
-		r, err := deeRead(dee, &de)
+		r, err := dee.read(&de)
 		if r < 0 {
 			printf("\tdeeRead %s/%s: %v\n", s, de.elem, err)
 			break
@@ -1026,7 +1026,7 @@ func fsysEsearch1(f *File, s string, elo uint32) int {
 		}
 	}
 
-	deeClose(dee)
+	dee.close()
 
 	return n
 }

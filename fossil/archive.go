@@ -26,7 +26,7 @@ type Arch struct {
 	die    *sync.Cond
 }
 
-func archInit(c *Cache, disk *Disk, fs *Fs, z *venti.Session) *Arch {
+func initArch(c *Cache, disk *Disk, fs *Fs, z *venti.Session) *Arch {
 	a := &Arch{
 		c:         c,
 		z:         z,
@@ -37,12 +37,12 @@ func archInit(c *Cache, disk *Disk, fs *Fs, z *venti.Session) *Arch {
 	}
 	a.starve = sync.NewCond(a.lk)
 
-	go archThread(a)
+	go a.thread()
 
 	return a
 }
 
-func archFree(a *Arch) {
+func (a *Arch) free() {
 	/* kill slave */
 	a.lk.Lock()
 
@@ -322,7 +322,7 @@ Out:
 	return ret, err
 }
 
-func archThread(a *Arch) {
+func (a *Arch) thread() {
 	var b *Block
 	var p Param
 	var super Super
@@ -449,7 +449,7 @@ Done:
 	a.lk.Unlock()
 }
 
-func archKick(a *Arch) {
+func (a *Arch) kick() {
 	if a == nil {
 		fmt.Fprintf(os.Stderr, "warning: archKick nil\n")
 		return

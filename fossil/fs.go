@@ -93,7 +93,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	}
 
 	if mode == OReadWrite && z != nil {
-		fs.arch = archInit(fs.cache, disk, fs, z)
+		fs.arch = initArch(fs.cache, disk, fs, z)
 	}
 
 	var b *Block
@@ -219,7 +219,7 @@ func (fs *Fs) close() {
 	fs.source.close()
 	fs.cache.free()
 	if fs.arch != nil {
-		archFree(fs.arch)
+		fs.arch.free()
 	}
 }
 
@@ -678,7 +678,7 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 
 	/* BUG? can fs.arch fall out from under us here? */
 	if doarchive && fs.arch != nil {
-		archKick(fs.arch)
+		fs.arch.kick()
 	}
 
 	return nil
@@ -857,7 +857,7 @@ func (fs *Fs) metaFlush() {
 }
 
 func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
-	dee, err := deeOpen(f)
+	dee, err := openDee(f)
 	if err != nil {
 		return 0
 	}
@@ -866,7 +866,7 @@ func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
 	var r, n int
 	for {
 		var deeReadErr error
-		r, deeReadErr = deeRead(dee, &de)
+		r, deeReadErr = dee.read(&de)
 		if r <= 0 {
 			if deeReadErr != nil {
 				dprintf("fsEsearch1: deeRead: %v\n", deeReadErr)
@@ -902,7 +902,7 @@ func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
 		}
 	}
 
-	deeClose(dee)
+	dee.close()
 
 	return n
 }
@@ -949,7 +949,7 @@ func (fs *Fs) snapshotCleanup(age time.Duration) {
 /* remove all snapshots that have expired */
 /* return number of directory entries remaining */
 func fsRsearch1(f *File, s string) int {
-	dee, err := deeOpen(f)
+	dee, err := openDee(f)
 	if err != nil {
 		return 0
 	}
@@ -958,7 +958,7 @@ func fsRsearch1(f *File, s string) int {
 	var r, n int
 	for {
 		var deeReadErr error
-		r, deeReadErr = deeRead(dee, &de)
+		r, deeReadErr = dee.read(&de)
 		if r <= 0 {
 			if deeReadErr != nil {
 				dprintf("fsRsearch1: deeRead: %v\n", deeReadErr)
@@ -995,7 +995,7 @@ func fsRsearch1(f *File, s string) int {
 		}
 	}
 
-	deeClose(dee)
+	dee.close()
 
 	return n
 }

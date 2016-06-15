@@ -17,7 +17,7 @@ func dirBufAlloc(file *File) (*DirBuf, error) {
 	db := new(DirBuf)
 
 	var err error
-	db.dee, err = deeOpen(file)
+	db.dee, err = openDee(file)
 	if err != nil {
 		/* can happen if dir is removed from under us */
 		return nil, err
@@ -34,7 +34,7 @@ func dirBufFree(db *DirBuf) {
 	if db.valid != 0 {
 		deCleanup(&db.de)
 	}
-	deeClose(db.dee)
+	db.dee.close()
 }
 
 func dirDe2M(de *DirEntry) ([]byte, error) {
@@ -114,7 +114,7 @@ func dirRead(fid *Fid, count int, offset int64) ([]byte, error) {
 	data := make([]byte, 0, count) // TODO(jnj): avoid allocation
 	for nb = 0; nb < count; nb += n {
 		if db.valid == 0 {
-			n, err = deeRead(db.dee, &db.de)
+			n, err = db.dee.read(&db.de)
 			if err != nil {
 				return nil, err
 			}

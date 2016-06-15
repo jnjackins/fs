@@ -1273,7 +1273,7 @@ type DirEntryEnum struct {
 	buf  []DirEntry
 }
 
-func deeOpen(f *File) (*DirEntryEnum, error) {
+func openDee(f *File) (*DirEntryEnum, error) {
 	if !f.isDir() {
 		f.decRef()
 		return nil, ENotDir
@@ -1320,7 +1320,7 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	return nil
 }
 
-func deeFill(dee *DirEntryEnum) error {
+func (dee *DirEntryEnum) fill() error {
 	/* clean up first */
 	for i := dee.i; i < dee.n; i++ {
 		deCleanup(&dee.buf[i])
@@ -1369,7 +1369,7 @@ func deeFill(dee *DirEntryEnum) error {
 }
 
 // TODO(jnj): better error strategy
-func deeRead(dee *DirEntryEnum, de *DirEntry) (int, error) {
+func (dee *DirEntryEnum) read(de *DirEntry) (int, error) {
 	if dee == nil {
 		return -1, fmt.Errorf("cannot happen in deeRead")
 	}
@@ -1402,7 +1402,7 @@ func deeRead(dee *DirEntryEnum, de *DirEntry) (int, error) {
 		}
 
 		didread = true
-		if err := deeFill(dee); err != nil {
+		if err := dee.fill(); err != nil {
 			return -1, err
 		}
 	}
@@ -1413,7 +1413,7 @@ func deeRead(dee *DirEntryEnum, de *DirEntry) (int, error) {
 	return 1, nil
 }
 
-func deeClose(dee *DirEntryEnum) {
+func (dee *DirEntryEnum) close() {
 	if dee == nil {
 		return
 	}
