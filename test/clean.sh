@@ -1,5 +1,5 @@
 #!/bin/bash
-rm -f fossilsrv
+rm -f fossil.srv
 
 # umount likes to fail the first time if fossil has already died.
 (for _ in 1 2; do umount -f active; done; rm -rf active) 2>/dev/null &
