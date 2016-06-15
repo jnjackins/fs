@@ -522,7 +522,7 @@ func fsysSync(fsys *Fsys, argv []string) error {
 		return EUsage
 	}
 
-	n := cacheDirty(fsys.fs.cache)
+	n := fsys.fs.cache.dirty()
 	fsys.fs.sync()
 	printf("\t%s sync: wrote %d blocks\n", fsys.name, n)
 	return nil
@@ -653,7 +653,7 @@ func fsysLabel(fsys *Fsys, argv []string) error {
 
 	fs := fsys.fs
 	addr := strtoul(argv[0], 0)
-	b, err := cacheLocal(fs.cache, PartData, addr, OReadOnly)
+	b, err := fs.cache.local(PartData, addr, OReadOnly)
 	if err != nil {
 		return err
 	}
@@ -754,9 +754,9 @@ func fsysBlock(fsys *Fsys, argv []string) error {
 	if argc == 4 {
 		mode = OReadWrite
 	}
-	b, err := cacheLocal(fs.cache, PartData, addr, mode)
+	b, err := fs.cache.local(PartData, addr, mode)
 	if err != nil {
-		return fmt.Errorf("cacheLocal %x: %v", addr, err)
+		return fmt.Errorf("(*Cache).local %x: %v", addr, err)
 	}
 	defer b.put()
 
@@ -825,7 +825,7 @@ func fsysBfree(fsys *Fsys, argv []string) error {
 			fs.elk.RUnlock()
 			return fmt.Errorf("bad address: %v\n", err)
 		}
-		b, err := cacheLocal(fs.cache, PartData, uint32(addr), OReadOnly)
+		b, err := fs.cache.local(PartData, uint32(addr), OReadOnly)
 		if err != nil {
 			printf("loading %x: %v\n", addr, err)
 			continue
@@ -873,7 +873,7 @@ func fsysDf(fsys *Fsys, argv []string) error {
 	elo := fs.elo
 	fs.elk.RUnlock()
 
-	cacheCountUsed(fs.cache, elo, &used, &tot, &bsize)
+	fs.cache.countUsed(elo, &used, &tot, &bsize)
 	printf("\t%s: %s used + %s free = %s (%.1f%% used)\n",
 		fsys.name,
 		fmtComma(int64(used)*int64(bsize)),
@@ -929,9 +929,9 @@ func fsysClrep(fsys *Fsys, argv []string, ch rune) error {
 	if argc == 4 {
 		mode = OReadWrite
 	}
-	b, err := cacheLocal(fs.cache, PartData, addr, mode)
+	b, err := fs.cache.local(PartData, addr, mode)
 	if err != nil {
-		return fmt.Errorf("cacheLocal %x: %v", addr, err)
+		return fmt.Errorf("(*Cache).local %x: %v", addr, err)
 	}
 
 	sz := venti.ScoreSize

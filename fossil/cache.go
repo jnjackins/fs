@@ -52,7 +52,7 @@ type Cache struct {
 
 	die *sync.Cond /* daemon threads should die when != nil */
 
-	flush      *sync.Cond
+	flushcond  *sync.Cond
 	flushwait  *sync.Cond
 	heapwait   *sync.Cond
 	baddr      []BAddr
@@ -129,7 +129,7 @@ var vtType = [BtMax]int{
 /*
  * Allocate the memory cache.
  */
-func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
+func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c := &Cache{
 		lk:       new(sync.Mutex),
 		ref:      1,
@@ -186,7 +186,7 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c.fl = flAlloc(disk.size(PartData))
 
 	c.unlink = sync.NewCond(c.lk)
-	c.flush = sync.NewCond(c.lk)
+	c.flushcond = sync.NewCond(c.lk)
 	c.flushwait = sync.NewCond(c.lk)
 	c.heapwait = sync.NewCond(c.lk)
 
@@ -196,7 +196,7 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c.syncTicker = time.NewTicker(30 * time.Second)
 	go func() {
 		for range c.syncTicker.C {
-			cacheFlush(c, false)
+			c.flush(false)
 		}
 	}()
 
@@ -206,7 +206,7 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 		go flushThread(c)
 	}
 
-	cacheCheck(c)
+	c.check()
 
 	return c
 }
@@ -214,13 +214,13 @@ func cacheAlloc(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 /*
  * Free the whole memory cache, flushing all dirty blocks to the disk.
  */
-func cacheFree(c *Cache) {
+func (c *Cache) free() {
 	/* kill off daemon threads */
 	c.lk.Lock()
 
 	c.die = sync.NewCond(c.lk)
 	c.syncTicker.Stop()
-	c.flush.Signal()
+	c.flushcond.Signal()
 	c.unlink.Signal()
 	for c.ref > 1 {
 		c.die.Wait()
@@ -230,7 +230,7 @@ func cacheFree(c *Cache) {
 	for {
 		unlinkBody(c)
 		c.lk.Unlock()
-		for cacheFlushBlock(c) {
+		for c.flushBlock() {
 		}
 		c.disk.flush()
 		c.lk.Lock()
@@ -241,7 +241,7 @@ func cacheFree(c *Cache) {
 
 	c.lk.Unlock()
 
-	cacheCheck(c)
+	c.check()
 
 	for i := 0; i < c.nblocks; i++ {
 		assert(c.blocks[i].ref == 0)
@@ -252,7 +252,7 @@ func cacheFree(c *Cache) {
 	/* don't close vtSession */
 }
 
-func cacheDump(c *Cache) {
+func (c *Cache) dump() {
 	for i := 0; i < c.nblocks; i++ {
 		b := c.blocks[i]
 		fmt.Fprintf(os.Stderr, "%d. p=%d a=%d %v t=%d ref=%d state=%s io=%s\n",
@@ -260,7 +260,7 @@ func cacheDump(c *Cache) {
 	}
 }
 
-func cacheCheck(c *Cache) {
+func (c *Cache) check() {
 	now := c.now
 
 	for i := uint32(0); i < uint32(c.nheap); i++ {
@@ -290,8 +290,8 @@ func cacheCheck(c *Cache) {
 	}
 
 	if c.nheap+refed != c.nblocks {
-		fmt.Fprintf(os.Stderr, "%s: cacheCheck: nheap %d refed %d nblocks %d\n", argv0, c.nheap, refed, c.nblocks)
-		cacheDump(c)
+		fmt.Fprintf(os.Stderr, "%s: (*Cache).check: nheap %d refed %d nblocks %d\n", argv0, c.nheap, refed, c.nblocks)
+		c.dump()
 	}
 
 	assert(c.nheap+refed == c.nblocks)
@@ -307,7 +307,7 @@ func cacheCheck(c *Cache) {
 	}
 
 	if refed > 0 {
-		fmt.Fprintf(os.Stderr, "%s: cacheCheck: in used %d\n", argv0, refed)
+		fmt.Fprintf(os.Stderr, "%s: (*Cache).check: in used %d\n", argv0, refed)
 	}
 }
 
@@ -316,7 +316,7 @@ func cacheCheck(c *Cache) {
  * remove it from the heap, and fix up the heap.
  */
 /* called with c.lk held */
-func cacheBumpBlock(c *Cache) *Block {
+func (c *Cache) bumpBlock() *Block {
 	/*
 	 * locate the block with the oldest second to last use.
 	 * remove it from the heap, and fix up the heap.
@@ -325,7 +325,7 @@ func cacheBumpBlock(c *Cache) *Block {
 
 	if c.nheap == 0 {
 		for c.nheap == 0 {
-			c.flush.Signal()
+			c.flushcond.Signal()
 			c.heapwait.Wait()
 			if c.nheap == 0 {
 				printed = true
@@ -375,7 +375,7 @@ func cacheBumpBlock(c *Cache) *Block {
 /*
  * look for a particular version of the block in the memory cache.
  */
-func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool) (*Block, error) {
+func (c *Cache) localLookup(part int, addr, vers uint32, waitlock bool) (*Block, error) {
 	h := addr % uint32(c.hashSize)
 
 	/*
@@ -404,7 +404,7 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool) (*Bl
 		b.lock()
 		took := time.Since(then)
 		if took > 5*time.Millisecond {
-			printf("cacheLocalLookup: waitlock=false, but waited %v for lock\n", took)
+			printf("(*Cache).localLookup: waitlock=false, but waited %v for lock\n", took)
 		}
 	} else {
 		b.lock()
@@ -442,7 +442,7 @@ func cacheLocalLookup(c *Cache, part int, addr, vers uint32, waitlock bool) (*Bl
  * fetch a local (on-disk) block from the memory cache.
  * if it's not there, load it, bumping some other block.
  */
-func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Block, error) {
+func (c *Cache) _local(part int, addr uint32, mode int, epoch uint32) (*Block, error) {
 	assert(part != PartVenti)
 
 	/*
@@ -457,7 +457,7 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 			continue
 		}
 		if epoch != 0 && b.l.epoch != epoch {
-			fmt.Fprintf(os.Stderr, "%s: _cacheLocal want epoch %d got %d\n", argv0, epoch, b.l.epoch)
+			fmt.Fprintf(os.Stderr, "%s: (*Cache)._local want epoch %d got %d\n", argv0, epoch, b.l.epoch)
 			c.lk.Unlock()
 			return nil, ELabelMismatch
 		}
@@ -468,7 +468,7 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	}
 
 	if b == nil {
-		b = cacheBumpBlock(c)
+		b = c.bumpBlock()
 
 		b.part = part
 		b.addr = addr
@@ -495,7 +495,7 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	 * For now, I'm not going to worry about it.
 	 */
 	//if false {
-	//	fmt.Fprintf(os.Stderr, "%s: cacheLocal: %d: %d %x\n", argv0, getpid(), b.part, b.addr)
+	//	fmt.Fprintf(os.Stderr, "%s: (*Cache)._local: %d: %d %x\n", argv0, getpid(), b.part, b.addr)
 	//}
 	b.lock()
 	atomic.StoreInt32(&b.nlock, 1)
@@ -544,8 +544,8 @@ func _cacheLocal(c *Cache, part int, addr uint32, mode int, epoch uint32) (*Bloc
 	/* NOT REACHED */
 }
 
-func cacheLocal(c *Cache, part int, addr uint32, mode int) (*Block, error) {
-	return _cacheLocal(c, part, addr, mode, 0)
+func (c *Cache) local(part int, addr uint32, mode int) (*Block, error) {
+	return c._local(part, addr, mode, 0)
 }
 
 /*
@@ -553,13 +553,13 @@ func cacheLocal(c *Cache, part int, addr uint32, mode int) (*Block, error) {
  * if it's not there, load it, bumping some other block.
  * check tag and type.
  */
-func cacheLocalData(c *Cache, addr uint32, typ int, tag uint32, mode int, epoch uint32) (*Block, error) {
-	b, err := _cacheLocal(c, PartData, addr, mode, epoch)
+func (c *Cache) localData(addr uint32, typ int, tag uint32, mode int, epoch uint32) (*Block, error) {
+	b, err := c._local(PartData, addr, mode, epoch)
 	if err != nil {
 		return nil, err
 	}
 	if int(b.l.typ) != typ || b.l.tag != tag {
-		fmt.Fprintf(os.Stderr, "%s: cacheLocalData: addr=%d type got %d exp %d: tag got %x exp %x\n", argv0, addr, b.l.typ, typ, b.l.tag, tag)
+		fmt.Fprintf(os.Stderr, "%s: (*Cache).localData: addr=%d type got %d exp %d: tag got %x exp %x\n", argv0, addr, b.l.typ, typ, b.l.tag, tag)
 		b.put()
 		return nil, ELabelMismatch
 	}
@@ -572,10 +572,10 @@ func cacheLocalData(c *Cache, addr uint32, typ int, tag uint32, mode int, epoch 
  * if it's not there, load it, bumping some other block.
  * check tag and type if it's really a local block in disguise.
  */
-func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*Block, error) {
+func (c *Cache) global(score *venti.Score, typ int, tag uint32, mode int) (*Block, error) {
 	addr := venti.GlobalToLocal(score)
 	if addr != NilBlock {
-		return cacheLocalData(c, addr, typ, tag, mode, 0)
+		return c.localData(addr, typ, tag, mode, 0)
 	}
 
 	h := (uint32(score[0]) | uint32(score[1])<<8 | uint32(score[2])<<16 | uint32(score[3])<<24) % uint32(c.hashSize)
@@ -597,10 +597,10 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
 
 	if b == nil {
 		if false {
-			fmt.Fprintf(os.Stderr, "%s: cacheGlobal %v %d\n", argv0, score, typ)
+			fmt.Fprintf(os.Stderr, "%s: (*Cache).global %v %d\n", argv0, score, typ)
 		}
 
-		b = cacheBumpBlock(c)
+		b = c.bumpBlock()
 
 		b.part = PartVenti
 		b.addr = NilBlock
@@ -657,7 +657,7 @@ func cacheGlobal(c *Cache, score *venti.Score, typ int, tag uint32, mode int) (*
  */
 var lastAlloc uint32
 
-func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint32) (*Block, error) {
+func (c *Cache) allocBlock(typ int, tag uint32, epoch uint32, epochLow uint32) (*Block, error) {
 	var b *Block
 	var err error
 
@@ -666,9 +666,9 @@ func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint3
 
 	fl.lk.Lock()
 	addr := fl.last
-	b, err = cacheLocal(c, PartLabel, addr/n, OReadOnly)
+	b, err = c.local(PartLabel, addr/n, OReadOnly)
 	if b == nil {
-		fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx %v\n", argv0, err)
+		fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx %v\n", argv0, err)
 		fl.lk.Unlock()
 		return nil, err
 	}
@@ -689,7 +689,7 @@ func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint3
 				 * messages.
 				 */
 				if fl.last != 0 {
-					fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx1 %v\n", argv0, err)
+					fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx1 %v\n", argv0, err)
 				}
 				fl.last = 0
 				fl.lk.Unlock()
@@ -699,10 +699,10 @@ func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint3
 
 		if addr%n == 0 {
 			b.put()
-			b, err = cacheLocal(c, PartLabel, addr/n, OReadOnly)
+			b, err = c.local(PartLabel, addr/n, OReadOnly)
 			if err != nil {
 				fl.last = addr
-				fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx2 %v\n", argv0, err)
+				fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx2 %v\n", argv0, err)
 				fl.lk.Unlock()
 				return nil, err
 			}
@@ -723,9 +723,9 @@ func cacheAllocBlock(c *Cache, typ int, tag uint32, epoch uint32, epochLow uint3
 
 Found:
 	b.put()
-	b, err = cacheLocal(c, PartData, addr, OOverWrite)
+	b, err = c.local(PartData, addr, OOverWrite)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx3 %v\n", argv0, err)
+		fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx3 %v\n", argv0, err)
 		return nil, err
 	}
 
@@ -737,7 +737,7 @@ Found:
 	lab.epoch = epoch
 	lab.epochClose = ^uint32(0)
 	if err := b.setLabel(&lab, true); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: cacheAllocBlock: xxx4 %v\n", argv0, err)
+		fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx4 %v\n", argv0, err)
 		b.put()
 		return nil, err
 	}
@@ -756,11 +756,11 @@ Found:
 	return b, nil
 }
 
-func cacheDirty(c *Cache) int {
+func (c *Cache) dirty() int {
 	return c.ndirty
 }
 
-func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
+func (c *Cache) countUsed(epochLow uint32, used, total, bsize *uint32) {
 	fl := c.fl
 	n := uint32(c.size / LabelSize)
 	*bsize = uint32(c.size)
@@ -781,9 +781,9 @@ func cacheCountUsed(c *Cache, epochLow uint32, used, total, bsize *uint32) {
 	for addr = 0; addr < fl.end; addr++ {
 		if addr%n == 0 {
 			b.put()
-			b, err = cacheLocal(c, PartLabel, addr/n, OReadOnly)
+			b, err = c.local(PartLabel, addr/n, OReadOnly)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s: flCountUsed: loading %x: %v\n", argv0, addr/n, err)
+				fmt.Fprintf(os.Stderr, "%s: (*Cache).countUsed: loading %x: %v\n", argv0, addr/n, err)
 				break
 			}
 		}
@@ -821,7 +821,7 @@ func flAlloc(end uint32) *FreeList {
 	}
 }
 
-func cacheLocalSize(c *Cache, part int) uint32 {
+func (c *Cache) localSize(part int) uint32 {
 	return c.disk.size(part)
 }
 
@@ -898,7 +898,7 @@ func (b *Block) _setLabel(l *Label) (*Block, error) {
 	assert(b.iostate == BioLabel || b.iostate == BioClean || b.iostate == BioDirty)
 	lpb := uint32(c.size / LabelSize)
 	a := b.addr / lpb
-	bb, err := cacheLocal(c, PartLabel, a, OReadWrite)
+	bb, err := c.local(PartLabel, a, OReadWrite)
 	if err != nil {
 		b.put()
 		return nil, err
@@ -1026,7 +1026,7 @@ func (b *Block) dirty() error {
 	b.iostate = BioDirty
 	c.ndirty++
 	if c.ndirty > c.maxdirty>>1 {
-		c.flush.Signal()
+		c.flushcond.Signal()
 	}
 	c.lk.Unlock()
 
@@ -1109,7 +1109,7 @@ func (b *Block) write(waitlock bool) bool {
 			}
 		}
 
-		bb, err = cacheLocalLookup(c, p.part, p.addr, p.vers, waitlock)
+		bb, err = c.localLookup(p.part, p.addr, p.vers, waitlock)
 		if err != nil {
 			/* block not in cache => was written already */
 			dmap[p.index/8] |= 1 << uint(p.index%8)
@@ -1307,7 +1307,7 @@ func (b *Block) copy(tag, ehi, elo uint32) (*Block, error) {
 		fmt.Fprintf(os.Stderr, "%s: blockCopy %#x %v but fs is [%d,%d]\n", argv0, b.addr, b.l, elo, ehi)
 	}
 
-	bb, err := cacheAllocBlock(b.c, int(b.l.typ), tag, ehi, elo)
+	bb, err := b.c.allocBlock(int(b.l.typ), tag, ehi, elo)
 	if err != nil {
 		b.put()
 		return nil, err
@@ -1316,8 +1316,8 @@ func (b *Block) copy(tag, ehi, elo uint32) (*Block, error) {
 	/*
 	 * Update label so we know the block has been copied.
 	 * (It will be marked closed once it has been unlinked from
-	 * the tree.)  This must follow cacheAllocBlock since we
-	 * can't be holding onto lb when we call cacheAllocBlock.
+	 * the tree.)  This must follow (*Cache).allocBlock since we
+	 * can't be holding onto lb when we call (*Cache).allocBlock.
 	 */
 	if b.l.state&BsCopied == 0 {
 		if b.part == PartData { /* not the superblock */
@@ -1430,7 +1430,7 @@ func doRemoveLink(c *Cache, p *BList) {
 	if recurse {
 		mode = OReadOnly
 	}
-	b, err := cacheLocalData(c, p.addr, int(p.typ), p.tag, mode, 0)
+	b, err := c.localData(p.addr, int(p.typ), p.tag, mode, 0)
 	if err != nil {
 		return
 	}
@@ -1483,7 +1483,7 @@ func doRemoveLink(c *Cache, p *BList) {
 			b.put()
 
 			doRemoveLink(c, &bl)
-			b, err = cacheLocalData(c, p.addr, int(p.typ), p.tag, OReadOnly, 0)
+			b, err = c.localData(p.addr, int(p.typ), p.tag, OReadOnly, 0)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: warning: lost block in doRemoveLink\n", argv0)
 				return
@@ -1548,7 +1548,7 @@ func blistAlloc(b *Block) *BList {
 		 * so it can't deadlock like we can.)
 		 */
 		for c.blfree == nil {
-			c.flush.Signal()
+			c.flushcond.Signal()
 			c.blrend.Wait()
 			if c.blfree == nil {
 				fmt.Fprintf(os.Stderr, "%s: flushing for blists\n", argv0)
@@ -1729,7 +1729,7 @@ func heapIns(b *Block) {
 func readLabel(c *Cache, l *Label, addr uint32) error {
 	lpb := c.size / LabelSize
 	a := addr / uint32(lpb)
-	b, err := cacheLocal(c, PartLabel, a, OReadOnly)
+	b, err := c.local(PartLabel, a, OReadOnly)
 	if err != nil {
 		b.put()
 		return err
@@ -1849,7 +1849,7 @@ func flushFill(c *Cache) {
  * the flushThread.  And cacheFree, but only after
  * cacheFree has killed off the flushThread.
  */
-func cacheFlushBlock(c *Cache) bool {
+func (c *Cache) flushBlock() bool {
 	for {
 		if c.br == c.be {
 			if c.bw == 0 || c.bw == c.be {
@@ -1866,7 +1866,7 @@ func cacheFlushBlock(c *Cache) bool {
 		}
 		p := &c.baddr[c.br]
 		c.br++
-		b, _ := cacheLocalLookup(c, p.part, p.addr, p.vers, Waitlock)
+		b, _ := c.localLookup(p.part, p.addr, p.vers, Waitlock)
 		if b != nil && b.write(Nowaitlock) {
 			c.nflush++
 			b.put()
@@ -1900,12 +1900,12 @@ func flushThread(c *Cache) {
 	//vtThreadSetName("flush")
 	c.lk.Lock()
 	for c.die == nil {
-		c.flush.Wait()
+		c.flushcond.Wait()
 		c.lk.Unlock()
 
 		var i int
 		for i = 0; i < FlushSize; i++ {
-			if !cacheFlushBlock(c) {
+			if !c.flushBlock() {
 				/*
 				 * If i==0, could be someone is waking us repeatedly
 				 * to flush the cache but there's no work to do.
@@ -1944,18 +1944,18 @@ func flushThread(c *Cache) {
 /*
  * Flush the cache.
  */
-func cacheFlush(c *Cache, wait bool) {
+func (c *Cache) flush(wait bool) {
 	c.lk.Lock()
 	if wait {
 		for c.ndirty != 0 {
 			//	printf("cacheFlush: %d dirty blocks, uhead %p\n",
 			//		c->ndirty, c->uhead);
-			c.flush.Signal()
+			c.flushcond.Signal()
 			c.flushwait.Wait()
 		}
 		//	printf("cacheFlush: done (uhead %p)\n", c->ndirty, c->uhead);
 	} else if c.ndirty != 0 {
-		c.flush.Signal()
+		c.flushcond.Signal()
 	}
 	c.lk.Unlock()
 }

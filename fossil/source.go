@@ -156,7 +156,7 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 }
 
 func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
-	b, err := cacheLocalData(fs.cache, addr, BtDir, RootTag, mode, 0)
+	b, err := fs.cache.localData(addr, BtDir, RootTag, mode, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (r *Source) getSize() uint64 {
 
 func (r *Source) shrinkSize(e *Entry, size uint64) error {
 	typ := EntryType(e)
-	b, err := cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
+	b, err := r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -393,7 +393,7 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 		var score venti.Score
 		copy(score[:], b.data[i*venti.ScoreSize:])
 		b.put()
-		b, err = cacheGlobal(r.fs.cache, &score, typ, e.tag, OReadWrite)
+		b, err = r.fs.cache.global(&score, typ, e.tag, OReadWrite)
 		if err != nil {
 			return err
 		}
@@ -522,12 +522,12 @@ func (p *Block) walk(index int, mode int, fs *Fs, e *Entry) (*Block, error) {
 	if p.l.typ&BtLevelMask == 0 {
 		assert(p.l.typ == BtDir)
 		typ = EntryType(e)
-		b, err = cacheGlobal(c, e.score, typ, e.tag, mode)
+		b, err = c.global(e.score, typ, e.tag, mode)
 	} else {
 		typ = int(p.l.typ) - 1
 		var score venti.Score
 		copy(score[:], p.data[index*venti.ScoreSize:])
-		b, err = cacheGlobal(c, &score, typ, e.tag, mode)
+		b, err = c.global(&score, typ, e.tag, mode)
 	}
 
 	if err != nil || mode == OReadOnly {
@@ -595,7 +595,7 @@ func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
 	assert(depth <= venti.PointerDepth)
 
 	typ := EntryType(e)
-	b, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
+	b, err = r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -613,7 +613,7 @@ func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
 	 */
 	var bb *Block
 	for int(e.depth) < depth {
-		bb, err = cacheAllocBlock(r.fs.cache, typ+1, tag, r.fs.ehi, r.fs.elo)
+		bb, err = r.fs.cache.allocBlock(typ+1, tag, r.fs.ehi, r.fs.elo)
 		if err != nil {
 			break
 		}
@@ -651,7 +651,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 	assert(depth <= venti.PointerDepth)
 
 	typ := EntryType(e)
-	rb, err = cacheGlobal(r.fs.cache, e.score, typ, e.tag, OReadWrite)
+	rb, err = r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -676,7 +676,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 	/* BUG: explain typ++.  i think it is a real bug */
 	var d int
 	for d = int(e.depth); d > depth; d-- {
-		nb, err = cacheGlobal(r.fs.cache, &score, typ-1, tag, OReadWrite)
+		nb, err = r.fs.cache.global(&score, typ-1, tag, OReadWrite)
 		if err != nil {
 			break
 		}
@@ -872,7 +872,7 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 		if r.epoch == r.fs.ehi {
 			var b *Block
 			var err error
-			b, err = cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadWrite)
+			b, err = r.fs.cache.global(r.score, BtDir, r.tag, OReadWrite)
 			if err != nil {
 				return nil, err
 			}
@@ -904,12 +904,12 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 	case OReadOnly:
 		addr := venti.GlobalToLocal(r.score)
 		if addr == NilBlock {
-			return cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, mode)
+			return r.fs.cache.global(r.score, BtDir, r.tag, mode)
 		}
 
 		var b *Block
 		var err error
-		b, err = cacheLocalData(r.fs.cache, addr, BtDir, r.tag, mode, r.scoreEpoch)
+		b, err = r.fs.cache.localData(addr, BtDir, r.tag, mode, r.scoreEpoch)
 		if err == nil {
 			return b, nil
 		}

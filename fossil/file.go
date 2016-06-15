@@ -1494,7 +1494,7 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 	mb.pack()
 
 	/* meta block depends on super block for qid ... */
-	bb, err = cacheLocal(b.c, PartSuper, 0, OReadOnly)
+	bb, err = b.c.local(PartSuper, 0, OReadOnly)
 
 	b.dependency(bb, -1, nil, nil)
 	bb.put()
@@ -1627,7 +1627,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 		return nil
 	}
 
-	b, err := cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadOnly)
+	b, err := r.fs.cache.global(r.score, BtDir, r.tag, OReadOnly)
 	if err != nil {
 		return err
 	}
@@ -1642,7 +1642,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 	if checkepoch {
 		var b *Block
 		var err error
-		b, err = cacheGlobal(r.fs.cache, e.score, EntryType(e), e.tag, OReadOnly)
+		b, err = r.fs.cache.global(e.score, EntryType(e), e.tag, OReadOnly)
 		if err == nil {
 			if b.l.epoch >= epoch {
 				fmt.Fprintf(os.Stderr, "warning: entry %p epoch not older %#.8x/%d %v/%d in getEntry\n", r, b.addr, b.l.epoch, r.score, epoch)
@@ -1655,7 +1655,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 }
 
 func setEntry(r *Source, e *Entry) error {
-	b, err := cacheGlobal(r.fs.cache, r.score, BtDir, r.tag, OReadWrite)
+	b, err := r.fs.cache.global(r.score, BtDir, r.tag, OReadWrite)
 	if false {
 		fmt.Fprintf(os.Stderr, "setEntry: b %#x %d score=%v\n", b.addr, r.offset%uint32(r.epb), e.score)
 	}

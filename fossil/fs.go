@@ -88,7 +88,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		name:      file,
 		blockSize: disk.blockSize(),
 		elk:       new(sync.RWMutex),
-		cache:     cacheAlloc(disk, z, uint(ncache), mode),
+		cache:     allocCache(disk, z, uint(ncache), mode),
 		z:         z,
 	}
 
@@ -97,7 +97,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	}
 
 	var b *Block
-	b, err = cacheLocal(fs.cache, PartSuper, 0, mode)
+	b, err = fs.cache.local(PartSuper, 0, mode)
 	if err != nil {
 		fs.close()
 		return nil, err
@@ -127,7 +127,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 			return nil, err
 		}
 		var b *Block
-		b, err = cacheLocalData(fs.cache, super.active, BtDir, RootTag, OReadWrite, 0)
+		b, err = fs.cache.localData(super.active, BtDir, RootTag, OReadWrite, 0)
 		if err != nil {
 			fs.close()
 			return nil, fmt.Errorf("cacheLocalData: %v", err)
@@ -149,7 +149,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		venti.LocalToGlobal(super.active, &oscore)
 		super.active = b.addr
 		var bs *Block
-		bs, err = cacheLocal(fs.cache, PartSuper, 0, OReadWrite)
+		bs, err = fs.cache.local(PartSuper, 0, OReadWrite)
 		if err != nil {
 			b.put()
 			fs.close()
@@ -217,7 +217,7 @@ func (fs *Fs) close() {
 
 	fs.file = nil
 	fs.source.close()
-	cacheFree(fs.cache)
+	fs.cache.free()
 	if fs.arch != nil {
 		archFree(fs.arch)
 	}
@@ -239,7 +239,7 @@ func (fs *Fs) getBlockSize() int {
 }
 
 func superGet(c *Cache, super *Super) (*Block, error) {
-	b, err := cacheLocal(c, PartSuper, 0, OReadWrite)
+	b, err := c.local(PartSuper, 0, OReadWrite)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: superGet: cacheLocal failed: %v\n", argv0, err)
 		return nil, err
@@ -461,7 +461,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 */
 	r := fs.source
 
-	b, err = cacheGlobal(fs.cache, r.score, BtDir, RootTag, OReadOnly)
+	b, err = fs.cache.global(r.score, BtDir, RootTag, OReadOnly)
 	if err != nil {
 		return err
 	}
@@ -639,7 +639,7 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	/*
 	 * Sync to disk.  I'm not sure this is necessary, but better safe than sorry.
 	 */
-	cacheFlush(fs.cache, true)
+	fs.cache.flush(true)
 
 	/*
 	 * Create the directory where we will store the copy of src.
@@ -797,7 +797,7 @@ func (fs *Fs) sync() error {
 	defer fs.elk.Unlock()
 
 	fs.file.metaFlush(true)
-	cacheFlush(fs.cache, true)
+	fs.cache.flush(true)
 
 	return nil
 }
@@ -808,7 +808,7 @@ func (fs *Fs) halt() error {
 
 	fs.halted = true
 	fs.file.metaFlush(true)
-	cacheFlush(fs.cache, true)
+	fs.cache.flush(true)
 	return nil
 }
 
@@ -852,7 +852,7 @@ func (fs *Fs) metaFlush() {
 	fs.elk.RUnlock()
 
 	if rv > 0 {
-		cacheFlush(fs.cache, false)
+		fs.cache.flush(false)
 	}
 }
 

@@ -147,7 +147,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 	p.nvisit++
 
 	var b *Block
-	b, err = cacheLocalData(p.c, addr, int(typ), tag, OReadWrite, 0)
+	b, err = p.c.localData(addr, int(typ), tag, OReadWrite, 0)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "archive(%d, %#x): cannot find block: %v\n", p.snapEpoch, addr, err)
 		if err == ELabelMismatch {

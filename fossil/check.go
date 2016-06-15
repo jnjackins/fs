@@ -45,7 +45,7 @@ type Fsck struct {
 func (chk *Fsck) init(fs *Fs) {
 	chk.fs = fs
 	chk.cache = fs.cache
-	chk.nblocks = int(cacheLocalSize(chk.cache, PartData))
+	chk.nblocks = int(chk.cache.localSize(PartData))
 	chk.bsize = fs.blockSize
 	chk.walkdepth = 0
 	chk.hint = 0
@@ -147,7 +147,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	}
 
 	a = (a + chk.hint) % uint32(chk.nblocks)
-	b, err := cacheLocalData(chk.cache, a, BtDir, RootTag, OReadOnly, 0)
+	b, err := chk.cache.localData(a, BtDir, RootTag, OReadOnly, 0)
 	if err != nil {
 		errorf(chk, "could not read root block %#.8x: %v", a, err)
 		return
@@ -197,7 +197,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 
 	chk.walkdepth++
 
-	bb, err := cacheGlobal(chk.cache, score, typ, tag, OReadOnly)
+	bb, err := chk.cache.global(score, typ, tag, OReadOnly)
 	if err != nil {
 		errorf(chk, "could not load block %v type=%d tag=%x: %v", score, typ, tag, err)
 		chk.walkdepth--
@@ -401,7 +401,7 @@ func checkLeak(chk *Fsck) {
 		//		warnf(chk, "unreachable block: addr %#x type %d tag %#x "
 		//			"state %s epoch %d close %d", a, l.type, l.tag,
 		//			bsStr(l.state), l.epoch, l.epochClose);
-		b, err := cacheLocal(chk.cache, PartData, a, OReadOnly)
+		b, err := chk.cache.local(PartData, a, OReadOnly)
 		if err != nil {
 			errorf(chk, "could not read block %#.8x", a)
 			continue
