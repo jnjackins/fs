@@ -724,7 +724,7 @@ func cmdWho(argv []string) error {
 	return nil
 }
 
-func msgInit() {
+func msgInit() error {
 	mbox.alock = new(sync.Mutex)
 	mbox.arendez = sync.NewCond(mbox.alock)
 
@@ -735,7 +735,7 @@ func msgInit() {
 	mbox.rlock = new(sync.Mutex)
 	mbox.rchan = make(chan *Msg, mbox.maxmsg) // TODO(jnj): channel size?
 
-	cliAddCmd("msg", cmdMsg)
+	return cliAddCmd("msg", cmdMsg)
 }
 
 func cmdCon(argv []string) error {
@@ -772,7 +772,7 @@ func cmdCon(argv []string) error {
 	return nil
 }
 
-func conInit() {
+func conInit() error {
 	cbox.alock = new(sync.Mutex)
 	cbox.arendez = sync.NewCond(cbox.alock)
 
@@ -781,6 +781,14 @@ func conInit() {
 	cbox.maxcon = NConInit
 	cbox.msize = NMsizeInit
 
-	cliAddCmd("con", cmdCon)
-	cliAddCmd("who", cmdWho)
+	for _, err := range []error{
+		cliAddCmd("con", cmdCon),
+		cliAddCmd("who", cmdWho),
+	} {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

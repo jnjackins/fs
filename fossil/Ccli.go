@@ -64,5 +64,6 @@ func cliAddCmd(argv0 string, cmd func([]string) error) error {
 
 func cliInit() error {
 	clibox.lock = new(sync.Mutex)
+
 	return nil
 }

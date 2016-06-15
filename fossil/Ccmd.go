@@ -401,11 +401,17 @@ func bind(name, old string, flags int) error {
 func cmdInit() error {
 	cmdbox.lock = new(sync.Mutex)
 
-	cliAddCmd(".", cmdDot)
-	cliAddCmd("9p", cmd9p)
-	cliAddCmd("dflag", cmdDflag)
-	cliAddCmd("echo", cmdEcho)
-	cliAddCmd("bind", cmdBind)
+	for _, err := range []error{
+		cliAddCmd(".", cmdDot),
+		cliAddCmd("9p", cmd9p),
+		cliAddCmd("dflag", cmdDflag),
+		cliAddCmd("echo", cmdEcho),
+		cliAddCmd("bind", cmdBind),
+	} {
+		if err != nil {
+			return err
+		}
+	}
 
 	c1, c2 := net.Pipe()
 	cmdbox.conns[0] = c1

@@ -118,6 +118,8 @@ func exclFree(fid *Fid) {
 	ebox.lock.Unlock()
 }
 
-func exclInit() {
+func exclInit() error {
 	ebox.lock = new(sync.Mutex)
+
+	return nil
 }

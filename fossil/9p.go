@@ -83,7 +83,7 @@ func permFile(file *File, fid *Fid, perm int) error {
 		}
 	}
 
-	if fsysNoPermCheck(fid.fsys) || (fid.con.flags&ConNoPermCheck != 0) {
+	if fid.fsys.noPermCheck() || (fid.con.flags&ConNoPermCheck != 0) {
 		deCleanup(&de)
 		return nil
 	}
@@ -274,7 +274,7 @@ func rTwstat(m *Msg) error {
 		gid = de.gid
 	}
 
-	wstatallow := (fsysWstatAllow(fid.fsys) || (m.con.flags&ConWstatAllow != 0))
+	wstatallow := (fid.fsys.wstatAllow() || (m.con.flags&ConWstatAllow != 0))
 
 	/*
 	 * 'Gl' counts whether neither, one or both groups are led.
@@ -819,7 +819,7 @@ func rTwalk(m *Msg) error {
 		nfid.qid = ofid.qid
 		nfid.uid = ofid.uid
 		nfid.uname = ofid.uname
-		nfid.fsys = fsysIncRef(ofid.fsys)
+		nfid.fsys = ofid.fsys.incRef()
 		fid = nfid
 	} else {
 		fid = ofid
@@ -959,7 +959,7 @@ func rTattach(m *Msg) error {
 	}
 
 	fsname, path := parseAname(m.t.Aname)
-	fsys, err := fsysGet(fsname)
+	fsys, err := getFsys(fsname)
 	if err != nil {
 		fidClunk(fid)
 		return err
@@ -980,7 +980,7 @@ func rTattach(m *Msg) error {
 	//	return err
 	//}
 
-	if fsysNoAuthCheck(fsys) || (m.con.flags&ConNoAuthCheck != 0) {
+	if fsys.noAuthCheck() || (m.con.flags&ConNoAuthCheck != 0) {
 		fid.uid = uidByUname(fid.uname)
 		if (fid.uid) == "" {
 			fid.uid = unamenone
@@ -990,14 +990,14 @@ func rTattach(m *Msg) error {
 		return err
 	}
 
-	fsysFsRlock(fsys)
-	fid.file = fsysGetRoot(fsys, path)
+	fsys.fsRlock()
+	fid.file = fsys.getRoot(path)
 	if (fid.file) == nil {
-		fsysFsRUnlock(fsys)
+		fsys.fsRUnlock()
 		fidClunk(fid)
 		return err
 	}
-	fsysFsRUnlock(fsys)
+	fsys.fsRUnlock()
 
 	fid.qid = plan9.Qid{Path: fid.file.getId(), Type: plan9.QTDIR}
 	m.r.Qid = fid.qid
@@ -1008,28 +1008,28 @@ func rTattach(m *Msg) error {
 
 func rTauth(m *Msg) error {
 	fsname, _ := parseAname(m.t.Aname)
-	fsys, err := fsysGet(fsname)
+	fsys, err := getFsys(fsname)
 	if err != nil {
 		return err
 	}
 
-	if fsysNoAuthCheck(fsys) || (m.con.flags&ConNoAuthCheck != 0) {
+	if fsys.noAuthCheck() || (m.con.flags&ConNoAuthCheck != 0) {
 		m.con.aok = true
 		err = fmt.Errorf("authentication disabled")
-		fsysPut(fsys)
+		fsys.put()
 		return err
 	}
 
 	if m.t.Uname == unamenone {
 		err = fmt.Errorf("user 'none' requires no authentication")
-		fsysPut(fsys)
+		fsys.put()
 		return err
 	}
 
 	con := m.con
 	afid, err := fidGet(con, m.t.Afid, FidFWlock|FidFCreate)
 	if afid == nil {
-		fsysPut(fsys)
+		fsys.put()
 		return err
 	}
 

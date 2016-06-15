@@ -309,16 +309,16 @@ func (u *User) String() string {
 func usersFileWrite(box *Ubox) error {
 	var err error
 
-	fsys, err := fsysGet("main")
+	fsys, err := getFsys("main")
 	if err != nil {
 		return err
 	}
-	defer fsysPut(fsys)
+	defer fsys.put()
 
-	fsysFsRlock(fsys)
-	defer fsysFsRUnlock(fsys)
+	fsys.fsRlock()
+	defer fsys.fsRUnlock()
 
-	fs := fsysGetFs(fsys)
+	fs := fsys.getFs()
 
 	/*
 	 * BUG:
@@ -565,11 +565,11 @@ func uboxInit(users string) error {
 }
 
 func usersFileRead(path string) error {
-	fsys, err := fsysGet("main")
+	fsys, err := getFsys("main")
 	if err != nil {
 		return err
 	}
-	fsysFsRlock(fsys)
+	fsys.fsRlock()
 
 	if path == "" {
 		path = "/active/adm/users"
@@ -577,7 +577,7 @@ func usersFileRead(path string) error {
 
 	var file *File
 	var buf []byte
-	file, err = openFile(fsysGetFs(fsys), path)
+	file, err = openFile(fsys.getFs(), path)
 	if err == nil {
 		var size uint64
 		if err = file.getSize(&size); err == nil {
@@ -590,8 +590,8 @@ func usersFileRead(path string) error {
 		file.decRef()
 	}
 
-	fsysFsRUnlock(fsys)
-	fsysPut(fsys)
+	fsys.fsRUnlock()
+	fsys.put()
 
 	return err
 }
@@ -825,8 +825,14 @@ func usersInit() error {
 	ubox.lock = new(sync.RWMutex)
 	uboxInit(usersDefault)
 
-	cliAddCmd("users", cmdUsers)
-	cliAddCmd("uname", cmdUname)
+	for _, err := range []error{
+		cliAddCmd("users", cmdUsers),
+		cliAddCmd("uname", cmdUname),
+	} {
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

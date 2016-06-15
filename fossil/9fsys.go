@@ -130,8 +130,8 @@ func cmdPrintConfig(argv []string) error {
 	return nil
 }
 
-func fsysGet(name string) (*Fsys, error) {
-	fsys, err := _fsysGet(name)
+func getFsys(name string) (*Fsys, error) {
+	fsys, err := _getFsys(name)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func fsysGet(name string) (*Fsys, error) {
 	fsys.lock.Lock()
 	if fsys.fs == nil {
 		fsys.lock.Unlock()
-		fsysPut(fsys)
+		fsys.put()
 		return nil, fmt.Errorf(EFsysNotOpen, fsys.name)
 	}
 
@@ -148,7 +148,7 @@ func fsysGet(name string) (*Fsys, error) {
 	return fsys, nil
 }
 
-func _fsysGet(name string) (*Fsys, error) {
+func _getFsys(name string) (*Fsys, error) {
 	if name == "" {
 		name = "main"
 	}
@@ -171,11 +171,11 @@ func _fsysGet(name string) (*Fsys, error) {
 	return fsys, nil
 }
 
-func fsysGetName(fsys *Fsys) string {
+func (fsys *Fsys) getName() string {
 	return fsys.name
 }
 
-func fsysIncRef(fsys *Fsys) *Fsys {
+func (fsys *Fsys) incRef() *Fsys {
 	sbox.lock.Lock()
 	fsys.ref++
 	sbox.lock.Unlock()
@@ -183,35 +183,35 @@ func fsysIncRef(fsys *Fsys) *Fsys {
 	return fsys
 }
 
-func fsysPut(fsys *Fsys) {
+func (fsys *Fsys) put() {
 	sbox.lock.Lock()
 	assert(fsys.ref > 0)
 	fsys.ref--
 	sbox.lock.Unlock()
 }
 
-func fsysGetFs(fsys *Fsys) *Fs {
+func (fsys *Fsys) getFs() *Fs {
 	assert(fsys != nil && fsys.fs != nil)
 	return fsys.fs
 }
 
-func fsysFsRlock(fsys *Fsys) {
+func (fsys *Fsys) fsRlock() {
 	fsys.fs.elk.RLock()
 }
 
-func fsysFsRUnlock(fsys *Fsys) {
+func (fsys *Fsys) fsRUnlock() {
 	fsys.fs.elk.RUnlock()
 }
 
-func fsysNoAuthCheck(fsys *Fsys) bool {
+func (fsys *Fsys) noAuthCheck() bool {
 	return fsys.noauth
 }
 
-func fsysNoPermCheck(fsys *Fsys) bool {
+func (fsys *Fsys) noPermCheck() bool {
 	return fsys.noperm
 }
 
-func fsysWstatAllow(fsys *Fsys) bool {
+func (fsys *Fsys) wstatAllow() bool {
 	return fsys.wstatallow
 }
 
@@ -270,7 +270,7 @@ func fsysParseMode(s string) (uint32, bool) {
 	return x | uint32(y), true
 }
 
-func fsysGetRoot(fsys *Fsys, name string) *File {
+func (fsys *Fsys) getRoot(name string) *File {
 	assert(fsys != nil && fsys.fs != nil)
 
 	root := fsys.fs.getRoot()
@@ -285,7 +285,7 @@ func fsysGetRoot(fsys *Fsys, name string) *File {
 	return sub
 }
 
-func fsysAlloc(name string, dev string) (*Fsys, error) {
+func allocFsys(name string, dev string) (*Fsys, error) {
 	sbox.lock.Lock()
 	defer sbox.lock.Unlock()
 
@@ -1512,11 +1512,11 @@ func fsysVenti(name string, argv []string) error {
 		return EUsage
 	}
 
-	fsys, err := _fsysGet(name)
+	fsys, err := _getFsys(name)
 	if err != nil {
 		return err
 	}
-	defer fsysPut(fsys)
+	defer fsys.put()
 
 	fsys.lock.Lock()
 	defer fsys.lock.Unlock()
@@ -1632,7 +1632,7 @@ func fsysOpen(name string, argv []string) error {
 		return EUsage
 	}
 
-	fsys, err := _fsysGet(name)
+	fsys, err := _getFsys(name)
 	if err != nil {
 		return err
 	}
@@ -1650,7 +1650,7 @@ func fsysOpen(name string, argv []string) error {
 	fsys.lock.Lock()
 	if fsys.fs != nil {
 		fsys.lock.Unlock()
-		fsysPut(fsys)
+		fsys.put()
 		return fmt.Errorf(EFsysBusy, fsys.name)
 	}
 
@@ -1675,7 +1675,7 @@ func fsysOpen(name string, argv []string) error {
 	fsys.fs, err = openFs(fsys.dev, fsys.session, ncache, mode)
 	if err != nil {
 		fsys.lock.Unlock()
-		fsysPut(fsys)
+		fsys.put()
 		return fmt.Errorf("fsOpen: %v", err)
 	}
 
@@ -1685,7 +1685,7 @@ func fsysOpen(name string, argv []string) error {
 	fsys.wstatallow = *Wflag
 	fsys.fs.noatimeupd = *aflag
 	fsys.lock.Unlock()
-	fsysPut(fsys)
+	fsys.put()
 
 	if name == "main" {
 		usersFileRead("")
@@ -1759,24 +1759,24 @@ func fsysConfig(name string, argv []string) error {
 		part = argv[0]
 	}
 
-	fsys, err := _fsysGet(part)
+	fsys, err := _getFsys(part)
 	if err == nil {
 		fsys.lock.Lock()
 		if fsys.fs != nil {
 			fsys.lock.Unlock()
-			fsysPut(fsys)
+			fsys.put()
 			return fmt.Errorf(EFsysBusy, fsys.name)
 		}
 		fsys.dev = part
 		fsys.lock.Unlock()
 	} else {
-		fsys, err = fsysAlloc(name, part)
+		fsys, err = allocFsys(name, part)
 		if err != nil {
 			return err
 		}
 	}
 
-	fsysPut(fsys)
+	fsys.put()
 	return nil
 }
 
@@ -1830,12 +1830,12 @@ func fsysXXX(name string, argv []string) error {
 		sbox.lock.RUnlock()
 	} else {
 		var fsys *Fsys
-		fsys, err = _fsysGet(name)
+		fsys, err = _getFsys(name)
 		if err != nil {
 			return err
 		}
 		err = fsysXXX1(fsys, i, argv)
-		fsysPut(fsys)
+		fsys.put()
 	}
 	return err
 }
@@ -1875,7 +1875,7 @@ func cmdFsys(argv []string) error {
 		fsys := (*Fsys)(nil)
 		if argv[0] != FsysAll {
 			var err error
-			fsys, err = fsysGet(argv[0])
+			fsys, err = getFsys(argv[0])
 			if err != nil {
 				return err
 			}
@@ -1883,7 +1883,7 @@ func cmdFsys(argv []string) error {
 		sbox.curfsys = argv[0]
 		consPrompt(sbox.curfsys)
 		if fsys != nil {
-			fsysPut(fsys)
+			fsys.put()
 		}
 		return nil
 	}
@@ -1894,16 +1894,24 @@ func cmdFsys(argv []string) error {
 func fsysInit() error {
 	sbox.lock = new(sync.RWMutex)
 
-	cliAddCmd("fsys", cmdFsys)
-	for _, cmd := range fsyscmd {
-		if cmd.f != nil {
-			cliAddCmd(cmd.cmd, cmdFsysXXX)
+	/* the venti cmd is special: the fs can be either open or closed */
+	for _, err := range []error{
+		cliAddCmd("venti", cmdFsysXXX),
+		cliAddCmd("printconfig", cmdPrintConfig),
+		cliAddCmd("fsys", cmdFsys),
+	} {
+		if err != nil {
+			return err
 		}
 	}
 
-	/* the venti cmd is special: the fs can be either open or closed */
-	cliAddCmd("venti", cmdFsysXXX)
-	cliAddCmd("printconfig", cmdPrintConfig)
+	for _, cmd := range fsyscmd {
+		if cmd.f != nil {
+			if err := cliAddCmd(cmd.cmd, cmdFsysXXX); err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
 }

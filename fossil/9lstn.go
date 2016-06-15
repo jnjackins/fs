@@ -57,7 +57,7 @@ func (lstn *Lstn) accept() {
 	}
 }
 
-func lstnAlloc(address string, flags int) (*Lstn, error) {
+func allocLstn(address string, flags int) (*Lstn, error) {
 	lbox.lock.Lock()
 	defer lbox.lock.Unlock()
 
@@ -131,7 +131,7 @@ func cmdLstn(argv []string) error {
 
 	case 1:
 		if !*dflag {
-			if _, err := lstnAlloc(argv[0], lstnFlags); err != nil {
+			if _, err := allocLstn(argv[0], lstnFlags); err != nil {
 				return err
 			}
 			break
@@ -164,6 +164,6 @@ func cmdLstn(argv []string) error {
 
 func lstnInit() error {
 	lbox.lock = new(sync.RWMutex)
-	cliAddCmd("listen", cmdLstn)
-	return nil
+
+	return cliAddCmd("listen", cmdLstn)
 }

@@ -206,6 +206,6 @@ func cmdSrv(argv []string) error {
 
 func srvInit() error {
 	srvbox.lock = new(sync.RWMutex)
-	cliAddCmd("srv", cmdSrv)
-	return nil
+
+	return cliAddCmd("srv", cmdSrv)
 }

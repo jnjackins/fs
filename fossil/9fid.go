@@ -88,13 +88,13 @@ func fidLock(fid *Fid, flags int) {
 	 * resources still held.
 	 */
 	if flags&FidFCreate == 0 {
-		fsysFsRlock(fid.fsys)
+		fid.fsys.fsRlock()
 	}
 }
 
 func fidUnlock(fid *Fid) {
 	if fid.flags&FidFCreate == 0 {
-		fsysFsRUnlock(fid.fsys)
+		fid.fsys.fsRUnlock()
 	}
 	if fid.flags&FidFWlock != 0 {
 		fid.flags = 0
@@ -173,7 +173,7 @@ func fidFree(fid *Fid) {
 	}
 
 	if fid.fsys != nil {
-		fsysPut(fid.fsys)
+		fid.fsys.put()
 		fid.fsys = nil
 	}
 
@@ -349,6 +349,8 @@ func fidClunkAll(con *Con) {
 	con.fidlock.Unlock()
 }
 
-func fidInit() {
+func fidInit() error {
 	fbox.lock = new(sync.Mutex)
+
+	return nil
 }
