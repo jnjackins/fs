@@ -232,7 +232,6 @@ var modebits = []uint32{
 	ModeSnapshot,
 }
 
-// TODO(jnj): test
 func fsysModeString(mode uint32) string {
 	var buf []byte
 	for i := range modebits {
@@ -243,7 +242,6 @@ func fsysModeString(mode uint32) string {
 	return string(buf) + fmt.Sprintf("%o", mode&0777)
 }
 
-// TODO(jnj): test
 func fsysParseMode(s string) (uint32, bool) {
 	// get mode chars
 	var x uint32

@@ -282,9 +282,9 @@ func superWrite(b *Block, super *Super, forceWrite int) {
  * Temporary snapshots go into /snapshot/yyyy/mmdd/hhmm[.#]
  * Archival snapshots go into /archive/yyyy/mmdd[.#].
  *
- * TODO This should be rewritten to eliminate most of the duplication.
+ * TODO: This should be rewritten to eliminate most of the duplication.
  */
-func openSnapshot(fs *Fs, dstpath string, doarchive bool) (*File, error) {
+func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 	var dir, f *File
 
 	if dstpath != "" {
@@ -432,10 +432,8 @@ func (fs *Fs) epochLow(low uint32) error {
 		return err
 	}
 
-	var bs *Block
-	var err error
 	var super Super
-	bs, err = superGet(fs.cache, &super)
+	bs, err := superGet(fs.cache, &super)
 	if err != nil {
 		return err
 	}
@@ -449,9 +447,6 @@ func (fs *Fs) epochLow(low uint32) error {
 }
 
 func bumpEpoch(fs *Fs, doarchive bool) error {
-	var b *Block
-	var err error
-
 	/*
 	 * Duplicate the root block.
 	 *
@@ -461,7 +456,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 */
 	r := fs.source
 
-	b, err = fs.cache.global(r.score, BtDir, RootTag, OReadOnly)
+	b, err := fs.cache.global(r.score, BtDir, RootTag, OReadOnly)
 	if err != nil {
 		return err
 	}
@@ -490,9 +485,8 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	/*
 	 * Update the superblock with the new root and epoch.
 	 */
-	var bs *Block
 	var super Super
-	bs, err = superGet(fs.cache, &super)
+	bs, err := superGet(fs.cache, &super)
 	if err != nil {
 		return err
 	}
@@ -539,11 +533,8 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 }
 
 func saveQid(fs *Fs) error {
-	var b *Block
 	var super Super
-	var err error
-
-	b, err = superGet(fs.cache, &super)
+	b, err := superGet(fs.cache, &super)
 	if err != nil {
 		return err
 	}
@@ -644,7 +635,7 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	/*
 	 * Create the directory where we will store the copy of src.
 	 */
-	dst, err = openSnapshot(fs, dstpath, doarchive)
+	dst, err = fs.openSnapshot(dstpath, doarchive)
 	if err != nil {
 		return fmt.Errorf("snapshot: %v", err)
 	}
@@ -803,6 +794,10 @@ func (fs *Fs) sync() error {
 }
 
 func (fs *Fs) halt() error {
+	if fs.halted {
+		return errors.New("already halted")
+	}
+
 	fs.elk.Lock()
 	// leave locked
 
@@ -816,6 +811,7 @@ func (fs *Fs) unhalt() error {
 	if !fs.halted {
 		return errors.New("not halted")
 	}
+
 	fs.halted = false
 
 	fs.elk.Unlock()
