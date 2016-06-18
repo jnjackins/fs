@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
 	"testing"
 )
 
@@ -53,15 +52,8 @@ func testAllocFsys(path string) (*Fsys, error) {
 }
 
 func TestFsys(t *testing.T) {
-	path, err := testFormatFossil()
+	fsys, err := testAllocFsys(testFossilPath)
 	if err != nil {
-		log.Fatalf("TestMain: error formatting test fossil partition: %v", err)
-	}
-	defer os.Remove(path)
-
-	fsys, err := testAllocFsys(path)
-	if err != nil {
-		os.Remove(path)
 		log.Fatalf("TestMain: error starting fossil: %v", err)
 	}
 

@@ -1,8 +1,14 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"testing"
+)
 
-func init() {
+var testFossilPath string
+
+func TestMain(m *testing.M) {
 	initFuncs := []func() error{
 		consInit,
 		cliInit,
@@ -22,4 +28,15 @@ func init() {
 			panic(fmt.Sprintf("initialization error: %v", err))
 		}
 	}
+
+	path, err := testFormatFossil()
+	if err != nil {
+		panic(fmt.Sprintf("error formatting test fossil partition: %v", err))
+	}
+	testFossilPath = path
+
+	exit := m.Run()
+
+	os.Remove(path)
+	os.Exit(exit)
 }

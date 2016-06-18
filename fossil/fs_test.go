@@ -1,21 +1,11 @@
 package main
 
-import (
-	"os"
-	"testing"
-)
+import "testing"
 
 func TestFs(t *testing.T) {
-	path, err := testFormatFossil()
+	fs, err := openFs(testFossilPath, nil, 1000, OReadWrite)
 	if err != nil {
-		t.Fatalf("error formatting test fossil partition: %v", err)
-	}
-	defer os.Remove(path)
-
-	fs, err := openFs(path, nil, 1000, OReadWrite)
-	if err != nil {
-		os.Remove(path)
-		t.Fatalf("error opening Fs at %s: %v", path, err)
+		t.Fatalf("error opening Fs at %s: %v", testFossilPath, err)
 	}
 	defer fs.close()
 

@@ -335,15 +335,6 @@ func (d *Disk) size(part int) uint32 {
 	return d.partEnd(part) - d.partStart(part)
 }
 
-// plan9 only
-//func disk2file(disk *Disk) string {
-//	 if s, err := fd2path(disk.fd); err != nil {
-//	 	return "GOK"
-//	 } else {
-//	 	return s
-//	 }
-//}
-
 func (d *Disk) thread() {
 	//vtThreadSetName("disk")
 

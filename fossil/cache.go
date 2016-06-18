@@ -1234,7 +1234,7 @@ func (b *Block) setIOState(iostate int32) {
 		}
 
 	// Adding block to disk queue.  Bump reference count.
-	// diskThread decs the count later by calling (*Block).put.
+	// (*Disk).thread decs the count later by calling (*Block).put.
 	// This is here because we need to lock c->lk to
 	// manipulate the ref count.
 	case BioReading,
