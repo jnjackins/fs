@@ -105,11 +105,11 @@ func permParent(fid *Fid, p int) error {
 }
 
 func rTwstat(m *Msg) error {
-	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	fid, err := getFid(m.con, m.t.Fid, FidFWlock)
 	if err != nil {
 		return err
 	}
-	defer fidPut(fid)
+	defer fid.put()
 
 	var uid, gid string
 
@@ -360,7 +360,7 @@ func rTwstat(m *Msg) error {
 }
 
 func rTstat(m *Msg) error {
-	fid, err := fidGet(m.con, m.t.Fid, 0)
+	fid, err := getFid(m.con, m.t.Fid, 0)
 	if err != nil {
 		return err
 	}
@@ -378,22 +378,22 @@ func rTstat(m *Msg) error {
 		buf, err := dir.Bytes()
 		if err != nil {
 			err = fmt.Errorf("stat QTAUTH botch")
-			fidPut(fid)
+			fid.put()
 			return err
 		}
 		m.r.Stat = buf
 
-		fidPut(fid)
+		fid.put()
 		return nil
 	}
 
 	var de DirEntry
 	if err = fid.file.getDir(&de); err != nil {
-		fidPut(fid)
+		fid.put()
 		return err
 	}
 
-	fidPut(fid)
+	fid.put()
 
 	buf, err := dirDe2M(&de)
 	m.r.Stat = buf
@@ -415,13 +415,13 @@ func _rTclunk(fid *Fid, remove int) error {
 		}
 	}
 
-	fidClunk(fid)
+	fid.clunk()
 
 	return err
 }
 
 func rTremove(m *Msg) error {
-	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	fid, err := getFid(m.con, m.t.Fid, FidFWlock)
 	if err != nil {
 		return err
 	}
@@ -429,7 +429,7 @@ func rTremove(m *Msg) error {
 }
 
 func rTclunk(m *Msg) error {
-	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	fid, err := getFid(m.con, m.t.Fid, FidFWlock)
 	if err != nil {
 		return err
 	}
@@ -439,83 +439,75 @@ func rTclunk(m *Msg) error {
 }
 
 func rTwrite(m *Msg) error {
-	var count, n int
-
-	fid, err := fidGet(m.con, m.t.Fid, 0)
+	fid, err := getFid(m.con, m.t.Fid, 0)
 	if err != nil {
 		return err
 	}
+	defer fid.put()
+
 	if fid.open&FidOWrite == 0 {
-		err = fmt.Errorf("fid not open for write")
-		goto error
+		return fmt.Errorf("fid not open for write")
 	}
 
-	count = int(m.t.Count)
+	count := int(m.t.Count)
 	if count < 0 || uint32(count) > m.con.msize-plan9.IOHDRSIZE {
-		err = fmt.Errorf("write count too big")
-		goto error
+		return fmt.Errorf("write count too big")
 	}
 
 	if m.t.Offset < 0 {
-		err = fmt.Errorf("write offset negative")
-		goto error
+		return fmt.Errorf("write offset negative")
 	}
 
 	if fid.excl != nil {
 		if err = exclUpdate(fid); err != nil {
-			goto error
+			return err
 		}
 	}
 
+	var n int
 	if fid.qid.Type&plan9.QTDIR != 0 {
-		err = fmt.Errorf("is a directory")
-		goto error
+		return fmt.Errorf("is a directory")
 	} else if fid.qid.Type&plan9.QTAUTH != 0 {
 		n = authWrite(fid, m.t.Data, count)
+		if n < 0 {
+			return fmt.Errorf("authWrite failed")
+		}
 	} else {
 		n, err = fid.file.write(m.t.Data, count, int64(m.t.Offset), fid.uid)
-	}
-	if n < 0 {
-		goto error
+		if err != nil {
+			return err
+		}
 	}
 
 	m.r.Count = uint32(n)
 
-	fidPut(fid)
 	return nil
-
-error:
-	fidPut(fid)
-	return err
 }
 
 func rTread(m *Msg) error {
-	var count int
-
-	fid, err := fidGet(m.con, m.t.Fid, 0)
+	fid, err := getFid(m.con, m.t.Fid, 0)
 	if err != nil {
 		return err
 	}
+	defer fid.put()
+
 	var data []byte
 	if fid.open&FidORead == 0 {
-		err = fmt.Errorf("fid not open for read")
-		goto error
+		return fmt.Errorf("fid not open for read")
 	}
 
-	count = int(m.t.Count)
+	count := int(m.t.Count)
 	if count < 0 || uint32(count) > m.con.msize-plan9.IOHDRSIZE {
-		err = fmt.Errorf("read count too big")
-		goto error
+		return fmt.Errorf("read count too big")
 	}
 
 	if m.t.Offset < 0 {
-		err = fmt.Errorf("read offset negative")
-		goto error
+		return fmt.Errorf("read offset negative")
 	}
 
 	if fid.excl != nil {
 		if err = exclUpdate(fid); err != nil {
-			goto error
+			return err
 		}
 	}
 
@@ -527,57 +519,46 @@ func rTread(m *Msg) error {
 		data, err = fid.file.read(count, int64(m.t.Offset))
 	}
 	if err != nil {
-		goto error
+		return err
 	}
 
 	m.r.Count = uint32(len(data))
 	m.r.Data = data
 
-	fidPut(fid)
 	return nil
-
-error:
-	fidPut(fid)
-	return err
 }
 
 func rTcreate(m *Msg) error {
-	var mode, perm uint32
-	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	fid, err := getFid(m.con, m.t.Fid, FidFWlock)
 	if err != nil {
 		return err
 	}
-	var file *File
-	var open int
-	var omode int
+	defer fid.put()
+
 	if fid.open != 0 {
-		err = fmt.Errorf("fid open for I/O")
-		goto error
+		return fmt.Errorf("fid open for I/O")
 	}
 
 	if fid.file.isRoFs() || !groupWriteMember(fid.uname) {
-		err = fmt.Errorf("read-only filesystem")
-		goto error
+		return fmt.Errorf("read-only filesystem")
 	}
 
 	if !fid.file.isDir() {
-		err = fmt.Errorf("not a directory")
-		goto error
+		return fmt.Errorf("not a directory")
 	}
 
-	if err = permFid(fid, PermW); err != nil {
-		goto error
+	if err := permFid(fid, PermW); err != nil {
+		return err
 	}
-	if err = checkValidFileName(m.t.Name); err != nil {
-		goto error
+	if err := checkValidFileName(m.t.Name); err != nil {
+		return err
 	}
 	if fid.uid == uidnoworld {
-		err = EPermission
-		goto error
+		return EPermission
 	}
 
-	omode = int(m.t.Mode) & OMODE
-	open = 0
+	omode := int(m.t.Mode) & OMODE
+	var open int
 
 	if omode == 0 || omode == 2 || omode == 3 {
 		open |= FidORead
@@ -586,24 +567,21 @@ func rTcreate(m *Msg) error {
 		open |= FidOWrite
 	}
 	if open&(FidOWrite|FidORead) == 0 {
-		err = fmt.Errorf("unknown mode")
-		goto error
+		return fmt.Errorf("unknown mode")
 	}
 
 	if m.t.Perm&plan9.DMDIR != 0 {
 		if (m.t.Mode&(64|16) != 0) || (open&FidOWrite != 0) {
-			err = fmt.Errorf("illegal mode")
-			goto error
+			return fmt.Errorf("illegal mode")
 		}
 
 		if m.t.Perm&plan9.DMAPPEND != 0 {
-			err = fmt.Errorf("illegal perm")
-			goto error
+			return fmt.Errorf("illegal perm")
 		}
 	}
 
-	mode = fid.file.getMode()
-	perm = uint32(m.t.Perm)
+	mode := fid.file.getMode()
+	perm := uint32(m.t.Perm)
 	if m.t.Perm&plan9.DMDIR != 0 {
 		perm &= ^uint32(0777) | mode&0777
 	} else {
@@ -623,9 +601,8 @@ func rTcreate(m *Msg) error {
 		mode |= ModeTemporary
 	}
 
-	file, err = fid.file.create(m.t.Name, mode, fid.uid)
+	file, err := fid.file.create(m.t.Name, mode, fid.uid)
 	if err != nil {
-		fidPut(fid)
 		return err
 	}
 
@@ -656,22 +633,19 @@ func rTcreate(m *Msg) error {
 	m.r.Qid = fid.qid
 	m.r.Iounit = m.con.msize - plan9.IOHDRSIZE
 
-	fidPut(fid)
 	return nil
-
-error:
-	fidPut(fid)
-	return err
 }
 
 func rTopen(m *Msg) error {
 	var open, omode, mode int
 	var isdir, rofs bool
 
-	fid, err := fidGet(m.con, m.t.Fid, FidFWlock)
+	fid, err := getFid(m.con, m.t.Fid, FidFWlock)
 	if err != nil {
 		return err
 	}
+	defer fid.put()
+
 	if fid.open != 0 {
 		err = fmt.Errorf("fid open for I/O")
 		goto error
@@ -767,14 +741,12 @@ func rTopen(m *Msg) error {
 
 	fid.open = open
 
-	fidPut(fid)
 	return nil
 
 error:
 	if fid.excl != nil {
 		exclFree(fid)
 	}
-	fidPut(fid)
 	return err
 }
 
@@ -790,12 +762,12 @@ func rTwalk(m *Msg) error {
 	 * current session and must not have been opened for I/O
 	 * by an open or create message.
 	 */
-	ofid, err := fidGet(m.con, t.Fid, wlock)
+	ofid, err := getFid(m.con, t.Fid, wlock)
 	if err != nil {
 		return err
 	}
 	if ofid.open != 0 {
-		fidPut(ofid)
+		ofid.put()
 		return errors.New("file open for I/O")
 	}
 
@@ -808,9 +780,9 @@ func rTwalk(m *Msg) error {
 	 */
 	var nfid, fid *Fid
 	if t.Fid != t.Newfid {
-		nfid, err = fidGet(m.con, t.Newfid, FidFWlock|FidFCreate)
+		nfid, err = getFid(m.con, t.Newfid, FidFWlock|FidFCreate)
 		if err != nil {
-			fidPut(ofid)
+			ofid.put()
 			return fmt.Errorf("%s: walk: newfid 0x%d in use", argv0, t.Newfid)
 		}
 
@@ -828,9 +800,9 @@ func rTwalk(m *Msg) error {
 
 	if len(t.Wname) == 0 {
 		if nfid != nil {
-			fidPut(nfid)
+			nfid.put()
 		}
-		fidPut(ofid)
+		ofid.put()
 
 		return nil
 	}
@@ -904,10 +876,10 @@ func rTwalk(m *Msg) error {
 		fid.file = file
 
 		if nfid != nil {
-			fidPut(nfid)
+			nfid.put()
 		}
 
-		fidPut(ofid)
+		ofid.put()
 		return nil
 	}
 
@@ -920,10 +892,10 @@ Out:
 	file.decRef()
 
 	if nfid != nil {
-		fidClunk(nfid)
+		nfid.clunk()
 	}
 
-	fidPut(ofid)
+	ofid.put()
 	if nwname == 0 {
 		return err
 	}
@@ -953,7 +925,7 @@ func parseAname(aname string) (fsname, path string) {
 }
 
 func rTattach(m *Msg) error {
-	fid, err := fidGet(m.con, m.t.Fid, FidFWlock|FidFCreate)
+	fid, err := getFid(m.con, m.t.Fid, FidFWlock|FidFCreate)
 	if err != nil {
 		return err
 	}
@@ -961,7 +933,7 @@ func rTattach(m *Msg) error {
 	fsname, path := parseAname(m.t.Aname)
 	fsys, err := getFsys(fsname)
 	if err != nil {
-		fidClunk(fid)
+		fid.clunk()
 		return err
 	}
 
@@ -976,7 +948,7 @@ func rTattach(m *Msg) error {
 	// used by sources to reject connections from some countries
 	//if (fid.con.flags&ConIPCheck != 0) && conIPCheck(fid.con) == 0 {
 	//	printf("reject %s from %s: %R\n", fid.uname, fid.con.remote)
-	//	fidClunk(fid)
+	//	fid.clunk()
 	//	return err
 	//}
 
@@ -986,7 +958,7 @@ func rTattach(m *Msg) error {
 			fid.uid = unamenone
 		}
 	} else if err := authCheck(m.t, fid, fsys); err != nil {
-		fidClunk(fid)
+		fid.clunk()
 		return err
 	}
 
@@ -994,7 +966,7 @@ func rTattach(m *Msg) error {
 	fid.file = fsys.getRoot(path)
 	if (fid.file) == nil {
 		fsys.fsRUnlock()
-		fidClunk(fid)
+		fid.clunk()
 		return err
 	}
 	fsys.fsRUnlock()
@@ -1002,7 +974,7 @@ func rTattach(m *Msg) error {
 	fid.qid = plan9.Qid{Path: fid.file.getId(), Type: plan9.QTDIR}
 	m.r.Qid = fid.qid
 
-	fidPut(fid)
+	fid.put()
 	return nil
 }
 
@@ -1027,7 +999,7 @@ func rTauth(m *Msg) error {
 	}
 
 	con := m.con
-	afid, err := fidGet(con, m.t.Afid, FidFWlock|FidFCreate)
+	afid, err := getFid(con, m.t.Afid, FidFWlock|FidFCreate)
 	if afid == nil {
 		fsys.put()
 		return err
@@ -1035,25 +1007,22 @@ func rTauth(m *Msg) error {
 
 	afid.fsys = fsys
 
-	var afd int
-	afd, err = syscall.Open("/mnt/factotum/rpc", syscall.O_RDWR, 0)
+	afd, err := syscall.Open("/mnt/factotum/rpc", syscall.O_RDWR, 0)
 	if err != nil {
-		fidClunk(afid)
+		afid.clunk()
 		return err
 	}
 
 	afid.rpc = auth_allocrpc(afd)
 	if (afid.rpc) == nil {
 		syscall.Close(afd)
-		err = fmt.Errorf("can't auth_allocrpc")
-		fidClunk(afid)
-		return err
+		afid.clunk()
+		return fmt.Errorf("can't auth_allocrpc")
 	}
 
 	if auth_rpc(afid.rpc, "start", "proto=p9any role=server", 23) != ARok {
-		err = fmt.Errorf("can't auth_rpc")
-		fidClunk(afid)
-		return err
+		afid.clunk()
+		return fmt.Errorf("can't auth_rpc")
 	}
 
 	afid.open = FidOWrite | FidORead
@@ -1063,7 +1032,7 @@ func rTauth(m *Msg) error {
 
 	m.r.Qid = afid.qid
 
-	fidPut(afid)
+	afid.put()
 	return nil
 }
 
@@ -1086,7 +1055,7 @@ func rTversion(m *Msg) error {
 	 * Should this be done before or after checking the
 	 * validity of the Tversion?
 	 */
-	fidClunkAll(con)
+	clunkAllFids(con)
 
 	if t.Tag != ^uint16(0) {
 		return errors.New("Tversion: invalid tag")

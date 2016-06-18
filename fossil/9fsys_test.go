@@ -56,7 +56,7 @@ func TestFsys(t *testing.T) {
 	if err != nil {
 		log.Fatalf("TestMain: error starting fossil: %v", err)
 	}
+	defer fsys.fs.close()
 
-	_ = fsys
 	//t.Run("fsys.blah", func(t *testing.T) { testFsysBlah(t, fsys) })
 }

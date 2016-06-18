@@ -297,10 +297,10 @@ func (d *Disk) write(b *Block) {
 
 func (d *Disk) writeAndWait(b *Block) {
 	/*
-	 * If b->nlock > 1, the block is aliased within
+	 * If b.nlock > 1, the block is aliased within
 	 * a single thread.  That thread is us.
 	 * disk.write does some funny stuff with sync.Mutex
-	 * and blockPut that basically assumes b.nlock==1.
+	 * and block.put that basically assumes b.nlock==1.
 	 * We humor disk.write by temporarily setting
 	 * nlock to 1. This needs to be revisited.
 	 */
@@ -316,7 +316,7 @@ func (d *Disk) writeAndWait(b *Block) {
 }
 
 func (d *Disk) blockSize() int {
-	return int(d.h.blockSize) /* immuttable */
+	return int(d.h.blockSize) /* immutable */
 }
 
 func (d *Disk) flush() error {

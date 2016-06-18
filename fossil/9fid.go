@@ -9,7 +9,7 @@ import (
 	"9fans.net/go/plan9"
 )
 
-/* Fid.flags and fidGet(..., flags) */
+/* Fid.flags and getFid(..., flags) */
 const (
 	FidFCreate = 0x01
 	FidFWlock  = 0x02
@@ -29,7 +29,7 @@ const NFidHash = 503
 // directories being examined, etc. Fidno is chosen
 // by the client.
 type Fid struct {
-	lock  *sync.RWMutex
+	lk    *sync.RWMutex
 	con   *Con
 	fidno uint32 // the fid itself
 	ref   int    // inc/dec under Con.fidlock
@@ -46,7 +46,7 @@ type Fid struct {
 	uname  string
 	db     *DirBuf
 	excl   *Excl
-	alock  *sync.Mutex // Tauth/Tattach
+	alk    *sync.Mutex // Tauth/Tattach
 	rpc    *AuthRpc
 	cuname string
 	sort   *Fid // sorted by uname in cmdWho
@@ -63,12 +63,12 @@ var fbox struct {
 	inuse int
 }
 
-func fidLock(fid *Fid, flags int) {
+func (fid *Fid) lock(flags int) {
 	if flags&FidFWlock != 0 {
-		fid.lock.Lock()
+		fid.lk.Lock()
 		fid.flags = flags
 	} else {
-		fid.lock.RLock()
+		fid.lk.RLock()
 	}
 
 	/*
@@ -77,7 +77,7 @@ func fidLock(fid *Fid, flags int) {
 	 * change underfoot. With the exception of Tversion and Tattach,
 	 * that implies all 9P functions need to lock on entry and unlock
 	 * on exit. Fortunately, the general case is the 9P functions do
-	 * fidGet on entry and fidPut on exit, so this is a convenient place
+	 * getFid on entry and fidPut on exit, so this is a convenient place
 	 * to do the locking.
 	 * No fsys->fs->elk lock is required if the fid is being created
 	 * (Tauth, Tattach and Twalk). FidFCreate is always accompanied by
@@ -92,19 +92,19 @@ func fidLock(fid *Fid, flags int) {
 	}
 }
 
-func fidUnlock(fid *Fid) {
+func (fid *Fid) unlock() {
 	if fid.flags&FidFCreate == 0 {
 		fid.fsys.fsRUnlock()
 	}
 	if fid.flags&FidFWlock != 0 {
 		fid.flags = 0
-		fid.lock.Unlock()
+		fid.lk.Unlock()
 		return
 	}
-	fid.lock.RUnlock()
+	fid.lk.RUnlock()
 }
 
-func fidAlloc() *Fid {
+func allocFid() *Fid {
 	var fid *Fid
 
 	fbox.lock.Lock()
@@ -114,8 +114,8 @@ func fidAlloc() *Fid {
 		fbox.nfree--
 	} else {
 		fid = new(Fid)
-		fid.lock = new(sync.RWMutex)
-		fid.alock = new(sync.Mutex)
+		fid.lk = new(sync.RWMutex)
+		fid.alk = new(sync.Mutex)
 	}
 
 	fbox.inuse++
@@ -142,7 +142,7 @@ func fidAlloc() *Fid {
 	return fid
 }
 
-func fidFree(fid *Fid) {
+func (fid *Fid) free() {
 	if fid.file != nil {
 		fid.file.decRef()
 		fid.file = nil
@@ -153,7 +153,7 @@ func fidFree(fid *Fid) {
 		fid.db = nil
 	}
 
-	fidUnlock(fid)
+	fid.unlock()
 
 	if fid.uid != "" {
 		fid.uid = ""
@@ -188,13 +188,13 @@ func fidFree(fid *Fid) {
 		fbox.free = fid
 		fbox.nfree++
 	} else {
-		fid.alock = nil
-		fid.lock = nil
+		fid.alk = nil
+		fid.lk = nil
 	}
 	fbox.lock.Unlock()
 }
 
-func fidUnHash(fid *Fid) {
+func (fid *Fid) unHash() {
 	var fp *Fid
 
 	assert(fid.ref == 0)
@@ -226,7 +226,7 @@ func fidUnHash(fid *Fid) {
 	fid.con.nfid--
 }
 
-func fidGet(con *Con, fidno uint32, flags int) (*Fid, error) {
+func getFid(con *Con, fidno uint32, flags int) (*Fid, error) {
 	if fidno == plan9.NOFID {
 		return nil, errors.New("fidno invalid")
 	}
@@ -250,9 +250,9 @@ func fidGet(con *Con, fidno uint32, flags int) (*Fid, error) {
 		fid.ref++
 		con.fidlock.Unlock()
 
-		fidLock(fid, flags)
+		fid.lock(flags)
 		if (fid.open&FidOCreate != 0) || fid.fidno == plan9.NOFID {
-			fidPut(fid)
+			fid.put()
 			return nil, fmt.Errorf("%s: fid invalid", argv0)
 		}
 
@@ -260,7 +260,7 @@ func fidGet(con *Con, fidno uint32, flags int) (*Fid, error) {
 	}
 
 	if flags&FidFCreate != 0 {
-		fid := fidAlloc()
+		fid := allocFid()
 		if fid != nil {
 			assert(flags&FidFWlock != 0)
 			fid.con = con
@@ -288,7 +288,7 @@ func fidGet(con *Con, fidno uint32, flags int) (*Fid, error) {
 			 * accidental access to the Fid between unlocking the
 			 * hash and acquiring the Fid lock for return.
 			 */
-			fidLock(fid, flags)
+			fid.lock(flags)
 
 			fid.open &^= FidOCreate
 			return fid, nil
@@ -300,48 +300,48 @@ func fidGet(con *Con, fidno uint32, flags int) (*Fid, error) {
 	return nil, fmt.Errorf("%s: fid not found", argv0)
 }
 
-func fidPut(fid *Fid) {
+func (fid *Fid) put() {
 	fid.con.fidlock.Lock()
 	assert(fid.ref > 0)
 	fid.ref--
 	fid.con.fidlock.Unlock()
 
 	if fid.ref == 0 && fid.fidno == plan9.NOFID {
-		fidFree(fid)
+		fid.free()
 		return
 	}
 
-	fidUnlock(fid)
+	fid.unlock()
 }
 
-func fidClunk(fid *Fid) {
+func (fid *Fid) clunk() {
 	assert(fid.flags&FidFWlock != 0)
 
 	fid.con.fidlock.Lock()
 	assert(fid.ref > 0)
 	fid.ref--
-	fidUnHash(fid)
+	fid.unHash()
 	fid.fidno = plan9.NOFID
 	fid.con.fidlock.Unlock()
 
 	if fid.ref > 0 {
 		/* not reached - fidUnHash requires ref == 0 */
-		fidUnlock(fid)
+		fid.unlock()
 
 		return
 	}
 
-	fidFree(fid)
+	fid.free()
 }
 
-func fidClunkAll(con *Con) {
+func clunkAllFids(con *Con) {
 	con.fidlock.Lock()
 	for con.fhead != nil {
 		fidno := con.fhead.fidno
 		con.fidlock.Unlock()
-		fid, err := fidGet(con, fidno, FidFWlock)
+		fid, err := getFid(con, fidno, FidFWlock)
 		if err == nil {
-			fidClunk(fid)
+			fid.clunk()
 		}
 		con.fidlock.Lock()
 	}

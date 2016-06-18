@@ -329,7 +329,7 @@ func (c *Cache) bumpBlock() *Block {
 			c.heapwait.Wait()
 			if c.nheap == 0 {
 				printed = true
-				fmt.Fprintf(os.Stderr, "%s: entire cache is busy, %d dirty "+"-- waking flush thread\n", argv0, c.ndirty)
+				fmt.Fprintf(os.Stderr, "%s: entire cache is busy, %d dirty -- waking flush thread\n", argv0, c.ndirty)
 			}
 		}
 
@@ -667,7 +667,7 @@ func (c *Cache) allocBlock(typ int, tag uint32, epoch uint32, epochLow uint32) (
 	fl.lk.Lock()
 	addr := fl.last
 	b, err = c.local(PartLabel, addr/n, OReadOnly)
-	if b == nil {
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx %v\n", argv0, err)
 		fl.lk.Unlock()
 		return nil, err
