@@ -1464,12 +1464,6 @@ func doRemoveLink(c *Cache, p *BList) {
 				continue
 			}
 
-			// If stack space becomes an issue...
-			//p->addr = a;
-			//p->type = l.type;
-			//p->tag = l.tag;
-			//doRemoveLink(c, p);
-
 			bl.part = PartData
 
 			bl.addr = a
