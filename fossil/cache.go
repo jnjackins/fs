@@ -1724,17 +1724,16 @@ func readLabel(c *Cache, l *Label, addr uint32) error {
 	lpb := c.size / LabelSize
 	a := addr / uint32(lpb)
 	b, err := c.local(PartLabel, a, OReadOnly)
+	defer b.put()
+
 	if err != nil {
-		b.put()
 		return err
 	}
 
 	if err := labelUnpack(l, b.data, int(addr%uint32(lpb))); err != nil {
-		b.put()
 		return err
 	}
 
-	b.put()
 	return nil
 }
 
@@ -1748,9 +1747,11 @@ func unlinkBody(c *Cache) {
 	for c.uhead != nil {
 		p = c.uhead
 		c.uhead = p.next
+
 		c.lk.Unlock()
 		doRemoveLink(c, p)
 		c.lk.Lock()
+
 		p.next = c.blfree
 		c.blfree = p
 	}
@@ -1789,10 +1790,7 @@ func (a BAddrSorter) Less(i, j int) bool {
 	if a[i].part > a[j].part {
 		return false
 	}
-	if a[i].addr < a[j].addr {
-		return true
-	}
-	return false
+	return a[i].addr < a[j].addr
 }
 
 // Scan the block list for dirty blocks; add them to the list c.baddr.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"syscall"
 	"testing"
 )
@@ -26,7 +27,29 @@ func TestDisk(t *testing.T) {
 	}
 	defer disk.free()
 
-	t.Run("disk.readRaw", func(t *testing.T) { benchDiskReadRaw(b, disk) })
+	t.Run("disk.readWriteRaw", func(t *testing.T) { testDiskReadWriteRaw(t, disk) })
+}
+
+func testDiskReadWriteRaw(t *testing.T, disk *Disk) {
+	buf := make([]byte, disk.h.blockSize)
+	copy(buf, []byte("the quick brown fox jumps over the lazy dog"))
+
+	want := make([]byte, disk.h.blockSize)
+	copy(want, buf)
+
+	if err := disk.writeRaw(PartData, disk.partStart(PartData), buf); err != nil {
+		t.Fatalf("disk.writeRaw: %v", err)
+	}
+
+	memset(buf, 0)
+
+	if err := disk.readRaw(PartData, disk.partStart(PartData), buf); err != nil {
+		t.Fatalf("disk.readRaw: %v", err)
+	}
+
+	if bytes.Compare(buf, want) != 0 {
+		t.Errorf("comparison failed: got=%v, want=%v", buf, want)
+	}
 }
 
 func BenchmarkDisk(b *testing.B) {
@@ -52,11 +75,6 @@ func benchDiskWriteRaw(b *testing.B, disk *Disk) {
 
 func benchDiskReadRaw(b *testing.B, disk *Disk) {
 	buf := make([]byte, disk.h.blockSize)
-	err := disk.writeRaw(PartData, disk.partStart(PartData), buf)
-	if err != nil {
-		b.Fatalf("disk.writeRaw: %v", err)
-	}
-
 	for i := 0; i < b.N; i++ {
 		err := disk.readRaw(PartData, disk.partStart(PartData), buf)
 		if err != nil {
