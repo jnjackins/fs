@@ -72,19 +72,19 @@ func (fid *Fid) lock(flags int) {
 	}
 
 	/*
-	 * Callers of file* routines are expected to lock fsys->fs->elk
+	 * Callers of *File routines are expected to lock fsys.fs.elk
 	 * before making any calls in order to make sure the epoch doesn't
 	 * change underfoot. With the exception of Tversion and Tattach,
 	 * that implies all 9P functions need to lock on entry and unlock
 	 * on exit. Fortunately, the general case is the 9P functions do
-	 * getFid on entry and fidPut on exit, so this is a convenient place
+	 * getFid on entry and fid.put on exit, so this is a convenient place
 	 * to do the locking.
-	 * No fsys->fs->elk lock is required if the fid is being created
+	 * No fsys.fs.elk lock is required if the fid is being created
 	 * (Tauth, Tattach and Twalk). FidFCreate is always accompanied by
 	 * FidFWlock so the setting and testing of FidFCreate here and in
-	 * fidUnlock below is always done under fid->lock.
-	 * A side effect is that fidFree is called with the fid locked, and
-	 * must call fidUnlock only after it has disposed of any File
+	 * fid.unlock below is always done under fid.lk.
+	 * A side effect is that fid.free is called with the fid locked, and
+	 * must call fid.unlock only after it has disposed of any *File
 	 * resources still held.
 	 */
 	if flags&FidFCreate == 0 {

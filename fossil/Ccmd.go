@@ -248,7 +248,7 @@ func cmd9p(argv []string) error {
 		return fmt.Errorf("%s: error reading fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
-	printf("\t<- %v\n", &f)
+	printf("\t<- %v\n", f)
 
 	return nil
 }
@@ -417,8 +417,8 @@ func cmdInit() error {
 	cmdbox.conns[0] = c1
 	cmdbox.conns[1] = c2
 
-	//cmdbox.con = conAlloc(cmdbox.conns[1], "console", 0)
-	//cmdbox.con.isconsole = true
+	cmdbox.con = conAlloc(cmdbox.conns[1], "console", 0)
+	cmdbox.con.isconsole = true
 
 	return nil
 }
