@@ -25,28 +25,6 @@ const (
 )
 
 const (
-	MsgN = 0
-	MsgR = 1
-	Msg9 = 2
-	MsgW = 3
-	MsgF = 4
-)
-
-// A Msg is a 9P message.
-type Msg struct {
-	msize uint32       /* actual size of data */
-	t     *plan9.Fcall // request (transmit)
-	r     *plan9.Fcall // reply (return)
-	con   *Con
-	anext *Msg /* allocation free list */
-	mnext *Msg /* all active messsages on this Con */
-	mprev *Msg
-	state int  /* */
-	flush *Msg /* flushes waiting for this Msg */
-	nowq  bool /* do not place on write queue */
-}
-
-const (
 	ConNoneAllow   = 1 << 0
 	ConNoAuthCheck = 1 << 1
 	ConNoPermCheck = 1 << 2
@@ -95,29 +73,6 @@ type Con struct {
 	nfid    int
 }
 
-func (con *Con) String() string {
-	return con.name
-}
-
-var mbox struct {
-	alock   *sync.Mutex // alloc
-	ahead   *Msg
-	arendez *sync.Cond
-
-	maxmsg     int
-	nmsg       int
-	nmsgstarve int
-
-	rlock *sync.Mutex
-	rchan chan *Msg // read queue
-
-	maxproc     int
-	nproc       int
-	nprocstarve int
-
-	msize uint32 // immutable
-}
-
 var cbox struct {
 	alock   *sync.Mutex // alloc
 	ahead   *Con
@@ -134,7 +89,11 @@ var cbox struct {
 	msize uint32
 }
 
-func conFree(con *Con) {
+func (con *Con) String() string {
+	return con.name
+}
+
+func (con *Con) free() {
 	assert(con.version == nil)
 	assert(con.mhead == nil)
 	assert(con.nfid == 0)
@@ -178,8 +137,49 @@ func conFree(con *Con) {
 	}
 }
 
-func msgFree(m *Msg) {
-	assert(m.flush == nil)
+const (
+	MsgN = 0
+	MsgR = 1
+	Msg9 = 2
+	MsgW = 3
+	MsgF = 4
+)
+
+// A Msg is a 9P message.
+type Msg struct {
+	msize   uint32       /* actual size of data */
+	t       *plan9.Fcall // request (transmit)
+	r       *plan9.Fcall // reply (return)
+	con     *Con
+	anext   *Msg /* allocation free list */
+	mnext   *Msg /* all active messsages on this Con */
+	mprev   *Msg
+	state   int  /* */
+	toFlush *Msg /* flushes waiting for this Msg */
+	nowq    bool /* do not place on write queue */
+}
+
+var mbox struct {
+	alock   *sync.Mutex // alloc
+	ahead   *Msg
+	arendez *sync.Cond
+
+	maxmsg     int
+	nmsg       int
+	nmsgstarve int
+
+	rlock *sync.Mutex
+	rchan chan *Msg // read queue
+
+	maxproc     int
+	nproc       int
+	nprocstarve int
+
+	msize uint32 // immutable
+}
+
+func (m *Msg) free() {
+	assert(m.toFlush == nil)
 
 	mbox.alock.Lock()
 	if mbox.nmsg > mbox.maxmsg {
@@ -196,7 +196,7 @@ func msgFree(m *Msg) {
 	mbox.alock.Unlock()
 }
 
-func msgAlloc(con *Con) *Msg {
+func allocMsg(con *Con) *Msg {
 	mbox.alock.Lock()
 	for mbox.ahead == nil {
 		if mbox.nmsg >= mbox.maxmsg {
@@ -225,7 +225,7 @@ func msgAlloc(con *Con) *Msg {
 	return m
 }
 
-func msgMunlink(m *Msg) {
+func (m *Msg) munlink() {
 	con := m.con
 
 	if m.mprev != nil {
@@ -242,10 +242,10 @@ func msgMunlink(m *Msg) {
 	m.mprev = m.mnext
 }
 
-func msgFlush(m *Msg) {
+func (m *Msg) flush() {
 	con := m.con
 
-	dprintf("msgFlush %v\n", &m.t)
+	dprintf("(*Msg).flush %v\n", &m.t)
 
 	/*
 	 * If this Tflush has been flushed, nothing to do.
@@ -268,12 +268,12 @@ func msgFlush(m *Msg) {
 		}
 	}
 	if old == nil {
-		dprintf("msgFlush: cannot find %d\n", m.t.Oldtag)
+		dprintf("(*Msg).flush: cannot find %d\n", m.t.Oldtag)
 		con.mlock.Unlock()
 		return
 	}
 
-	dprintf("\tmsgFlush found %v\n", &old.t)
+	dprintf("\t(*Msg).flush found %v\n", &old.t)
 
 	/*
 	 * Found it.
@@ -288,7 +288,7 @@ func msgFlush(m *Msg) {
 	 */
 	if old.state == MsgR || old.t.Type == plan9.Tflush {
 		old.state = MsgF
-		dprintf("msgFlush: change %d from MsgR to MsgF\n", m.t.Oldtag)
+		dprintf("(*Msg).flush: change %d from MsgR to MsgF\n", m.t.Oldtag)
 	}
 
 	/*
@@ -305,25 +305,23 @@ func msgFlush(m *Msg) {
 	 * Msg.nowq, the only code to check it runs in this
 	 * process after this routine returns.
 	 */
-	flush := old.flush
+	flush := old.toFlush
 	if flush != nil {
-		dprintf("msgFlush: remove %d from %d list\n", old.flush.t.Tag, old.t.Tag)
-		m.flush = flush.flush
-		flush.flush = nil
-		msgMunlink(flush)
-		msgFree(flush)
+		dprintf("(*Msg).flush: remove %d from %d list\n", old.toFlush.t.Tag, old.t.Tag)
+		m.toFlush = flush.toFlush
+		flush.toFlush = nil
+		flush.munlink()
+		flush.free()
 	}
 
-	old.flush = m
+	old.toFlush = m
 	m.nowq = true
 
-	dprintf("msgFlush: add %d to %d queue\n", m.t.Tag, old.t.Tag)
+	dprintf("(*Msg).flush: add %d to %d queue\n", m.t.Tag, old.t.Tag)
 	con.mlock.Unlock()
 }
 
 func msgProc() {
-	//vtThreadSetName("msgProc")
-
 	for {
 		// If surplus to requirements, exit.
 		// If not, wait for and pull a message off
@@ -396,13 +394,11 @@ func msgProc() {
 }
 
 func msgRead(con *Con) {
-	//vtThreadSetName("msgRead")
-
 	go msgProc()
 
 	eof := false
 	for !eof {
-		m := msgAlloc(con)
+		m := allocMsg(con)
 
 		var err error
 		m.t, err = plan9.ReadFcall(con.conn)
@@ -418,7 +414,7 @@ func msgRead(con *Con) {
 			eof = true
 		} else if err != nil {
 			logf("msgRead: error unmarshalling fcall from %s: %v\n", con.name, err)
-			msgFree(m)
+			m.free()
 			continue
 		}
 
@@ -441,8 +437,6 @@ func msgRead(con *Con) {
 }
 
 func msgWrite(con *Con) {
-	//vtThreadSetName("msgWrite")
-
 	var flush *Msg
 	for {
 		m := <-con.wchan
@@ -454,7 +448,7 @@ func msgWrite(con *Con) {
 		con.mlock.Lock()
 
 		for m != nil {
-			msgMunlink(m)
+			m.munlink()
 
 			dprintf("msgWrite %p:r %v\n", m.con, m.r)
 
@@ -473,13 +467,13 @@ func msgWrite(con *Con) {
 				con.mlock.Lock()
 			}
 
-			flush = m.flush
+			flush = m.toFlush
 			if flush != nil {
 				assert(flush.nowq)
-				m.flush = nil
+				m.toFlush = nil
 			}
 
-			msgFree(m)
+			m.free()
 			m = flush
 		}
 
@@ -497,7 +491,7 @@ func msgWrite(con *Con) {
 		}
 		if con.state == ConMoribund && con.mhead == nil {
 			con.lock.Unlock()
-			conFree(con)
+			con.free()
 			break
 		}
 
@@ -505,7 +499,7 @@ func msgWrite(con *Con) {
 	}
 }
 
-func conAlloc(conn net.Conn, name string, flags int) *Con {
+func allocCon(conn net.Conn, name string, flags int) *Con {
 	cbox.alock.Lock()
 	for cbox.ahead == nil {
 		if cbox.ncon >= cbox.maxcon {

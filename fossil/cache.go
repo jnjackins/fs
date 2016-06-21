@@ -1757,8 +1757,6 @@ func unlinkBody(c *Cache) {
  * Occasionally unlink the blocks on the cache unlink queue.
  */
 func unlinkThread(c *Cache) {
-	//vtThreadSetName("unlink")
-
 	c.lk.Lock()
 	for {
 		for c.uhead == nil && c.die == nil {
@@ -1885,7 +1883,6 @@ func (c *Cache) flushBlock() bool {
  * Occasionally flush dirty blocks from memory to the disk.
  */
 func flushThread(c *Cache) {
-	//vtThreadSetName("flush")
 	c.lk.Lock()
 	for c.die == nil {
 		c.flushcond.Wait()

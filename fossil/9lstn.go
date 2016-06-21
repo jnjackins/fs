@@ -45,12 +45,10 @@ func (lstn *Lstn) free() {
 }
 
 func (lstn *Lstn) accept() {
-	//vtThreadSetName("listen")
-
 	for {
 		conn, err := lstn.l.Accept()
 		if err == nil {
-			conAlloc(conn, conn.LocalAddr().String(), lstn.flags)
+			allocCon(conn, conn.LocalAddr().String(), lstn.flags)
 		} else {
 			logf("(*Lstn).accept: %v\n", err)
 		}

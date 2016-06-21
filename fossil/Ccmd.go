@@ -417,7 +417,7 @@ func cmdInit() error {
 	cmdbox.conns[0] = c1
 	cmdbox.conns[1] = c2
 
-	cmdbox.con = conAlloc(cmdbox.conns[1], "console", 0)
+	cmdbox.con = allocCon(cmdbox.conns[1], "console", 0)
 	cmdbox.con.isconsole = true
 
 	return nil

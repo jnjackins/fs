@@ -328,8 +328,6 @@ func (a *Arch) thread() {
 	var rbuf [venti.RootSize]uint8
 	var err error
 
-	//venti.ThreadSetName("arch")
-
 	for {
 		/* look for work */
 		a.fs.elk.Lock()

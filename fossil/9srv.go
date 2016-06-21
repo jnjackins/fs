@@ -200,7 +200,7 @@ func cmdSrv(cons *Cons, argv []string) error {
 		return fmt.Errorf("srvAlloc: %v", err)
 	}
 
-	conAlloc(c2, srv.mntpnt, conflags)
+	allocCon(c2, srv.mntpnt, conflags)
 	return nil
 }
 

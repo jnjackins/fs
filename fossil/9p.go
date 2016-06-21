@@ -904,7 +904,7 @@ Out:
 
 func rTflush(m *Msg) error {
 	if m.t.Oldtag != ^uint16(0) {
-		msgFlush(m)
+		m.flush()
 	}
 	return nil
 }

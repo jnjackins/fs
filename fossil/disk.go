@@ -335,8 +335,6 @@ func (d *Disk) size(part int) uint32 {
 }
 
 func (d *Disk) thread() {
-	//vtThreadSetName("disk")
-
 	if *Dflag {
 		(&lockmaplk).Lock()
 		lockmap = make(map[*Block]string)
