@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -205,7 +204,7 @@ func (f *File) openSource(offset, gen uint32, dir bool, mode uint, issnapshot bo
 
 	if r.dir != dir && r.mode != -1 {
 		/* this hasn't been as useful as we hoped it would be. */
-		printf("%s: source %s for file %s: (*File).openSource: dir mismatch %v %v\n",
+		logf("%s: source %s for file %s: (*File).openSource: dir mismatch %v %v\n",
 			f.source.fs.name, r.name(), f.name(), r.dir, dir)
 
 		r.close()
@@ -346,7 +345,7 @@ func (f *File) setTmp(istmp int) {
 		}
 		e, err := r.getEntry()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "sourceGetEntry failed (cannot happen): %v\n", err)
+			logf("sourceGetEntry failed (cannot happen): %v\n", err)
 			continue
 		}
 
@@ -356,7 +355,7 @@ func (f *File) setTmp(istmp int) {
 			e.flags &^= venti.EntryNoArchive
 		}
 		if err := r.setEntry(e); err != nil {
-			fmt.Fprintf(os.Stderr, "sourceSetEntry failed (cannot happen): %v\n", err)
+			logf("sourceSetEntry failed (cannot happen): %v\n", err)
 			continue
 		}
 	}
@@ -503,7 +502,7 @@ func (f *File) read(cnt int, offset int64) ([]byte, error) {
 	var err error
 
 	if false {
-		fmt.Fprintf(os.Stderr, "fileRead: %s %d, %d\n", f.dir.elem, cnt, offset)
+		dprintf("fileRead: %s %d, %d\n", f.dir.elem, cnt, offset)
 	}
 
 	if err = f.rLock(); err != nil {
@@ -1008,7 +1007,7 @@ func (f *File) metaFlush2(oelem string) int {
 
 	n := deSize(&f.dir)
 	if false {
-		fmt.Fprintf(os.Stderr, "old size %d new size %d\n", me.size, n)
+		dprintf("old size %d new size %d\n", me.size, n)
 	}
 
 	if mb.resize(&me, n) {
@@ -1045,7 +1044,7 @@ func (f *File) metaFlush2(oelem string) int {
 		return -1
 	}
 
-	fmt.Fprintf(os.Stderr, "fileMetaFlush moving entry from %d -> %d\n", f.boff, boff)
+	logf("fileMetaFlush moving entry from %d -> %d\n", f.boff, boff)
 	f.boff = boff
 
 	/* make sure deletion goes to disk after new entry */
@@ -1569,7 +1568,7 @@ func (f *File) unlock() {
  */
 func (f *File) metaLock() {
 	if f.up == nil {
-		fmt.Fprintf(os.Stderr, "f->elem = %s\n", f.dir.elem)
+		logf("f->elem = %s\n", f.dir.elem)
 	}
 	assert(f.up != nil)
 	//assert(!vtCanLock(f.fs.elk))
@@ -1645,7 +1644,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 		b, err = r.fs.cache.global(e.score, EntryType(e), e.tag, OReadOnly)
 		if err == nil {
 			if b.l.epoch >= epoch {
-				fmt.Fprintf(os.Stderr, "warning: entry %p epoch not older %#.8x/%d %v/%d in getEntry\n", r, b.addr, b.l.epoch, r.score, epoch)
+				logf("warning: entry %p epoch not older %#.8x/%d %v/%d in getEntry\n", r, b.addr, b.l.epoch, r.score, epoch)
 			}
 			b.put()
 		}
@@ -1657,7 +1656,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 func setEntry(r *Source, e *Entry) error {
 	b, err := r.fs.cache.global(r.score, BtDir, r.tag, OReadWrite)
 	if false {
-		fmt.Fprintf(os.Stderr, "setEntry: b %#x %d score=%v\n", b.addr, r.offset%uint32(r.epb), e.score)
+		dprintf("setEntry: b %#x %d score=%v\n", b.addr, r.offset%uint32(r.epb), e.score)
 	}
 	if err != nil {
 		return err
@@ -1718,12 +1717,12 @@ func (f *File) getSources(e *Entry, ee *Entry) error {
  */
 func (f *File) walkSources() error {
 	if f.mode == OReadOnly {
-		fmt.Fprintf(os.Stderr, "readonly in fileWalkSources\n")
+		logf("readonly in fileWalkSources\n")
 		return nil
 	}
 
 	if err := f.source.lock2(f.msource, OReadWrite); err != nil {
-		fmt.Fprintf(os.Stderr, "sourceLock2 failed in fileWalkSources\n")
+		logf("sourceLock2 failed in fileWalkSources\n")
 		return err
 	}
 

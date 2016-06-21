@@ -244,7 +244,7 @@ func getFid(con *Con, fidno uint32, flags int) (*Fid, error) {
 		 */
 		if flags&FidFCreate != 0 {
 			con.fidlock.Unlock()
-			return nil, fmt.Errorf("%s: fid 0x%d in use", argv0, fidno)
+			return nil, fmt.Errorf("con=%v: fid 0x%d in use", con, fidno)
 		}
 
 		fid.ref++
@@ -253,7 +253,7 @@ func getFid(con *Con, fidno uint32, flags int) (*Fid, error) {
 		fid.lock(flags)
 		if (fid.open&FidOCreate != 0) || fid.fidno == plan9.NOFID {
 			fid.put()
-			return nil, fmt.Errorf("%s: fid invalid", argv0)
+			return nil, fmt.Errorf("invalid fid: %v", fid)
 		}
 
 		return fid, nil
@@ -297,7 +297,7 @@ func getFid(con *Con, fidno uint32, flags int) (*Fid, error) {
 
 	con.fidlock.Unlock()
 
-	return nil, fmt.Errorf("%s: fid not found", argv0)
+	return nil, fmt.Errorf("con=%v: fid not found", con)
 }
 
 func (fid *Fid) put() {

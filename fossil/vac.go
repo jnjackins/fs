@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 
 	"sigint.ca/fs/internal/pack"
@@ -433,14 +432,14 @@ func (mb *MetaBlock) metaChunks() ([]MetaChunk, error) {
 	return mc, nil
 
 Err:
-	fmt.Fprintf(os.Stderr, "metaChunks failed!\n")
+	logf("metaChunks failed!\n")
 	oo = MetaHeaderSize + mb.maxindex*MetaIndexSize
 	for i := int(0); i < mb.nindex; i++ {
-		fmt.Fprintf(os.Stderr, "\t%d: %d %d\n", i, mc[i].offset, mc[i].offset+mc[i].size)
+		logf("\t%d: %d %d\n", i, mc[i].offset, mc[i].offset+mc[i].size)
 		oo += int(mc[i].size)
 	}
 
-	fmt.Fprintf(os.Stderr, "\tused=%d size=%d free=%d free2=%d\n", oo, mb.size, mb.free, mb.size-oo)
+	logf("\tused=%d size=%d free=%d free2=%d\n", oo, mb.size, mb.free, mb.size-oo)
 	return nil, EBadMeta
 }
 
@@ -479,7 +478,7 @@ func (mb *MetaBlock) alloc(n int) (int, error) {
 
 	mc, err := mb.metaChunks()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mbAlloc: metaChunks failed: %v\n", err)
+		logf("mbAlloc: metaChunks failed: %v\n", err)
 		return -1, err
 	}
 

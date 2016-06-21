@@ -21,7 +21,7 @@ func TestParseAname(t *testing.T) {
 }
 
 func Test9p(t *testing.T) {
-	err := cmd9p([]string{"9p", "Tversion", "8192", "9P2000"})
+	err := cmd9p(nil, []string{"9p", "Tversion", "8192", "9P2000"})
 	if err != nil {
 		t.Fatal(err)
 	}

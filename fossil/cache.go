@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -255,7 +254,7 @@ func (c *Cache) free() {
 func (c *Cache) dump() {
 	for i := 0; i < c.nblocks; i++ {
 		b := c.blocks[i]
-		fmt.Fprintf(os.Stderr, "%d. p=%d a=%d %v t=%d ref=%d state=%s io=%s\n",
+		logf("%d. p=%d a=%d %v t=%d ref=%d state=%s io=%s\n",
 			i, b.part, b.addr, b.score, b.l.typ, b.ref, bsStr(int(b.l.state)), bioStr(b.iostate))
 	}
 }
@@ -290,7 +289,7 @@ func (c *Cache) check() {
 	}
 
 	if c.nheap+refed != c.nblocks {
-		fmt.Fprintf(os.Stderr, "%s: (*Cache).check: nheap %d refed %d nblocks %d\n", argv0, c.nheap, refed, c.nblocks)
+		logf("(*Cache).check: nheap %d refed %d nblocks %d\n", c.nheap, refed, c.nblocks)
 		c.dump()
 	}
 
@@ -300,14 +299,14 @@ func (c *Cache) check() {
 		b = c.blocks[i]
 		if b.ref != 0 {
 			if true {
-				fmt.Fprintf(os.Stderr, "%s: p=%d a=%d %v ref=%d %v\n", argv0, b.part, b.addr, b.score, b.ref, b.l)
+				logf("p=%d a=%d %v ref=%d %v\n", b.part, b.addr, b.score, b.ref, b.l)
 			}
 			refed++
 		}
 	}
 
 	if refed > 0 {
-		fmt.Fprintf(os.Stderr, "%s: (*Cache).check: in used %d\n", argv0, refed)
+		logf("(*Cache).check: in used %d\n", refed)
 	}
 }
 
@@ -329,12 +328,12 @@ func (c *Cache) bumpBlock() *Block {
 			c.heapwait.Wait()
 			if c.nheap == 0 {
 				printed = true
-				fmt.Fprintf(os.Stderr, "%s: entire cache is busy, %d dirty -- waking flush thread\n", argv0, c.ndirty)
+				logf("entire cache is busy, %d dirty -- waking flush thread\n", c.ndirty)
 			}
 		}
 
 		if printed {
-			fmt.Fprintf(os.Stderr, "%s: cache is okay again, %d dirty\n", argv0, c.ndirty)
+			logf("cache is okay again, %d dirty\n", c.ndirty)
 		}
 	}
 
@@ -359,7 +358,7 @@ func (c *Cache) bumpBlock() *Block {
 	}
 
 	if false {
-		fmt.Fprintf(os.Stderr, "%s: dropping %d:%x:%v\n", argv0, b.part, b.addr, b.score)
+		dprintf("dropping %d:%x:%v\n", b.part, b.addr, b.score)
 	}
 
 	/* set block to a reasonable state */
@@ -404,7 +403,7 @@ func (c *Cache) localLookup(part int, addr, vers uint32, waitlock bool) (*Block,
 		b.lock()
 		took := time.Since(then)
 		if took > 5*time.Millisecond {
-			printf("(*Cache).localLookup: waitlock=false, but waited %v for lock\n", took)
+			logf("(*Cache).localLookup: waitlock=false, but waited %v for lock\n", took)
 		}
 	} else {
 		b.lock()
@@ -457,7 +456,7 @@ func (c *Cache) _local(part int, addr uint32, mode int, epoch uint32) (*Block, e
 			continue
 		}
 		if epoch != 0 && b.l.epoch != epoch {
-			fmt.Fprintf(os.Stderr, "%s: (*Cache)._local want epoch %d got %d\n", argv0, epoch, b.l.epoch)
+			logf("(*Cache)._local: want epoch %d got %d\n", epoch, b.l.epoch)
 			c.lk.Unlock()
 			return nil, ELabelMismatch
 		}
@@ -494,9 +493,6 @@ func (c *Cache) _local(part int, addr uint32, mode int, epoch uint32) (*Block, e
 	 *
 	 * For now, I'm not going to worry about it.
 	 */
-	//if false {
-	//	fmt.Fprintf(os.Stderr, "%s: (*Cache)._local: %d: %d %x\n", argv0, getpid(), b.part, b.addr)
-	//}
 	b.lock()
 	atomic.StoreInt32(&b.nlock, 1)
 
@@ -559,7 +555,7 @@ func (c *Cache) localData(addr uint32, typ int, tag uint32, mode int, epoch uint
 		return nil, err
 	}
 	if int(b.l.typ) != typ || b.l.tag != tag {
-		fmt.Fprintf(os.Stderr, "%s: (*Cache).localData: addr=%d type got %d exp %d: tag got %x exp %x\n", argv0, addr, b.l.typ, typ, b.l.tag, tag)
+		logf("(*Cache).localData: addr=%d type got %d exp %d: tag got %x exp %x\n", addr, b.l.typ, typ, b.l.tag, tag)
 		b.put()
 		return nil, ELabelMismatch
 	}
@@ -597,7 +593,7 @@ func (c *Cache) global(score *venti.Score, typ int, tag uint32, mode int) (*Bloc
 
 	if b == nil {
 		if false {
-			fmt.Fprintf(os.Stderr, "%s: (*Cache).global %v %d\n", argv0, score, typ)
+			dprintf("(*Cache).global: %v %d\n", score, typ)
 		}
 
 		b = c.bumpBlock()
@@ -668,7 +664,7 @@ func (c *Cache) allocBlock(typ int, tag uint32, epoch uint32, epochLow uint32) (
 	addr := fl.last
 	b, err = c.local(PartLabel, addr/n, OReadOnly)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx %v\n", argv0, err)
+		logf("(*Cache).allocBlock: xxx %v\n", err)
 		fl.lk.Unlock()
 		return nil, err
 	}
@@ -689,7 +685,7 @@ func (c *Cache) allocBlock(typ int, tag uint32, epoch uint32, epochLow uint32) (
 				 * messages.
 				 */
 				if fl.last != 0 {
-					fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx1 %v\n", argv0, err)
+					logf("(*Cache).allocBlock: xxx1 %v\n", err)
 				}
 				fl.last = 0
 				fl.lk.Unlock()
@@ -702,7 +698,7 @@ func (c *Cache) allocBlock(typ int, tag uint32, epoch uint32, epochLow uint32) (
 			b, err = c.local(PartLabel, addr/n, OReadOnly)
 			if err != nil {
 				fl.last = addr
-				fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx2 %v\n", argv0, err)
+				logf("(*Cache).allocBlock: xxx2 %v\n", err)
 				fl.lk.Unlock()
 				return nil, err
 			}
@@ -725,7 +721,7 @@ Found:
 	b.put()
 	b, err = c.local(PartData, addr, OOverWrite)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx3 %v\n", argv0, err)
+		logf("(*Cache).allocBlock: xxx3 %v\n", err)
 		return nil, err
 	}
 
@@ -737,7 +733,7 @@ Found:
 	lab.epoch = epoch
 	lab.epochClose = ^uint32(0)
 	if err := b.setLabel(&lab, true); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: (*Cache).allocBlock: xxx4 %v\n", argv0, err)
+		logf("(*Cache).allocBlock: xxx4 %v\n", err)
 		b.put()
 		return nil, err
 	}
@@ -748,7 +744,7 @@ Found:
 	}
 
 	if false {
-		fmt.Fprintf(os.Stderr, "%s: fsAlloc %d type=%d tag = %x\n", argv0, addr, typ, tag)
+		dprintf("fsAlloc %d type=%d tag = %x\n", addr, typ, tag)
 	}
 	lastAlloc = addr
 	fl.nused++
@@ -783,7 +779,7 @@ func (c *Cache) countUsed(epochLow uint32, used, total, bsize *uint32) {
 			b.put()
 			b, err = c.local(PartLabel, addr/n, OReadOnly)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s: (*Cache).countUsed: loading %x: %v\n", argv0, addr/n, err)
+				logf("(*Cache).countUsed: loading %x: %v\n", addr/n, err)
 				break
 			}
 		}
@@ -967,7 +963,7 @@ func (b *Block) dependency(bb *Block, index int, score *venti.Score, e *Entry) {
 	}
 
 	if bb.iostate != BioDirty {
-		fmt.Fprintf(os.Stderr, "%s: %d:%x:%d iostate is %d in (*Block).dependency\n", argv0, bb.part, bb.addr, bb.l.typ, bb.iostate)
+		logf("%d:%x:%d iostate is %d in (*Block).dependency\n", bb.part, bb.addr, bb.l.typ, bb.iostate)
 		panic("abort")
 	}
 
@@ -978,7 +974,7 @@ func (b *Block) dependency(bb *Block, index int, score *venti.Score, e *Entry) {
 
 	assert(bb.iostate == BioDirty)
 	if false {
-		fmt.Fprintf(os.Stderr, "%s: %d:%x:%d depends on %d:%x:%d\n", argv0, b.part, b.addr, b.l.typ, bb.part, bb.addr, bb.l.typ)
+		dprintf("%d:%x:%d depends on %d:%x:%d\n", b.part, b.addr, b.l.typ, bb.part, bb.addr, bb.l.typ)
 	}
 
 	p.part = bb.part
@@ -1058,7 +1054,7 @@ func (b *Block) rollback(buf []byte) (p []byte, dirty bool) {
 			superUnpack(&super, buf)
 			addr := venti.GlobalToLocal(p.old.score)
 			if addr == NilBlock {
-				fmt.Fprintf(os.Stderr, "%s: rolling back super block: bad replacement addr %v\n", argv0, p.old.score)
+				logf("rolling back super block: bad replacement addr %v\n", p.old.score)
 				panic("abort")
 			}
 			super.active = addr
@@ -1123,7 +1119,7 @@ func (b *Block) write(waitlock bool) bool {
 		 * which means it hasn't been written out since we last saw it.
 		 */
 		if bb.iostate != BioDirty {
-			fmt.Fprintf(os.Stderr, "%s: %d:%x:%d iostate is %d in (*Block).write\n", argv0, bb.part, bb.addr, bb.l.typ, bb.iostate)
+			logf("%d:%x:%d iostate is %d in (*Block).write\n", bb.part, bb.addr, bb.l.typ, bb.iostate)
 			/* probably BioWriting if it happens? */
 			if bb.iostate == BioClean {
 				goto ignblock
@@ -1138,7 +1134,7 @@ func (b *Block) write(waitlock bool) bool {
 			 * b's dependency on bb, so just don't write b yet.
 			 */
 			if false {
-				fmt.Fprintf(os.Stderr, "%s: (*Block).write skipping %d %x %d %d; need to write %d %x %d\n", argv0, b.part, b.addr, b.vers, b.l.typ, p.part, p.addr, bb.vers)
+				dprintf("(*Block).write skipping %d %x %d %d; need to write %d %x %d\n", b.part, b.addr, b.vers, b.l.typ, p.part, p.addr, bb.vers)
 			}
 			return false
 		}
@@ -1166,7 +1162,7 @@ func (b *Block) write(waitlock bool) bool {
 // switch statement (read comments there).
 func (b *Block) setIOState(iostate int32) {
 	if false {
-		fmt.Fprintf(os.Stderr, "%s: iostate part=%d addr=%x %s->%s\n", argv0, b.part, b.addr, bioStr(b.iostate), bioStr(iostate))
+		dprintf("iostate part=%d addr=%x %s.%s\n", b.part, b.addr, bioStr(b.iostate), bioStr(iostate))
 	}
 
 	c := b.c
@@ -1304,7 +1300,7 @@ func (b *Block) setIOState(iostate int32) {
  */
 func (b *Block) copy(tag, ehi, elo uint32) (*Block, error) {
 	if (b.l.state&BsClosed != 0) || b.l.epoch >= ehi {
-		fmt.Fprintf(os.Stderr, "%s: (*Block).copy %#x %v but fs is [%d,%d]\n", argv0, b.addr, b.l, elo, ehi)
+		logf("(*Block).copy %#x %v but fs is [%d,%d]\n", b.addr, b.l, elo, ehi)
 	}
 
 	bb, err := b.c.allocBlock(int(b.l.typ), tag, ehi, elo)
@@ -1444,7 +1440,7 @@ func doRemoveLink(c *Cache, p *BList) {
 
 	/* sanity check */
 	if b.l.epoch > p.epoch {
-		fmt.Fprintf(os.Stderr, "%s: doRemoveLink: strange epoch %d > %d\n", argv0, b.l.epoch, p.epoch)
+		logf("doRemoveLink: strange epoch %d > %d\n", b.l.epoch, p.epoch)
 		b.put()
 		return
 	}
@@ -1479,7 +1475,7 @@ func doRemoveLink(c *Cache, p *BList) {
 			doRemoveLink(c, &bl)
 			b, err = c.localData(p.addr, int(p.typ), p.tag, OReadOnly, 0)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s: warning: lost block in doRemoveLink\n", argv0)
+				logf("warning: lost block in doRemoveLink\n")
 				return
 			}
 		}
@@ -1511,7 +1507,7 @@ func blistAlloc(b *Block) *BList {
 		// should not happen anymore -
 		// (*Block).dirty used to flush but no longer does.
 		assert(b.iostate == BioClean)
-		fmt.Fprintf(os.Stderr, "%s: blistAlloc: called on clean block\n", argv0)
+		logf("blistAlloc: called on clean block\n")
 		return nil
 	}
 
@@ -1545,7 +1541,7 @@ func blistAlloc(b *Block) *BList {
 			c.flushcond.Signal()
 			c.blrend.Wait()
 			if c.blfree == nil {
-				fmt.Fprintf(os.Stderr, "%s: flushing for blists\n", argv0)
+				logf("flushing for blists\n")
 			}
 		}
 	}
@@ -1825,7 +1821,7 @@ func flushFill(c *Cache) {
 	}
 
 	if ndirty != c.ndirty {
-		fmt.Fprintf(os.Stderr, "%s: ndirty mismatch expected %d found %d\n", argv0, c.ndirty, ndirty)
+		logf("ndirty mismatch expected %d found %d\n", c.ndirty, ndirty)
 		c.ndirty = ndirty
 	}
 	c.lk.Unlock()
@@ -1904,9 +1900,7 @@ func flushThread(c *Cache) {
 				 * Pause a little.
 				 */
 				if i == 0 {
-					// fprint(2, "%s: flushthread found "
-					//	"nothing to flush - %d dirty\n",
-					//	argv0, c->ndirty);
+					//dprintf("flushThread: found nothing to flush - %d dirty\n", c.ndirty);
 					time.Sleep(250 * time.Millisecond)
 				}
 				break

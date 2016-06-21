@@ -190,7 +190,7 @@ type Cmd9p struct {
 	f     func(*plan9.Fcall, []string) error
 }
 
-func cmd9p(argv []string) error {
+func cmd9p(cons *Cons, argv []string) error {
 	usage := errors.New("Usage: 9p T-message ...")
 
 	flags := flag.NewFlagSet("9p", flag.ContinueOnError)
@@ -241,19 +241,19 @@ func cmd9p(argv []string) error {
 		return fmt.Errorf("%s: write error: %v", cmd9pTmsg[i].name, err)
 	}
 
-	printf("\t-> %v\n", &t)
+	cons.printf("\t-> %v\n", &t)
 
 	f, err := plan9.ReadFcall(cmdbox.conns[0])
 	if err != nil {
 		return fmt.Errorf("%s: error reading fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
-	printf("\t<- %v\n", f)
+	cons.printf("\t<- %v\n", f)
 
 	return nil
 }
 
-func cmdDot(argv []string) error {
+func cmdDot(cons *Cons, argv []string) error {
 	usage := "Usage: . file"
 
 	flags := flag.NewFlagSet(".", flag.ContinueOnError)
@@ -290,9 +290,9 @@ func cmdDot(argv []string) error {
 
 		// Call cliExec() for each line.
 		for _, line := range strings.Split(string(buf), "\n") {
-			if err := cliExec(line); err != nil {
+			if err := cliExec(cons, line); err != nil {
 				r = 0
-				printf("%s: %v\n", line, err)
+				cons.printf("%s: %v\n", line, err)
 			}
 		}
 	}
@@ -303,7 +303,7 @@ func cmdDot(argv []string) error {
 	return nil
 }
 
-func cmdDflag(argv []string) error {
+func cmdDflag(cons *Cons, argv []string) error {
 	usage := "Usage: dflag"
 
 	flags := flag.NewFlagSet("dflag", flag.ContinueOnError)
@@ -317,12 +317,12 @@ func cmdDflag(argv []string) error {
 	}
 
 	*Dflag = !*Dflag
-	printf("dflag %v\n", *Dflag)
+	cons.printf("dflag %v\n", *Dflag)
 
 	return nil
 }
 
-func cmdEcho(argv []string) error {
+func cmdEcho(cons *Cons, argv []string) error {
 	usage := "Usage: echo [-n] ..."
 
 	flags := flag.NewFlagSet("echo", flag.ContinueOnError)
@@ -332,9 +332,9 @@ func cmdEcho(argv []string) error {
 		return EUsage
 	}
 
-	printf(strings.Join(flags.Args(), " "))
+	cons.printf(strings.Join(flags.Args(), " "))
 	if !*nflag {
-		printf("\n")
+		cons.printf("\n")
 	}
 
 	return nil
@@ -348,7 +348,7 @@ const (
 	MCREATE = 0x0004 // permit creation in mounted directory
 )
 
-func cmdBind(argv []string) error {
+func cmdBind(cons *Cons, argv []string) error {
 	usage := "Usage: bind [-b|-a|-c|-bc|-ac] new old"
 
 	flags := flag.NewFlagSet("echo", flag.ContinueOnError)

@@ -10,7 +10,6 @@ var testFossilPath string
 
 func TestMain(m *testing.M) {
 	initFuncs := []func() error{
-		consInit,
 		cliInit,
 		msgInit,
 		conInit,

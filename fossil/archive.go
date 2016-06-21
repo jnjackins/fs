@@ -5,8 +5,6 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -60,14 +58,14 @@ func ventiSend(a *Arch, b *Block, data []byte) error {
 	dprintf("ventiSend: truncate %d to %d\n", a.blockSize, n)
 	var score venti.Score
 	if err := a.z.Write(&score, vtType[b.l.typ], data[:n]); err != nil {
-		fmt.Fprintf(os.Stderr, "ventiSend: venti.Write block %#x failed: %v\n", b.addr, err)
+		logf("ventiSend: venti.Write block %#x failed: %v\n", b.addr, err)
 		return err
 	}
 
 	if err := venti.Sha1Check(&score, data[:n]); err != nil {
 		var score2 venti.Score
 		venti.Sha1(&score2, data[:n])
-		fmt.Fprintf(os.Stderr, "ventiSend: venti.Write block %#x failed venti.Sha1Check %v %v\n", b.addr, score, &score2)
+		logf("ventiSend: venti.Write block %#x failed venti.Sha1Check %v %v\n", b.addr, score, &score2)
 		return err
 	}
 
@@ -149,7 +147,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 	var b *Block
 	b, err = p.c.localData(addr, int(typ), tag, OReadWrite, 0)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "archive(%d, %#x): cannot find block: %v\n", p.snapEpoch, addr, err)
+		logf("archive(%d, %#x): cannot find block: %v\n", p.snapEpoch, addr, err)
 		if err == ELabelMismatch {
 			/* might as well plod on so we write _something_ to Venti */
 			copy(p.score[:], venti.ZeroScore[:venti.ScoreSize])
@@ -184,7 +182,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 				}
 				if (e.snap != 0 && !e.archive) || (e.flags&venti.EntryNoArchive != 0) {
 					if false {
-						fmt.Fprintf(os.Stderr, "snap; faking %#x\n", b.addr)
+						dprintf("snap; faking %#x\n", b.addr)
 					}
 					if data == &b.data {
 						tmp := copyBlock(b, p.blockSize)
@@ -226,7 +224,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 			}
 			switch x {
 			case ArchFailure:
-				fmt.Fprintf(os.Stderr, "archWalk %#x failed; ptr is in %#x offset %d\n", addr, b.addr, i)
+				logf("archWalk %#x failed; ptr is in %#x offset %d\n", addr, b.addr, i)
 				ret = ArchFailure
 				goto Out
 			case ArchFaked:
@@ -242,7 +240,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 				if e == nil || !e.archive {
 					if data == &b.data {
 						if false {
-							fmt.Fprintf(os.Stderr, "faked %#x, faking %#x (%v)\n", addr, b.addr, p.score)
+							dprintf("faked %#x, faking %#x (%v)\n", addr, b.addr, p.score)
 						}
 						tmp := copyBlock(b, p.blockSize)
 						data = &tmp
@@ -250,7 +248,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 					}
 				}
 				if false {
-					fmt.Fprintf(os.Stderr, "falling\n")
+					dprintf("falling\n")
 				}
 				fallthrough
 
@@ -308,7 +306,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 
 	shaBlock(p.score, b, *data, p.blockSize)
 	if false {
-		fmt.Fprintf(os.Stderr, "ventisend %v %p %p %p\n", p.score, *data, b.data, w.data)
+		dprintf("ventisend %v %p %p %p\n", p.score, *data, b.data, w.data)
 	}
 	ret = ArchFaked
 	if data == &b.data {
@@ -339,7 +337,7 @@ func (a *Arch) thread() {
 		b, err = superGet(a.c, &super)
 		if err != nil {
 			a.fs.elk.Unlock()
-			fmt.Fprintf(os.Stderr, "archThread: superGet: %v\n", err)
+			logf("archThread: superGet: %v\n", err)
 			time.Sleep(60 * time.Second)
 			continue
 		}
@@ -383,7 +381,7 @@ func (a *Arch) thread() {
 		default:
 			panic("abort")
 		case ArchFailure:
-			fmt.Fprintf(os.Stderr, "archiveBlock %#x: %v\n", addr, err)
+			logf("archiveBlock %#x: %v\n", addr, err)
 			time.Sleep(60 * time.Second)
 			continue
 
@@ -393,10 +391,10 @@ func (a *Arch) thread() {
 		}
 
 		if false {
-			fmt.Fprintf(os.Stderr, "archiveSnapshot %#x: maxdepth %d nfixed %d"+" send %d nfailsend %d nvisit %d"+" nreclaim %d nfake %d nreal %d\n", addr, p.maxdepth, p.nfixed, p.nsend, p.nfailsend, p.nvisit, p.nreclaim, p.nfake, p.nreal)
+			dprintf("archiveSnapshot %#x: maxdepth %d nfixed %d"+" send %d nfailsend %d nvisit %d"+" nreclaim %d nfake %d nreal %d\n", addr, p.maxdepth, p.nfixed, p.nsend, p.nfailsend, p.nvisit, p.nreclaim, p.nfake, p.nreal)
 		}
 		if false {
-			fmt.Fprintf(os.Stderr, "archiveBlock %v (%d)\n", p.score, p.blockSize)
+			dprintf("archiveBlock %v (%d)\n", p.score, p.blockSize)
 		}
 
 		/* tie up vac root */
@@ -417,7 +415,7 @@ func (a *Arch) thread() {
 			if err2 != nil {
 				err = err2
 			}
-			fmt.Fprintf(os.Stderr, "venti.WriteBlock %#x: %v\n", addr, err)
+			logf("venti.WriteBlock %#x: %v\n", addr, err)
 			time.Sleep(60 * time.Second)
 			continue
 		}
@@ -428,7 +426,7 @@ func (a *Arch) thread() {
 		b, err = superGet(a.c, &super)
 		if err != nil {
 			a.fs.elk.Unlock()
-			fmt.Fprintf(os.Stderr, "archThread: superGet: %v\n", err)
+			logf("archThread: superGet: %v\n", err)
 			time.Sleep(60 * time.Second)
 			continue
 		}
@@ -440,7 +438,7 @@ func (a *Arch) thread() {
 		b.put()
 		a.fs.elk.Unlock()
 
-		printf("archive vac:%v\n", p.score)
+		logf("archive vac:%v\n", p.score)
 	}
 
 Done:
@@ -451,7 +449,7 @@ Done:
 
 func (a *Arch) kick() {
 	if a == nil {
-		fmt.Fprintf(os.Stderr, "warning: archKick nil\n")
+		logf("warning: archKick nil\n")
 		return
 	}
 

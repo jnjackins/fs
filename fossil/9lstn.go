@@ -52,7 +52,7 @@ func (lstn *Lstn) accept() {
 		if err == nil {
 			conAlloc(conn, conn.LocalAddr().String(), lstn.flags)
 		} else {
-			fmt.Fprintln(os.Stderr, err)
+			logf("(*Lstn).accept: %v\n", err)
 		}
 	}
 }
@@ -94,7 +94,7 @@ func allocLstn(address string, flags int) (*Lstn, error) {
 	return lstn, nil
 }
 
-func cmdLstn(argv []string) error {
+func cmdLstn(cons *Cons, argv []string) error {
 	var usage = errors.New("Usage: listen [-dIN] [address]")
 
 	flags := flag.NewFlagSet("listen", flag.ContinueOnError)
@@ -125,7 +125,7 @@ func cmdLstn(argv []string) error {
 	case 0:
 		lbox.lock.RLock()
 		for lstn := lbox.head; lstn != nil; lstn = lstn.next {
-			printf("\t%s\n", lstn.address)
+			cons.printf("\t%s\n", lstn.address)
 		}
 		lbox.lock.RUnlock()
 

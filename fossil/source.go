@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"sync"
 
 	"sigint.ca/fs/venti"
@@ -68,39 +67,39 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	var e Entry
 	if err := entryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
 		pname := p.name()
-		printf("%s: %s %v: sourceAlloc: entryUnpack failed\n", fs.name, pname, b.score)
+		logf("%s: %s %v: allocSource: entryUnpack failed\n", fs.name, pname, b.score)
 		return nil, EBadEntry
 	}
 
 	if e.flags&venti.EntryActive == 0 {
 		pname := p.name()
 		if false {
-			printf("%s: %s %v: sourceAlloc: not active\n", fs.name, pname, e.score)
+			logf("%s: %s %v: allocSource: not active\n", fs.name, pname, e.score)
 		}
 		return nil, EBadEntry
 	}
 
 	if e.psize < 256 || e.dsize < 256 {
 		pname := p.name()
-		printf("%s: %s %v: sourceAlloc: psize %d or dsize %d < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
+		logf("%s: %s %v: allocSource: psize %d or dsize %d < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
 		return nil, EBadEntry
 	}
 
 	if int(e.depth) < sizeToDepth(e.size, int(e.psize), int(e.dsize)) {
 		pname := p.name()
-		printf("%s: %s %v: sourceAlloc: depth %d size %d psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
+		logf("%s: %s %v: allocSource: depth %d size %d psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
 		return nil, EBadEntry
 	}
 
 	if (e.flags&venti.EntryLocal != 0) && e.tag == 0 {
 		pname := p.name()
-		printf("%s: %s %v: sourceAlloc: flags %#x tag %#x\n", fs.name, pname, e.score, e.flags, e.tag)
+		logf("%s: %s %v: allocSource: flags %#x tag %#x\n", fs.name, pname, e.score, e.flags, e.tag)
 		return nil, EBadEntry
 	}
 
 	if int(e.dsize) > fs.blockSize || int(e.psize) > fs.blockSize {
 		pname := p.name()
-		printf("%s: %s %v: sourceAlloc: psize %d or dsize %d > blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
+		logf("%s: %s %v: allocSource: psize %d or dsize %d > blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
 		return nil, EBadEntry
 	}
 
@@ -163,7 +162,7 @@ func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
 	defer b.put()
 
 	if mode == OReadWrite && b.l.epoch != fs.ehi {
-		printf("sourceRoot: fs.ehi=%d, b.l=%v\n", fs.ehi, &b.l)
+		logf("sourceRoot: fs.ehi=%d, b.l=%v\n", fs.ehi, &b.l)
 		return nil, EBadRoot
 	}
 
@@ -227,8 +226,8 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 
 		b.put()
 		if offset == size {
-			fmt.Fprintf(os.Stderr, "sourceCreate: cannot happen\n")
-			return nil, fmt.Errorf("sourceCreate: cannot happen")
+			logf("(*Source).create: cannot happen\n")
+			return nil, fmt.Errorf("(*Source).create: cannot happen")
 		}
 
 		offset = size
@@ -535,7 +534,7 @@ func (p *Block) walk(index int, mode int, fs *Fs, e *Entry) (*Block, error) {
 	}
 
 	if p.l.epoch != fs.ehi {
-		fmt.Fprintf(os.Stderr, "blockWalk: parent not writable\n")
+		logf("blockWalk: parent not writable\n")
 		panic("abort")
 	}
 
@@ -618,7 +617,7 @@ func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
 			break
 		}
 
-		//fprint(2, "alloc %lux grow %v\n", bb->addr, b->score);
+		//dprintf("alloc %x grow %v\n", bb.addr, b.score);
 		copy(bb.data, b.score[:venti.ScoreSize])
 
 		copy(e.score[:], bb.score[:venti.ScoreSize])
@@ -773,7 +772,7 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 			e.tag = tag
 		} else if e.tag != tag {
 			b.put()
-			fmt.Fprintf(os.Stderr, "tag mismatch\n")
+			logf("tag mismatch\n")
 			return nil, fmt.Errorf("tag mismatch")
 		}
 	}
@@ -931,7 +930,7 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 			b, err = r.parent.block(r.offset/uint32(r.epb), OReadOnly)
 			r.parent.unlock()
 			if err == nil {
-				fmt.Fprintf(os.Stderr, "sourceAlloc: lost %v found %v\n", r.score, b.score)
+				logf("sourceAlloc: lost %v found %v\n", r.score, b.score)
 				copy(r.score[:], b.score[:venti.ScoreSize])
 				r.scoreEpoch = b.l.epoch
 				return b, nil

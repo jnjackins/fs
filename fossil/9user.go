@@ -420,14 +420,15 @@ func uboxAddUser(box *Ubox, u *User) {
 	box.nuser++
 }
 
-func uboxDump(box *Ubox) {
-	printf("nuser %d len = %d\n", box.nuser, box.length)
+func uboxDump(cons *Cons, box *Ubox) {
+	cons.printf("nuser %d len = %d\n", box.nuser, box.length)
 
 	for u := box.head; u != nil; u = u.next {
-		printf("%v\n", u)
+		cons.printf("%v\n", u)
 	}
 }
 
+// TODO(jnj): don't log errors to stderr
 func uboxInit(users string) error {
 	/*
 	 * Strip out whitespace and comments.
@@ -482,32 +483,32 @@ func uboxInit(users string) error {
 	for _, line := range lines {
 		fields := strings.Split(line, ":")
 		if len(fields) != 4 {
-			fmt.Fprintf(os.Stderr, "bad line %q\n", line)
+			logf("bad line %q\n", line)
 			continue
 		}
 
 		if fields[0] == "" || fields[1] == "" {
-			fmt.Fprintf(os.Stderr, "bad line %q\n", line)
+			logf("bad line %q\n", line)
 			continue
 		}
 
 		if !validUserName(fields[0]) {
-			fmt.Fprintf(os.Stderr, "invalid uid %q\n", fields[0])
+			logf("invalid uid %q\n", fields[0])
 			continue
 		}
 
 		if _, err := _userByUid(box, fields[0]); err == nil {
-			fmt.Fprintf(os.Stderr, "duplicate uid %q\n", fields[0])
+			logf("duplicate uid %q\n", fields[0])
 			continue
 		}
 
 		if !validUserName(fields[1]) {
-			fmt.Fprintf(os.Stderr, "invalid uname %q\n", fields[0])
+			logf("invalid uname %q\n", fields[0])
 			continue
 		}
 
 		if _, err := _userByUname(box, fields[1]); err == nil {
-			fmt.Fprintf(os.Stderr, "duplicate uname %q\n", fields[1])
+			logf("duplicate uname %q\n", fields[1])
 			continue
 		}
 
@@ -538,7 +539,7 @@ func uboxInit(users string) error {
 		if fields[3] != "" {
 			for _, member := range strings.Split(fields[3], ",") {
 				if err := _groupAddMember(box, g, member); err != nil {
-					fmt.Fprintf(os.Stderr, "failed to add %q to group %q: %v\n", member, g, err)
+					logf("failed to add %q to group %q: %v\n", member, g, err)
 				}
 			}
 		}
@@ -596,7 +597,7 @@ func usersFileRead(path string) error {
 	return err
 }
 
-func cmdUname(argv []string) error {
+func cmdUname(cons *Cons, argv []string) error {
 	const createfmt = "fsys main create /active/usr/%s %s %s d775"
 	var usage string = "Usage: uname [-d] uname [uid|:uid|%%newname|=leader|+member|-member]"
 
@@ -615,7 +616,7 @@ func cmdUname(argv []string) error {
 			return EUsage
 		}
 		ubox.lock.RLock()
-		uboxDump(ubox.box)
+		uboxDump(cons, ubox.box)
 		ubox.lock.RUnlock()
 		return nil
 	}
@@ -634,7 +635,7 @@ func cmdUname(argv []string) error {
 			return err
 		}
 
-		printf("\t%v\n", u)
+		cons.printf("\t%v\n", u)
 		ubox.lock.RUnlock()
 		return nil
 	}
@@ -756,8 +757,7 @@ func cmdUname(argv []string) error {
 			if argv[0][0] != ':' {
 				// should have an option for the mode and gid
 				s := fmt.Sprintf(createfmt, uname, uname, uname)
-				err = cliExec(s)
-				if err != nil {
+				if err := cliExec(cons, s); err != nil {
 					return err
 				}
 			}
@@ -771,13 +771,13 @@ func cmdUname(argv []string) error {
 	}
 
 	if !*dflag {
-		uboxDump(ubox.box)
+		uboxDump(cons, ubox.box)
 	}
 
 	return nil
 }
 
-func cmdUsers(argv []string) error {
+func cmdUsers(cons *Cons, argv []string) error {
 	var usage string = "Usage: users [-d | -r file] [-w]"
 
 	flags := flag.NewFlagSet("wstat", flag.ContinueOnError)
@@ -811,7 +811,7 @@ func cmdUsers(argv []string) error {
 
 	ubox.lock.RLock()
 	box := ubox.box
-	printf("\tnuser %d len %d\n", box.nuser, box.length)
+	cons.printf("\tnuser %d len %d\n", box.nuser, box.length)
 
 	var err error
 	if *wflag {

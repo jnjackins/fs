@@ -114,7 +114,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 	fs.ehi = super.epochHigh
 	fs.elo = super.epochLow
 
-	//fprint(2, "%s: fs->ehi %d fs->elo %d active=%d\n", argv0, fs->ehi, fs->elo, super.active);
+	//dprintf("fs.ehi %d fs.elo %d active=%d\n", fs.ehi, fs.elo, super.active);
 
 	fs.source, err = sourceRoot(fs, super.active, mode)
 	if err != nil {
@@ -169,7 +169,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		}
 	}
 
-	//fmt.Fprintf(os.Stderr, "%s: got fs source\n", argv0)
+	//dprintf("got fs source\n")
 
 	fs.elk.RLock()
 	fs.file, err = rootFile(fs.source)
@@ -181,7 +181,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		return nil, fmt.Errorf("fileRoot: %v", err)
 	}
 
-	//fmt.Fprintf(os.Stderr, "%s: got file root\n", argv0)
+	//dprintf("got file root\n")
 
 	if mode == OReadWrite {
 		fs.metaFlushTicker = time.NewTicker(1 * time.Second)
@@ -241,12 +241,12 @@ func (fs *Fs) getBlockSize() int {
 func superGet(c *Cache, super *Super) (*Block, error) {
 	b, err := c.local(PartSuper, 0, OReadWrite)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: superGet: cacheLocal failed: %v\n", argv0, err)
+		logf("superGet: cacheLocal failed: %v\n", err)
 		return nil, err
 	}
 
-	if err = superUnpack(super, b.data); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: superGet: superUnpack failed: %v\n", argv0, err)
+	if err := superUnpack(super, b.data); err != nil {
+		logf("superGet: superUnpack failed: %v\n", err)
 		b.put()
 		return nil, err
 	}
@@ -260,7 +260,7 @@ func superWrite(b *Block, super *Super, forceWrite int) {
 	if forceWrite != 0 {
 		for !b.write(Waitlock) {
 			/* this should no longer happen */
-			fmt.Fprintf(os.Stderr, "%s: could not write super block; waiting 10 seconds\n", argv0)
+			logf("could not write super block; waiting 10 seconds\n")
 			time.Sleep(10 * time.Second)
 		}
 
@@ -471,13 +471,13 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 
 	b, err = b.copy(RootTag, fs.ehi+1, fs.elo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: bumpEpoch: blockCopy: %v\n", argv0, err)
+		logf("bumpEpoch: blockCopy: %v\n", err)
 		return err
 	}
 
 	if false {
 		var oldaddr uint32
-		fmt.Fprintf(os.Stderr, "%s: snapshot root from %d to %d\n", argv0, oldaddr, b.addr)
+		logf("snapshot root from %d to %d\n", oldaddr, b.addr)
 	}
 	entryPack(&e, b.data, 1)
 	b.dirty()
@@ -1042,7 +1042,7 @@ func snapEvent(s *Snap) {
 		snapminute := int(elapsed.Minutes())%int(s.snapFreq.Minutes()) == 0
 		if snapminute && now.Sub(s.lastSnap) > time.Minute {
 			if err := s.fs.snapshot("", "", false); err != nil {
-				fmt.Fprintf(os.Stderr, "%s: snap: %v\n", argv0, err)
+				logf("snap: %v\n", err)
 			}
 			s.lastSnap = now
 		}

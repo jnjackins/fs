@@ -8,7 +8,7 @@ import (
 
 type Cmd struct {
 	argv0 string
-	cmd   func([]string) error
+	cmd   func(*Cons, []string) error
 }
 
 var clibox struct {
@@ -20,7 +20,7 @@ const (
 	NCmdIncr = 20
 )
 
-func cliExec(buf string) error {
+func cliExec(cons *Cons, buf string) error {
 	// TODO: tokenize (handle quotes)
 	argv := strings.Fields(buf)
 
@@ -32,7 +32,7 @@ func cliExec(buf string) error {
 	for _, c := range clibox.cmd {
 		if c.argv0 == argv[0] {
 			clibox.lock.Unlock()
-			err := c.cmd(argv)
+			err := c.cmd(cons, argv)
 			if err != nil && err != EUsage {
 				return err
 			}
@@ -44,7 +44,7 @@ func cliExec(buf string) error {
 	return fmt.Errorf("%s: - eh?", argv[0])
 }
 
-func cliAddCmd(argv0 string, cmd func([]string) error) error {
+func cliAddCmd(argv0 string, cmd func(*Cons, []string) error) error {
 	clibox.lock.Lock()
 	defer clibox.lock.Unlock()
 

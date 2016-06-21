@@ -118,7 +118,7 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 	return srv, nil
 }
 
-func cmdSrv(argv []string) error {
+func cmdSrv(cons *Cons, argv []string) error {
 	var usage = "Usage: srv [-APWdp] [service]"
 
 	flags := flag.NewFlagSet("srv", flag.ContinueOnError)
@@ -165,7 +165,7 @@ func cmdSrv(argv []string) error {
 	case 0:
 		srvbox.lock.RLock()
 		for srv := srvbox.head; srv != nil; srv = srv.next {
-			printf("\t%s\t%d\n", srv.service, srv.srvfd)
+			cons.printf("\t%s\t%d\n", srv.service, srv.srvfd)
 		}
 		srvbox.lock.RUnlock()
 		return nil

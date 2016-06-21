@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -368,9 +367,6 @@ func (d *Disk) thread() {
 		// no one should hold onto blocking in the
 		// reading or writing state, so this lock should
 		// not cause deadlock.
-		if false {
-			fmt.Fprintf(os.Stderr, "fossil: disk thread: %d:%d %x\n", os.Getpid(), b.part, b.addr)
-		}
 		b.lock()
 		nlock := atomic.LoadInt32(&b.nlock)
 		assert(nlock == 1)
@@ -379,7 +375,7 @@ func (d *Disk) thread() {
 			panic("bad iostate")
 		case BioReading:
 			if err := d.readRaw(b.part, b.addr, b.data); err != nil {
-				fmt.Fprintf(os.Stderr, "fossil: (*Disk).readRaw failed: fd=%d score=%v: part=%s block=%d: %v\n",
+				logf("(*Disk).readRaw failed: fd=%d score=%v: part=%s block=%d: %v\n",
 					d.fd, b.score, partname[b.part], b.addr, err)
 				b.setIOState(BioReadError)
 			} else {
@@ -389,7 +385,7 @@ func (d *Disk) thread() {
 			buf := make([]byte, d.h.blockSize)
 			p, dirty := b.rollback(buf)
 			if err := d.writeRaw(b.part, b.addr, p); err != nil {
-				fmt.Fprintf(os.Stderr, "fossil: (*Disk).writeRaw failed: fd=%d score=%v: date=%s part=%s block=%d: %v\n",
+				logf("(*Disk).writeRaw failed: fd=%d score=%v: date=%s part=%s block=%d: %v\n",
 					d.fd, b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
 				break
 			}

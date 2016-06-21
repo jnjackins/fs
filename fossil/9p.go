@@ -783,7 +783,7 @@ func rTwalk(m *Msg) error {
 		nfid, err = getFid(m.con, t.Newfid, FidFWlock|FidFCreate)
 		if err != nil {
 			ofid.put()
-			return fmt.Errorf("%s: walk: newfid 0x%d in use", argv0, t.Newfid)
+			return fmt.Errorf("con=%v: walk: newfid 0x%d in use", m.con, t.Newfid)
 		}
 
 		nfid.open = ofid.open &^ FidORclose

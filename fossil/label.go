@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"sigint.ca/fs/internal/pack"
 )
@@ -57,6 +56,7 @@ func labelUnpack(l *Label, p []byte, i int) error {
 	return nil
 
 Bad:
-	fmt.Fprintf(os.Stderr, "%s: LabelUnpack: bad label: %#.2x %#.2x %#.8x %#.8x %#.8x\n", argv0, l.state, l.typ, l.epoch, l.epochClose, l.tag)
+	logf("LabelUnpack: bad label: %#.2x %#.2x %#.8x %#.8x %#.8x\n",
+		l.state, l.typ, l.epoch, l.epochClose, l.tag)
 	return EBadLabel
 }

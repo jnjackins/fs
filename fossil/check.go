@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"sort"
 
 	"sigint.ca/fs/venti"
@@ -16,11 +15,11 @@ type Fsck struct {
 	printdirs     bool
 	printfiles    bool
 	walksnapshots bool
-	printf        func(string, ...interface{}) int
-	clre          func(*Fsck, *Block, int)
-	clrp          func(*Fsck, *Block, int)
-	close         func(*Fsck, *Block, uint32)
-	clri          func(*Fsck, string, *MetaBlock, int, *Block)
+	printf        func(string, ...interface{}) (int, error)
+	clre          func(*Fsck, *Block, int) error
+	clrp          func(*Fsck, *Block, int) error
+	close         func(*Fsck, *Block, uint32) error
+	clri          func(*Fsck, string, *MetaBlock, int, *Block) error
 
 	/* used internally */
 	fs        *Fs
@@ -132,7 +131,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 
 	for a = 0; a < uint32(chk.nblocks); a++ {
 		if err := readLabel(chk.cache, &l, (a+chk.hint)%uint32(chk.nblocks)); err != nil {
-			errorf(chk, "could not read label for addr %#0.8x", a)
+			chk.errorf("could not read label for addr %#0.8x", a)
 			continue
 		}
 
@@ -149,7 +148,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	a = (a + chk.hint) % uint32(chk.nblocks)
 	b, err := chk.cache.localData(a, BtDir, RootTag, OReadOnly, 0)
 	if err != nil {
-		errorf(chk, "could not read root block %#.8x: %v", a, err)
+		chk.errorf("could not read root block %#.8x: %v", a, err)
 		return
 	}
 	defer b.put()
@@ -166,7 +165,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	 */
 	var e Entry
 	if err := entryUnpack(&e, b.data, 0); err != nil {
-		errorf(chk, "could not unpack root block %#.8x: %v", a, err)
+		chk.errorf("could not unpack root block %#.8x: %v", a, err)
 		return
 	}
 
@@ -199,7 +198,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 
 	bb, err := chk.cache.global(score, typ, tag, OReadOnly)
 	if err != nil {
-		errorf(chk, "could not load block %v type=%d tag=%x: %v", score, typ, tag, err)
+		chk.errorf("could not load block %v type=%d tag=%x: %v", score, typ, tag, err)
 		chk.walkdepth--
 		return false
 	}
@@ -218,14 +217,14 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 	if b != nil {
 		/* (i) */
 		if b.l.epoch < bb.l.epoch || bb.l.epochClose <= b.l.epoch {
-			errorf(chk, "walk: block %#x [%d, %d) points at %#x [%d, %d)", b.addr, b.l.epoch, b.l.epochClose, bb.addr, bb.l.epoch, bb.l.epochClose)
+			chk.errorf("walk: block %#x [%d, %d) points at %#x [%d, %d)", b.addr, b.l.epoch, b.l.epochClose, bb.addr, bb.l.epoch, bb.l.epochClose)
 			goto Exit
 		}
 
 		/* (ii) */
 		if b.l.epoch == epoch && bb.l.epoch == epoch {
 			if getBit(chk.emap, addr) != 0 {
-				errorf(chk, "walk: epoch join detected: addr %#x %v", bb.addr, &bb.l)
+				chk.errorf("walk: epoch join detected: addr %#x %v", bb.addr, &bb.l)
 				goto Exit
 			}
 
@@ -235,7 +234,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 		/* (iii) */
 		if b.l.state&BsCopied == 0 && b.l.epoch == bb.l.epoch {
 			if getBit(chk.xmap, addr) != 0 {
-				errorf(chk, "walk: copy join detected; addr %#x %v", bb.addr, &bb.l)
+				chk.errorf("walk: copy join detected; addr %#x %v", bb.addr, &bb.l)
 				goto Exit
 			}
 			setBit(chk.xmap, addr)
@@ -249,18 +248,20 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 		 * ``have seen active''
 		 */
 		if getBit(chk.amap, addr) != 0 {
-			errorf(chk, "walk: active join detected: addr %#x %v", bb.addr, &bb.l)
+			chk.errorf("walk: active join detected: addr %#x %v", bb.addr, &bb.l)
 			goto Exit
 		}
 
 		if bb.l.state&BsClosed != 0 {
-			errorf(chk, "walk: addr %#x: block is in active tree but is closed", addr)
+			chk.errorf("walk: addr %#x: block is in active tree but is closed", addr)
 		}
 	} else if getBit(chk.amap, addr) == 0 {
 		if bb.l.state&BsClosed == 0 {
-			// errorf(chk, "walk: addr %#x: block is not in active tree, not closed (%d)",
+			// chk.errorf("walk: addr %#x: block is not in active tree, not closed (%d)",
 			// addr, bb->l.epochClose);
-			chk.close(chk, bb, epoch+1)
+			if err := chk.close(chk, bb, epoch+1); err != nil {
+				chk.errorf("%v", err)
+			}
 			chk.nclose++
 		}
 	}
@@ -288,7 +289,9 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 			copy(score[:], bb.data[i*venti.ScoreSize:])
 			if !walkEpoch(chk, bb, &score, typ-1, tag, epoch) {
 				setBit(chk.errmap, bb.addr)
-				chk.clrp(chk, bb, i)
+				if err := chk.clrp(chk, bb, i); err != nil {
+					chk.errorf("%v", err)
+				}
 				chk.nclrp++
 			}
 		}
@@ -301,10 +304,12 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 		var ep uint32
 		for i := int(0); i < chk.bsize/venti.EntrySize; i++ {
 			if err := entryUnpack(&e, bb.data, i); err != nil {
-				//errorf(chk, "walk: could not unpack entry: %ux[%d]: %v", addr, i, err);
+				//chk.errorf("walk: could not unpack entry: %ux[%d]: %v", addr, i, err);
 				setBit(chk.errmap, bb.addr)
 
-				chk.clre(chk, bb, i)
+				if err := chk.clre(chk, bb, i); err != nil {
+					chk.errorf("%v", err)
+				}
 				chk.nclre++
 				continue
 			}
@@ -313,16 +318,18 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 				continue
 			}
 			if false {
-				fmt.Fprintf(os.Stderr, "%x[%d] tag=%x snap=%d score=%v\n", addr, i, e.tag, e.snap, e.score)
+				dprintf("%x[%d] tag=%x snap=%d score=%v\n", addr, i, e.tag, e.snap, e.score)
 			}
 			ep = epoch
 			if e.snap != 0 {
 				if e.snap >= epoch {
-					// errorf(chk, "bad snap in entry: %ux[%d] snap = %d: epoch = %d",
+					// chk.errorf("bad snap in entry: %ux[%d] snap = %d: epoch = %d",
 					//	addr, i, e.snap, epoch);
 					setBit(chk.errmap, bb.addr)
 
-					chk.clre(chk, bb, i)
+					if err := chk.clre(chk, bb, i); err != nil {
+						chk.errorf("%v", err)
+					}
 					chk.nclre++
 					continue
 				}
@@ -333,28 +340,34 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint
 			if e.flags&venti.EntryLocal != 0 {
 				if e.tag < UserTag {
 					if e.tag != RootTag || tag != RootTag || i != 1 {
-						// errorf(chk, "bad tag in entry: %ux[%d] tag = %ux",
+						// chk.errorf("bad tag in entry: %ux[%d] tag = %ux",
 						//	addr, i, e.tag);
 						setBit(chk.errmap, bb.addr)
 
-						chk.clre(chk, bb, i)
+						if err := chk.clre(chk, bb, i); err != nil {
+							chk.errorf("%v", err)
+						}
 						chk.nclre++
 						continue
 					}
 				}
 			} else if e.tag != 0 {
-				// errorf(chk, "bad tag in entry: %ux[%d] tag = %ux",
+				// chk.errorf("bad tag in entry: %ux[%d] tag = %ux",
 				//	addr, i, e.tag);
 				setBit(chk.errmap, bb.addr)
 
-				chk.clre(chk, bb, i)
+				if err := chk.clre(chk, bb, i); err != nil {
+					chk.errorf("%v", err)
+				}
 				chk.nclre++
 				continue
 			}
 
 			if !walkEpoch(chk, bb, e.score, EntryType(&e), e.tag, ep) {
 				setBit(chk.errmap, bb.addr)
-				chk.clre(chk, bb, i)
+				if err := chk.clre(chk, bb, i); err != nil {
+					chk.errorf("%v", err)
+				}
 				chk.nclre++
 			}
 		}
@@ -380,7 +393,7 @@ func checkLeak(chk *Fsck) {
 
 	for a := uint32(0); a < uint32(chk.nblocks); a++ {
 		if err := readLabel(chk.cache, &l, a); err != nil {
-			errorf(chk, "could not read label: addr %#x %d %d: %v", a, l.typ, l.state, err)
+			chk.errorf("could not read label: addr %#x %d %d: %v", a, l.typ, l.state, err)
 			continue
 		}
 
@@ -398,16 +411,18 @@ func checkLeak(chk *Fsck) {
 		}
 		nlost++
 
-		//		warnf(chk, "unreachable block: addr %#x type %d tag %#x "
+		//		chk.warnf("unreachable block: addr %#x type %d tag %#x "
 		//			"state %s epoch %d close %d", a, l.type, l.tag,
 		//			bsStr(l.state), l.epoch, l.epochClose);
 		b, err := chk.cache.local(PartData, a, OReadOnly)
 		if err != nil {
-			errorf(chk, "could not read block %#.8x", a)
+			chk.errorf("could not read block %#.8x", a)
 			continue
 		}
 
-		chk.close(chk, b, 0)
+		if err := chk.close(chk, b, 0); err != nil {
+			chk.errorf("%v", err)
+		}
 		chk.nclose++
 		setBit(chk.amap, a)
 		b.put()
@@ -428,7 +443,7 @@ func openSource(chk *Fsck, s *Source, name string, bm []byte, offset, gen uint32
 	var err error
 
 	if getBit(bm, offset) != 0 {
-		warnf(chk, "multiple references to source: %s -> %d", name, offset)
+		chk.warnf("multiple references to source: %s -> %d", name, offset)
 		err = fmt.Errorf("multiple references to source: %s -> %d", name, offset)
 		goto Err
 	}
@@ -437,18 +452,18 @@ func openSource(chk *Fsck, s *Source, name string, bm []byte, offset, gen uint32
 
 	r, err = s.open(offset, OReadOnly, false)
 	if err != nil {
-		warnf(chk, "could not open source: %s -> %d: %v", name, offset, err)
+		chk.warnf("could not open source: %s -> %d: %v", name, offset, err)
 		goto Err
 	}
 
 	if r.gen != gen {
-		warnf(chk, "source has been removed: %s -> %d", name, offset)
+		chk.warnf("source has been removed: %s -> %d", name, offset)
 		err = fmt.Errorf("source has been removed: %s -> %d", name, offset)
 		goto Err
 	}
 
 	if r.dir != dir {
-		warnf(chk, "dir mismatch: %s -> %d", name, offset)
+		chk.warnf("dir mismatch: %s -> %d", name, offset)
 		err = fmt.Errorf("dir mismatch: %s -> %d", name, offset)
 		goto Err
 	}
@@ -456,7 +471,9 @@ func openSource(chk *Fsck, s *Source, name string, bm []byte, offset, gen uint32
 	return r, nil
 
 Err:
-	chk.clri(chk, name, mb, i, b)
+	if err := chk.clri(chk, name, mb, i, b); err != nil {
+		chk.errorf("%v", err)
+	}
 	chk.nclri++
 	if r != nil {
 		r.close()
@@ -507,14 +524,14 @@ func chkMetaBlock(mb *MetaBlock) bool {
 
 Err:
 	if false {
-		fmt.Fprintf(os.Stderr, "metaChunks failed!\n")
+		logf("metaChunks failed!\n")
 		oo := MetaHeaderSize + mb.maxindex*MetaIndexSize
 		for i := int(0); i < mb.nindex; i++ {
-			fmt.Fprintf(os.Stderr, "\t%d: %d %d\n", i, mc[i].offset, mc[i].offset+mc[i].size)
+			logf("\t%d: %d %d\n", i, mc[i].offset, mc[i].offset+mc[i].size)
 			oo += int(mc[i].size)
 		}
 
-		fmt.Fprintf(os.Stderr, "\tused=%d size=%d free=%d free2=%d\n", oo, mb.size, mb.free, mb.size-oo)
+		logf("\tused=%d size=%d free=%d free2=%d\n", oo, mb.size, mb.free, mb.size-oo)
 	}
 
 	return false
@@ -526,7 +543,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
 	}
 	e, err := r.getEntry()
 	if err != nil {
-		errorf(chk, "could not get entry for %s", name)
+		chk.errorf("could not get entry for %s", name)
 		return
 	}
 
@@ -543,12 +560,12 @@ func scanSource(chk *Fsck, name string, r *Source) {
 	for o := uint32(0); o < nb; o++ {
 		b, err := r.block(o, OReadOnly)
 		if err != nil {
-			errorf(chk, "could not read block in data file %s", name)
+			chk.errorf("could not read block in data file %s", name)
 			continue
 		}
 
 		if b.addr != NilBlock && getBit(chk.errmap, b.addr) != 0 {
-			warnf(chk, "previously reported error in block %ux is in file %s", b.addr, name)
+			chk.warnf("previously reported error in block %ux is in file %s", b.addr, name)
 		}
 
 		b.put()
@@ -567,17 +584,17 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 	}
 
 	if err := source.lock2(meta, OReadOnly); err != nil {
-		warnf(chk, "could not lock sources for %q: %v", name, err)
+		chk.warnf("could not lock sources for %q: %v", name, err)
 		return
 	}
 	e1, err := source.getEntry()
 	if err != nil {
-		warnf(chk, "could not load source entry for %q: %v", name, err)
+		chk.warnf("could not load source entry for %q: %v", name, err)
 		return
 	}
 	e2, err := meta.getEntry()
 	if err != nil {
-		warnf(chk, "could not load meta entry for %q: %v", name, err)
+		chk.warnf("could not load meta entry for %q: %v", name, err)
 		return
 	}
 
@@ -599,23 +616,23 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 	for o := uint32(0); o < nb; o++ {
 		b, err := meta.block(o, OReadOnly)
 		if err != nil {
-			errorf(chk, "could not read block in meta file: %s[%d]: %v", name, o, err)
+			chk.errorf("could not read block in meta file: %s[%d]: %v", name, o, err)
 			continue
 		}
 		if false {
-			fmt.Fprintf(os.Stderr, "source %v:%d block %d addr %d\n", source.score, source.offset, o, b.addr)
+			dprintf("source %v:%d block %d addr %d\n", source.score, source.offset, o, b.addr)
 		}
 		if b.addr != NilBlock && getBit(chk.errmap, b.addr) != 0 {
-			warnf(chk, "previously reported error in block %ux is in %s", b.addr, name)
+			chk.warnf("previously reported error in block %ux is in %s", b.addr, name)
 		}
 		mb, err := unpackMetaBlock(b.data, meta.dsize)
 		if err != nil {
-			errorf(chk, "could not unpack meta block: %s[%d]: %v", name, o, err)
+			chk.errorf("could not unpack meta block: %s[%d]: %v", name, o, err)
 			b.put()
 			continue
 		}
 		if !chkMetaBlock(mb) {
-			errorf(chk, "bad meta block: %s[%d]", name, o)
+			chk.errorf("bad meta block: %s[%d]", name, o)
 			b.put()
 			continue
 		}
@@ -624,11 +641,11 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 		for i := mb.nindex - 1; i >= 0; i-- {
 			mb.meUnpack(&me, i)
 			if err = mb.deUnpack(&de, &me); err != nil {
-				errorf(chk, "could not unpack dir entry: %s[%d][%d]: %v", name, o, i, err)
+				chk.errorf("could not unpack dir entry: %s[%d][%d]: %v", name, o, i, err)
 				continue
 			}
 			if s != "" && s <= de.elem {
-				errorf(chk, "dir entry out of order: %s[%d][%d] = %s last = %s", name, o, i, de.elem, s)
+				chk.errorf("dir entry out of order: %s[%d][%d] = %s last = %s", name, o, i, de.elem, s)
 			}
 			s = de.elem
 			nn := fmt.Sprintf("%s/%s", name, de.elem)
@@ -688,11 +705,13 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 		if err != nil {
 			continue
 		}
-		warnf(chk, "non referenced entry in source %s[%d]", name, o)
+		chk.warnf("non referenced entry in source %s[%d]", name, o)
 		if b, err := source.block(o/(uint32(source.dsize)/venti.EntrySize), OReadOnly); err == nil {
 			if b.addr != NilBlock {
 				setBit(chk.errmap, b.addr)
-				chk.clre(chk, b, int(o%uint32(source.dsize/venti.EntrySize)))
+				if err := chk.clre(chk, b, int(o%uint32(source.dsize/venti.EntrySize))); err != nil {
+					chk.errorf("%v", err)
+				}
 				chk.nclre++
 			}
 			b.put()
@@ -735,18 +754,18 @@ func getBit(bmap []byte, addr uint32) int {
 	return (int(bmap[addr>>3]) >> (addr & 7)) & 1
 }
 
-func errorf(chk *Fsck, fmt_ string, args ...interface{}) {
+func (chk *Fsck) errorf(fmt_ string, args ...interface{}) {
 	chk.printf("error: %s\n", fmt.Sprintf(fmt_, args...))
 }
 
-func warnf(chk *Fsck, fmt_ string, args ...interface{}) {
+func (chk *Fsck) warnf(fmt_ string, args ...interface{}) {
 	chk.printf("error: %s\n", fmt.Sprintf(fmt_, args...))
 }
 
-func clrenop(*Fsck, *Block, int) {}
+func clrenop(*Fsck, *Block, int) error { return nil }
 
-func closenop(*Fsck, *Block, uint32) {}
+func closenop(*Fsck, *Block, uint32) error { return nil }
 
-func clrinop(*Fsck, string, *MetaBlock, int, *Block) {}
+func clrinop(*Fsck, string, *MetaBlock, int, *Block) error { return nil }
 
-func printnop(_ string, args ...interface{}) int { return 0 }
+func printnop(_ string, args ...interface{}) (int, error) { return 0, nil }

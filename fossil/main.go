@@ -3,21 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 )
 
-var argv0 string
-
 var Dflag = flag.Bool("D", false, "toggle debug mode")
-
-func init() {
-	log.SetFlags(0)
-	log.SetPrefix("fatal error: ")
-	log.SetOutput(os.Stderr)
-
-	argv0 = os.Args[0]
-}
 
 func main() {
 	flag.Usage = func() {

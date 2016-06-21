@@ -64,23 +64,26 @@ func check(argv []string) {
 	bout.Flush()
 }
 
-func flprintf(fmt_ string, args ...interface{}) int {
-	n, _ := fmt.Fprintf(bout, fmt_, args...)
-	return n
+func flprintf(fmt_ string, args ...interface{}) (int, error) {
+	return fmt.Fprintf(bout, fmt_, args...)
 }
 
-func flclre(_ *Fsck, b *Block, o int) {
+func flclre(_ *Fsck, b *Block, o int) error {
 	fmt.Fprintf(bout, "# clre %#x %d\n", b.addr, o)
+	return nil
 }
 
-func flclrp(_ *Fsck, b *Block, o int) {
+func flclrp(_ *Fsck, b *Block, o int) error {
 	fmt.Fprintf(bout, "# clrp %#x %d\n", b.addr, o)
+	return nil
 }
 
-func flclri(_ *Fsck, name string, _ *MetaBlock, _ int, _ *Block) {
+func flclri(_ *Fsck, name string, _ *MetaBlock, _ int, _ *Block) error {
 	fmt.Fprintf(bout, "# clri %s\n", name)
+	return nil
 }
 
-func flclose(_ *Fsck, b *Block, epoch uint32) {
+func flclose(_ *Fsck, b *Block, epoch uint32) error {
 	fmt.Fprintf(bout, "# bclose %#x %d\n", b.addr, epoch)
+	return nil
 }

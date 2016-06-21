@@ -95,6 +95,10 @@ type Con struct {
 	nfid    int
 }
 
+func (con *Con) String() string {
+	return con.name
+}
+
 var mbox struct {
 	alock   *sync.Mutex // alloc
 	ahead   *Msg
@@ -413,7 +417,7 @@ func msgRead(con *Con) {
 			m.t.Version = "9PEoF"
 			eof = true
 		} else if err != nil {
-			fmt.Fprintf(os.Stderr, "msgRead: error unmarshalling fcall from %s: %v\n", con.name, err)
+			logf("msgRead: error unmarshalling fcall from %s: %v\n", con.name, err)
 			msgFree(m)
 			continue
 		}
@@ -483,7 +487,7 @@ func msgWrite(con *Con) {
 
 		con.lock.Lock()
 		if eof && con.conn != nil {
-			fmt.Fprintf(os.Stderr, "msgWrite: closing con: %v\n", con.conn.LocalAddr())
+			logf("msgWrite: closing con: %v\n", con.conn.LocalAddr())
 			con.conn.Close()
 			con.conn = nil
 		}
@@ -570,7 +574,7 @@ func conAlloc(conn net.Conn, name string, flags int) *Con {
 	return con
 }
 
-func cmdMsg(argv []string) error {
+func cmdMsg(cons *Cons, argv []string) error {
 	var usage = errors.New("Usage: msg [-m nmsg] [-p nproc]")
 
 	flags := flag.NewFlagSet("msg", flag.ContinueOnError)
@@ -602,8 +606,8 @@ func cmdMsg(argv []string) error {
 	nprocstarve := mbox.nprocstarve
 	mbox.rlock.Unlock()
 
-	printf("\tmsg -m %d -p %d\n", *maxmsg, *maxproc)
-	printf("\tnmsg %d nmsgstarve %d nproc %d nprocstarve %d\n", nmsg, nmsgstarve, nproc, nprocstarve)
+	cons.printf("\tmsg -m %d -p %d\n", *maxmsg, *maxproc)
+	cons.printf("\tnmsg %d nmsgstarve %d nproc %d nprocstarve %d\n", nmsg, nmsgstarve, nproc, nprocstarve)
 
 	return nil
 }
@@ -670,7 +674,7 @@ func fidMergeSort(f *Fid) *Fid {
 	return fidMerge(a, b)
 }
 
-func cmdWho(argv []string) error {
+func cmdWho(cons *Cons, argv []string) error {
 	var usage string = "Usage: who"
 
 	flags := flag.NewFlagSet("who", flag.ContinueOnError)
@@ -697,7 +701,7 @@ func cmdWho(argv []string) error {
 	}
 
 	for con := cbox.chead; con != nil; con = con.cnext {
-		printf("\t%-*s %-*s", l1, con.name, l2, con.remote)
+		cons.printf("\t%-*s %-*s", l1, con.name, l2, con.remote)
 		con.fidlock.Lock()
 		var last *Fid = nil
 		for i := 0; i < NFidHash; i++ {
@@ -713,11 +717,11 @@ func cmdWho(argv []string) error {
 		last = nil
 		for ; fid != nil; (func() { last = fid; fid = fid.sort })() {
 			if last == nil || fid.uname != last.uname {
-				printf(" %q", fid.uname)
+				cons.printf(" %q", fid.uname)
 			}
 		}
 		con.fidlock.Unlock()
-		printf("\n")
+		cons.printf("\n")
 	}
 
 	cbox.clock.RUnlock()
@@ -738,7 +742,7 @@ func msgInit() error {
 	return cliAddCmd("msg", cmdMsg)
 }
 
-func cmdCon(argv []string) error {
+func cmdCon(cons *Cons, argv []string) error {
 	var usage string = "Usage: con [-m ncon]"
 
 	flags := flag.NewFlagSet("con", flag.ContinueOnError)
@@ -760,12 +764,12 @@ func cmdCon(argv []string) error {
 	nconstarve := cbox.nconstarve
 	cbox.clock.Unlock()
 
-	printf("\tcon -m %d\n", *maxcon)
-	printf("\tncon %d nconstarve %d\n", ncon, nconstarve)
+	cons.printf("\tcon -m %d\n", *maxcon)
+	cons.printf("\tncon %d nconstarve %d\n", ncon, nconstarve)
 
 	cbox.clock.RLock()
 	for con := cbox.chead; con != nil; con = con.cnext {
-		printf("\t%s\n", con.name)
+		cons.printf("\t%s\n", con.name)
 	}
 	cbox.clock.RUnlock()
 

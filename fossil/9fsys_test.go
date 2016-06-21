@@ -44,7 +44,7 @@ func testAllocFsys(path string) (*Fsys, error) {
 		return nil, err
 	}
 
-	if err := fsysOpen(fsys.getName(), []string{"open", "-AWPV"}); err != nil {
+	if err := fsysOpen(nil, fsys.getName(), []string{"open", "-AWPV"}); err != nil {
 		return nil, err
 	}
 

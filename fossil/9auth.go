@@ -118,12 +118,12 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 			tmp1 := noneprint
 			noneprint++
 			if tmp1 < 10 {
-				printf("attach %s as %s: allowing as none\n", fsys.getName(), fid.uname)
+				logf("attach %s as %s: allowing as none\n", fsys.getName(), fid.uname)
 			}
 			fid.uname = unamenone
 		} else {
 			con.alock.RUnlock()
-			printf("attach %s as %s: connection not authenticated, not console\n", fsys.getName(), fid.uname)
+			logf("attach %s as %s: connection not authenticated, not console\n", fsys.getName(), fid.uname)
 			return errors.New("cannot attach as none before authentication")
 		}
 
@@ -131,7 +131,7 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 
 		fid.uid = uidByUname(fid.uname)
 		if (fid.uid) == "" {
-			printf("attach %s as %s: unknown uname\n", fsys.getName(), fid.uname)
+			logf("attach %s as %s: unknown uname\n", fsys.getName(), fid.uname)
 			return errors.New("unknown user")
 		}
 
@@ -140,7 +140,7 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 
 	afid, err := getFid(con, t.Afid, 0)
 	if err != nil {
-		printf("attach %s as %s: bad afid: %v\n", fsys.getName(), fid.uname, err)
+		logf("attach %s as %s: bad afid: %v\n", fsys.getName(), fid.uname, err)
 		return errors.New("bad authentication fid")
 	}
 
@@ -149,13 +149,13 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 	 * check uname and aname match.
 	 */
 	if afid.qid.Type&plan9.QTAUTH == 0 {
-		printf("attach %s as %s: afid not an auth file\n", fsys.getName(), fid.uname)
+		logf("attach %s as %s: afid not an auth file\n", fsys.getName(), fid.uname)
 		afid.put()
 		return errors.New("bad authentication fid")
 	}
 
 	if afid.uname != fid.uname || afid.fsys != fsys {
-		printf("attach %s as %s: afid is for %s as %s\n", fsys.getName(), fid.uname, afid.fsys.getName(), afid.uname)
+		logf("attach %s as %s: afid is for %s as %s\n", fsys.getName(), fid.uname, afid.fsys.getName(), afid.uname)
 		afid.put()
 		return errors.New("attach/auth mismatch")
 	}
@@ -165,7 +165,7 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 		buf, err := authRead(afid, 0)
 		if len(buf) != 0 || afid.cuname == "" {
 			afid.alk.Unlock()
-			printf("attach %s as %s: %v\n", fsys.getName(), fid.uname, err)
+			logf("attach %s as %s: %v\n", fsys.getName(), fid.uname, err)
 			afid.put()
 			return errors.New("fossil authCheck: auth protocol not finished")
 		}
@@ -176,7 +176,7 @@ func authCheck(t *plan9.Fcall, fid *Fid, fsys *Fsys) error {
 	assert(fid.uid == "")
 	fid.uid = uidByUname(afid.cuname)
 	if (fid.uid) == "" {
-		printf("attach %s as %s: unknown cuname %s\n", fsys.getName(), fid.uname, afid.cuname)
+		logf("attach %s as %s: unknown cuname %s\n", fsys.getName(), fid.uname, afid.cuname)
 		afid.put()
 		return errors.New("unknown user")
 	}
