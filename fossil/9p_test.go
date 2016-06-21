@@ -26,10 +26,14 @@ func Test9p(t *testing.T) {
 		t.Fatalf("testAllocFsys: %v", err)
 	}
 
+	// TODO(jnj): setup a mock *Cons, and parse responses
 	if err := cmd9p(nil, []string{"9p", "Tversion", "8192", "9P2000"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := cmd9p(nil, []string{"9p", "Tattach", "0", "4294967295", "nobody", "main/active"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd9p(nil, []string{"9p", "Twalk", "0", "0", "1"}); err != nil {
 		t.Fatal(err)
 	}
 

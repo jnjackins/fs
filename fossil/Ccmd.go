@@ -131,18 +131,18 @@ func cmd9pTopen(f *plan9.Fcall, argv []string) error {
 
 func cmd9pTwalk(f *plan9.Fcall, argv []string) error {
 	if len(argv) < 2 {
-		return fmt.Errorf("Usage: Twalk tag fid newfid [name...]")
+		return fmt.Errorf("Usage: Twalk fid newfid [name...]")
 	}
 
 	f.Fid = uint32(strtol(argv[0], 0))
 	f.Newfid = uint32(strtol(argv[1], 0))
-	nwname := uint16(len(argv) - 2)
+	nwname := len(argv) - 2
 	if nwname > 16 {
 		return fmt.Errorf("Twalk: too many names")
 	}
 
-	for i := int(0); i < len(argv)-2; i++ {
-		f.Wname[i] = argv[2+i]
+	for i := 0; i < len(argv)-2; i++ {
+		f.Wname = append(f.Wname, argv[2+i])
 	}
 
 	return nil
