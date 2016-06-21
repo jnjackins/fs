@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"testing"
 )
 
@@ -38,25 +38,44 @@ func TestFsysParseMode(t *testing.T) {
 	}
 }
 
-func testAllocFsys(path string) (*Fsys, error) {
-	fsys, err := allocFsys("main", path)
-	if err != nil {
-		return nil, err
+func testAllocFsys() (*Fsys, error) {
+	if err := fsysConfig(nil, "testfs", []string{"config", testFossilPath}); err != nil {
+		return nil, fmt.Errorf("fsysConfig: %v", err)
 	}
 
-	if err := fsysOpen(nil, fsys.getName(), []string{"open", "-AWPV"}); err != nil {
-		return nil, err
+	if err := fsysOpen(nil, "testfs", []string{"open", "-AWPV"}); err != nil {
+		return nil, fmt.Errorf("fsysOpen: %v", err)
+	}
+
+	fsys, err := getFsys("testfs")
+	if err != nil {
+		return nil, fmt.Errorf("getFsys: %v", err)
 	}
 
 	return fsys, nil
 }
 
-func TestFsys(t *testing.T) {
-	fsys, err := testAllocFsys(testFossilPath)
-	if err != nil {
-		log.Fatalf("TestMain: error starting fossil: %v", err)
+func testCleanupFsys(fsys *Fsys) error {
+	if err := fsysClose(nil, fsys, []string{"close"}); err != nil {
+		return fmt.Errorf("fsysClose: %v", err)
 	}
-	defer fsys.fs.close()
+	fsys.put()
+
+	if err := fsysUnconfig(nil, "testfs", []string{"unconfig"}); err != nil {
+		return fmt.Errorf("fsysUnconfig: %v", err)
+	}
+	return nil
+}
+
+func TestFsys(t *testing.T) {
+	fsys, err := testAllocFsys()
+	if err != nil {
+		t.Fatalf("testAllocFsys: %v", err)
+	}
 
 	//t.Run("fsys.blah", func(t *testing.T) { testFsysBlah(t, fsys) })
+
+	if err := testCleanupFsys(fsys); err != nil {
+		t.Fatalf("testCleanupFsys: %v", err)
+	}
 }

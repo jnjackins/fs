@@ -21,12 +21,19 @@ func TestParseAname(t *testing.T) {
 }
 
 func Test9p(t *testing.T) {
-	err := cmd9p(nil, []string{"9p", "Tversion", "8192", "9P2000"})
+	fsys, err := testAllocFsys()
 	if err != nil {
+		t.Fatalf("testAllocFsys: %v", err)
+	}
+
+	if err := cmd9p(nil, []string{"9p", "Tversion", "8192", "9P2000"}); err != nil {
 		t.Fatal(err)
 	}
-	// err = cmd9p([]string{"9p", "Tattach", "0", "4294967295", "nobody", "main/active"})
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
+	if err := cmd9p(nil, []string{"9p", "Tattach", "0", "4294967295", "nobody", "main/active"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := testCleanupFsys(fsys); err != nil {
+		t.Fatalf("testCleanupFsys: %v", fsys, err)
+	}
 }

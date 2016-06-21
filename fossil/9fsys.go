@@ -32,10 +32,9 @@ type Fsys struct {
 	next *Fsys
 }
 
-var sbox struct {
-	lock *sync.RWMutex
-	head *Fsys
-	tail *Fsys
+var fsysbox struct {
+	lock       *sync.RWMutex
+	head, tail *Fsys
 
 	curfsys string
 }
@@ -118,15 +117,15 @@ func cmdPrintConfig(cons *Cons, argv []string) error {
 		return EUsage
 	}
 
-	sbox.lock.RLock()
-	for fsys := sbox.head; fsys != nil; fsys = fsys.next {
+	fsysbox.lock.RLock()
+	for fsys := fsysbox.head; fsys != nil; fsys = fsys.next {
 		cons.printf("\tfsys %s config %s\n", fsys.name, fsys.dev)
 		if fsys.venti != "" {
 			cons.printf("\tfsys %s venti %q\n", fsys.name, fsys.venti)
 		}
 	}
 
-	sbox.lock.RUnlock()
+	fsysbox.lock.RUnlock()
 	return nil
 }
 
@@ -153,9 +152,9 @@ func _getFsys(name string) (*Fsys, error) {
 		name = "main"
 	}
 
-	sbox.lock.RLock()
+	fsysbox.lock.RLock()
 	var fsys *Fsys
-	for fsys = sbox.head; fsys != nil; fsys = fsys.next {
+	for fsys = fsysbox.head; fsys != nil; fsys = fsys.next {
 		if name == fsys.name {
 			fsys.lock.Lock()
 			fsys.ref++
@@ -163,7 +162,7 @@ func _getFsys(name string) (*Fsys, error) {
 			break
 		}
 	}
-	sbox.lock.RUnlock()
+	fsysbox.lock.RUnlock()
 
 	if fsys == nil {
 		return nil, fmt.Errorf(EFsysNotFound, name)
@@ -171,23 +170,27 @@ func _getFsys(name string) (*Fsys, error) {
 	return fsys, nil
 }
 
+func (fsys *Fsys) String() string {
+	return fsys.name
+}
+
 func (fsys *Fsys) getName() string {
 	return fsys.name
 }
 
 func (fsys *Fsys) incRef() *Fsys {
-	sbox.lock.Lock()
+	fsysbox.lock.Lock()
 	fsys.ref++
-	sbox.lock.Unlock()
+	fsysbox.lock.Unlock()
 
 	return fsys
 }
 
 func (fsys *Fsys) put() {
-	sbox.lock.Lock()
+	fsysbox.lock.Lock()
 	assert(fsys.ref > 0)
 	fsys.ref--
-	sbox.lock.Unlock()
+	fsysbox.lock.Unlock()
 }
 
 func (fsys *Fsys) getFs() *Fs {
@@ -284,10 +287,10 @@ func (fsys *Fsys) getRoot(name string) *File {
 }
 
 func allocFsys(name string, dev string) (*Fsys, error) {
-	sbox.lock.Lock()
-	defer sbox.lock.Unlock()
+	fsysbox.lock.Lock()
+	defer fsysbox.lock.Unlock()
 
-	for fsys := sbox.head; fsys != nil; fsys = fsys.next {
+	for fsys := fsysbox.head; fsys != nil; fsys = fsys.next {
 		if fsys.name != name {
 			continue
 		}
@@ -301,12 +304,12 @@ func allocFsys(name string, dev string) (*Fsys, error) {
 		ref:  1,
 	}
 
-	if sbox.tail != nil {
-		sbox.tail.next = fsys
+	if fsysbox.tail != nil {
+		fsysbox.tail.next = fsys
 	} else {
-		sbox.head = fsys
+		fsysbox.head = fsys
 	}
-	sbox.tail = fsys
+	fsysbox.tail = fsys
 
 	return fsys, nil
 }
@@ -324,26 +327,28 @@ func fsysClose(cons *Cons, fsys *Fsys, argv []string) error {
 		return EUsage
 	}
 
-	return fmt.Errorf("close isn't working yet; halt %s and then kill fossil", fsys.name)
+	// Oooh. This could be hard. What if fsys.ref != 1?
+	// Also, fs.close() either does the job or panics, can we
+	// gracefully detect it's still busy?
 
-	/*
-		 * Oooh. This could be hard. What if fsys->ref != 1?
-		 * Also, fsClose() either does the job or panics, can we
-		 * gracefully detect it's still busy?
-		 *
-		 * More thought and care needed here.
-		fsClose(fsys->fs);
-		fsys->fs = nil;
-		vtClose(fsys->session);
-		fsys->session = nil;
+	// More thought and care needed here.
+	if fsys.ref != 1 {
+		return fmt.Errorf("warning: close isn't working yet. halt %s and then kill fossil", fsys.name)
+	}
 
-		if(sbox.curfsys != nil && strcmp(fsys->name, sbox.curfsys) == 0){
-			sbox.curfsys = nil;
-			consPrompt(nil);
-		}
+	fsys.fs.close()
+	fsys.fs = nil
+	if fsys.session != nil {
+		fsys.session.Close()
+		fsys.session = nil
+	}
 
-		return nil;
-	*/
+	if fsys.name == fsysbox.curfsys {
+		fsysbox.curfsys = ""
+		cons.setPrompt("")
+	}
+
+	return nil
 }
 
 func fsysVac(cons *Cons, fsys *Fsys, argv []string) error {
@@ -1691,8 +1696,8 @@ func fsysUnconfig(cons *Cons, name string, argv []string) error {
 		return EUsage
 	}
 
-	sbox.lock.Lock()
-	fp := &sbox.head
+	fsysbox.lock.Lock()
+	fp := &fsysbox.head
 	var fsys *Fsys
 	for fsys = *fp; fsys != nil; fsys = fsys.next {
 		if fsys.name == name {
@@ -1702,17 +1707,22 @@ func fsysUnconfig(cons *Cons, name string, argv []string) error {
 	}
 
 	if fsys == nil {
-		sbox.lock.Unlock()
+		fsysbox.lock.Unlock()
 		return fmt.Errorf(EFsysNotFound, name)
 	}
 
 	if fsys.ref != 0 || fsys.fs != nil {
-		sbox.lock.Unlock()
+		fsysbox.lock.Unlock()
 		return fmt.Errorf(EFsysBusy, fsys.name)
 	}
 
+	// delete the fsys from the list
+	if fsysbox.tail == *fp {
+		fsysbox.tail = nil
+	}
 	*fp = fsys.next
-	sbox.lock.Unlock()
+
+	fsysbox.lock.Unlock()
 
 	if fsys.session != nil {
 		fsys.session.Close()
@@ -1743,7 +1753,7 @@ func fsysConfig(cons *Cons, name string, argv []string) error {
 		part = argv[0]
 	}
 
-	fsys, err := _getFsys(part)
+	fsys, err := _getFsys(name)
 	if err == nil {
 		fsys.lock.Lock()
 		if fsys.fs != nil {
@@ -1801,9 +1811,10 @@ func fsysXXX(cons *Cons, name string, argv []string) error {
 
 	/* ... but most commands want the Fsys */
 	var err error
+	var fsys *Fsys
 	if name == FsysAll {
-		sbox.lock.RLock()
-		for fsys := sbox.head; fsys != nil; fsys = fsys.next {
+		fsysbox.lock.RLock()
+		for fsys = fsysbox.head; fsys != nil; fsys = fsys.next {
 			fsys.ref++
 			err1 := fsysXXX1(cons, fsys, i, argv)
 			if err == nil && err1 != nil {
@@ -1811,10 +1822,9 @@ func fsysXXX(cons *Cons, name string, argv []string) error {
 			}
 			fsys.ref--
 		}
-		sbox.lock.RUnlock()
+		fsysbox.lock.RUnlock()
 	} else {
-		var fsys *Fsys
-		fsys, err = _getFsys(name)
+		fsys, err := _getFsys(name)
 		if err != nil {
 			return err
 		}
@@ -1825,7 +1835,7 @@ func fsysXXX(cons *Cons, name string, argv []string) error {
 }
 
 func cmdFsysXXX(cons *Cons, argv []string) error {
-	name := sbox.curfsys
+	name := fsysbox.curfsys
 	if name == "" {
 		return errors.New(EFsysNoCurrent)
 	}
@@ -1844,14 +1854,14 @@ func cmdFsys(cons *Cons, argv []string) error {
 	argv = flags.Args()
 	argc := flags.NArg()
 	if argc == 0 {
-		sbox.lock.RLock()
-		if sbox.head == nil {
+		fsysbox.lock.RLock()
+		if fsysbox.head == nil {
 			return errors.New("no current fsys")
 		}
-		for fsys := sbox.head; fsys != nil; fsys = fsys.next {
+		for fsys := fsysbox.head; fsys != nil; fsys = fsys.next {
 			cons.printf("\t%s\n", fsys.name)
 		}
-		sbox.lock.RUnlock()
+		fsysbox.lock.RUnlock()
 		return nil
 	}
 
@@ -1864,10 +1874,10 @@ func cmdFsys(cons *Cons, argv []string) error {
 				return err
 			}
 		}
-		sbox.curfsys = argv[0]
+		fsysbox.curfsys = argv[0]
 
 		if cons != nil {
-			cons.setPrompt(sbox.curfsys)
+			cons.setPrompt(fsysbox.curfsys)
 		}
 
 		if fsys != nil {
@@ -1880,7 +1890,7 @@ func cmdFsys(cons *Cons, argv []string) error {
 }
 
 func fsysInit() error {
-	sbox.lock = new(sync.RWMutex)
+	fsysbox.lock = new(sync.RWMutex)
 
 	/* the venti cmd is special: the fs can be either open or closed */
 	for _, err := range []error{
