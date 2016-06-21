@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 )
 
@@ -21,8 +20,7 @@ const (
 )
 
 func cliExec(cons *Cons, buf string) error {
-	// TODO: tokenize (handle quotes)
-	argv := strings.Fields(buf)
+	argv := tokenize(buf)
 
 	if len(argv) == 0 || argv[0][0] == '#' {
 		return nil

@@ -333,7 +333,7 @@ func fsysClose(cons *Cons, fsys *Fsys, argv []string) error {
 
 	// More thought and care needed here.
 	if fsys.ref != 1 {
-		return fmt.Errorf("warning: close isn't working yet. halt %s and then kill fossil", fsys.name)
+		return fmt.Errorf("refusing to close with fsys.ref=%d; halt %s and then kill fossil", fsys.ref, fsys.name)
 	}
 
 	fsys.fs.close()
