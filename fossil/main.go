@@ -16,7 +16,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "\nCommands:")
 		fmt.Fprintln(os.Stderr, "\tstart [-c cmd] [-f partition] [-m %]")
 		fmt.Fprintln(os.Stderr, "\tformat  [-b blocksize] [-h host] [-l label] [-v score] [-y] file")
-		fmt.Fprintln(os.Stderr, "\tcheck [-f] [-c cachesize] [-h host] file")
 		os.Exit(1)
 	}
 
@@ -34,8 +33,6 @@ func main() {
 		start(argv)
 	case "format":
 		format(argv)
-	case "check":
-		check(argv)
 	default:
 		flag.Usage()
 	}
