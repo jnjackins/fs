@@ -93,6 +93,8 @@ func allocLstn(address string, flags int) (*Lstn, error) {
 }
 
 func cmdLstn(cons *Cons, argv []string) error {
+	argv = fixFlags(argv)
+
 	var usage = errors.New("Usage: listen [-dIN] [address]")
 
 	flags := flag.NewFlagSet("listen", flag.ContinueOnError)

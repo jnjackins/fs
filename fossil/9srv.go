@@ -119,6 +119,8 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 }
 
 func cmdSrv(cons *Cons, argv []string) error {
+	argv = fixFlags(argv)
+
 	var usage = "Usage: srv [-APWdp] [service]"
 
 	flags := flag.NewFlagSet("srv", flag.ContinueOnError)

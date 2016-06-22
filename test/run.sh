@@ -42,9 +42,9 @@ mkdir active snap archive
 ) &
 
 echo "starting fossil"
-fossil="fossil $DEBUG start"
+fossil="fossil $FOSSILFLAGS start"
 if test "$1" == "9"; then
-	fossil="$PLAN9/bin/fossil/fossil $DEBUG -t"
+	fossil="$PLAN9/bin/fossil/fossil $FOSSILFLAGS -t"
 	shift
 fi
 
