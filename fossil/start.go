@@ -47,6 +47,8 @@ func start(argv []string) {
 		flags.Usage()
 	}
 
+	cliInit()
+
 	var cons *Cons
 	if *tflag {
 		tty, err := newTTY()
@@ -56,7 +58,6 @@ func start(argv []string) {
 		cons = tty
 	}
 
-	cliInit()
 	msgInit()
 	conInit()
 	cmdInit()
