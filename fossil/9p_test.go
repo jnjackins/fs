@@ -65,7 +65,7 @@ func Test9p(t *testing.T) {
 
 	for _, c := range commands {
 		conn.out.Reset()
-		if err := cmd9p(cons, strings.Split(c.cmd, " ")); err != nil {
+		if err := cliExec(cons, c.cmd); err != nil {
 			t.Error(err)
 			continue
 		}

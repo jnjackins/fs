@@ -61,6 +61,7 @@ func cmd9pTag(_ *plan9.Fcall, argv []string) error {
 func cmd9pTwstat(f *plan9.Fcall, argv []string) error {
 	var d plan9.Dir
 
+	(&d).Null()
 	d.Name = argv[1]
 	d.Uid = argv[2]
 	d.Gid = argv[3]

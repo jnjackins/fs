@@ -3,7 +3,6 @@ package main
 import (
 	"math/rand"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -85,14 +84,6 @@ func unittoull(s string) uint64 {
 	}
 
 	return n * mul
-}
-
-// TODO(jnj): implement plan9 tokenize
-func tokenize(s string) []string {
-	if strings.Contains(s, "'") {
-		panic("tokenize: unimplemented")
-	}
-	return strings.Fields(s)
 }
 
 func memset(buf []byte, c byte) {
