@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 )
@@ -25,14 +26,17 @@ func TestParseAname(t *testing.T) {
 }
 
 type test9pConn struct {
-	in, out bytes.Buffer
+	tout, rout bytes.Buffer
 }
 
 func (c *test9pConn) Close() error               { return nil }
-func (c *test9pConn) Read(p []byte) (int, error) { return c.in.Read(p) }
+func (c *test9pConn) Read(p []byte) (int, error) { select {}; return 0, io.EOF }
 func (c *test9pConn) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("->")) {
+		return c.tout.Write(p)
+	}
 	if bytes.Contains(p, []byte("<-")) {
-		return c.out.Write(p)
+		return c.rout.Write(p)
 	}
 	return 0, nil
 }
@@ -64,20 +68,22 @@ func Test9p(t *testing.T) {
 	}
 
 	for _, c := range commands {
-		conn.out.Reset()
+		conn.tout.Reset()
+		conn.rout.Reset()
 		if err := cliExec(cons, c.cmd); err != nil {
 			t.Error(err)
 			continue
 		}
-		out := conn.out.String()
-		t.Logf("\t-> %s", c.cmd)
-		t.Logf("%s", out)
+		tout := conn.tout.String()
+		rout := conn.rout.String()
+		t.Logf("%s", tout)
+		t.Logf("%s", rout)
 
-		if c.match != "error" && strings.Contains(out, "Rerror") {
+		if c.match != "error" && strings.Contains(rout, "Rerror") {
 			t.Errorf("unexpected error")
 		}
-		if c.match != "" && !strings.Contains(out, c.match) {
-			t.Errorf("response %q does not match %q", out, c.match)
+		if c.match != "" && !strings.Contains(rout, c.match) {
+			t.Errorf("response %q does not match %q", rout, c.match)
 		}
 	}
 

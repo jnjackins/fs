@@ -10,8 +10,8 @@ func TestTokenize(t *testing.T) {
 		{"the quick brown fox", []string{"the", "quick", "brown", "fox"}},
 		{"'the quick' brown fox", []string{"the quick", "brown", "fox"}},
 		{"the quick brown' fox'", []string{"the", "quick", "brown fox"}},
-		{"the quick bro'wn 'fox", []string{"the", "quick", "brown fox"}},
-		{"'the quick ' brown fox", []string{"the quick ", "brown", "fox"}},
+		{"	the   quick bro'wn 'fox", []string{"the", "quick", "brown fox"}},
+		{"'the quick ' brown fox      ", []string{"the quick ", "brown", "fox"}},
 	}
 
 	for _, test := range tests {
