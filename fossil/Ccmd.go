@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -117,7 +118,13 @@ func cmd9pTread(f *plan9.Fcall, argv []string) error {
 func cmd9pTcreate(f *plan9.Fcall, argv []string) error {
 	f.Fid = uint32(strtol(argv[0], 0))
 	f.Name = argv[1]
-	f.Perm = plan9.Perm(strtol(argv[2], 8))
+
+	perm, err := strconv.ParseUint(argv[2], 0, 32)
+	if err != nil {
+		return fmt.Errorf("error parsing perm: %v", err)
+	}
+
+	f.Perm = plan9.Perm(perm)
 	f.Mode = uint8(strtol(argv[3], 0))
 
 	return nil

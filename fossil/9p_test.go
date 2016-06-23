@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"io"
 	"strings"
 	"testing"
 )
@@ -30,7 +29,7 @@ type test9pConn struct {
 }
 
 func (c *test9pConn) Close() error               { return nil }
-func (c *test9pConn) Read(p []byte) (int, error) { select {}; return 0, io.EOF }
+func (c *test9pConn) Read(p []byte) (int, error) { select {} }
 func (c *test9pConn) Write(p []byte) (int, error) {
 	if bytes.Contains(p, []byte("->")) {
 		return c.tout.Write(p)
@@ -57,17 +56,31 @@ func Test9p(t *testing.T) {
 		{cmd: "9p Twalk 0 1"},
 		{cmd: "9p Tcreate 1 test 0644 2"},
 		{cmd: "9p Tstat 1"},
-		{cmd: "9p Twstat 1 test '' '' 0666 ~1 ~1"},
+		{cmd: "9p Twstat 1 '' '' '' 0666 ~1 ~1"},
+		{cmd: "9p Twstat 1 test2 '' '' ~1 ~1 ~1"},
+		{cmd: "9p Twstat 1 '' notauser '' ~1 ~1 ~1", match: "error"},
+		{cmd: "9p Twstat 1 '' adm '' ~1 ~1 ~1"},
 		{cmd: "9p Twrite 1 0 foobar"},
 		{cmd: "9p Tread 1 0 6", match: "foobar"},
 		{cmd: "9p Twrite 1 6 baz"},
 		{cmd: "9p Tread 1 0 9", match: "foobarbaz"},
 		{cmd: "9p Tclunk 1"},
-		{cmd: "9p Twalk 0 1 test"},
-		{cmd: "9p Tstat 1", match: "test"},
+		{cmd: "9p Twalk 0 1 test2"},
+		{cmd: "9p Tstat 1", match: "test2"},
 		{cmd: "9p Topen 1 0"},
 		{cmd: "9p Tread 1 0 9", match: "foobarbaz"},
 		{cmd: "9p Twrite 1 0 fail", match: "error"},
+		{cmd: "9p Tremove 1"},
+		{cmd: "9p Twalk 0 1"},
+		{cmd: "9p Tcreate 1 testdir 020000000555 0"},
+		{cmd: "9p Tclunk 1"},
+		{cmd: "9p Twalk 0 1 testdir"},
+		{cmd: "9p Twalk 1 2"},
+		{cmd: "9p Tcreate 2 test3 0400 2"},
+		{cmd: "9p Tremove 1", match: "error"},
+		{cmd: "9p Tstat 1", match: "error"},
+		{cmd: "9p Tremove 2"},
+		{cmd: "9p Twalk 0 1 testdir"},
 		{cmd: "9p Tremove 1"},
 		{cmd: "9p Tclunk 0"},
 	}

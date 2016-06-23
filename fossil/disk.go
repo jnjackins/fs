@@ -77,11 +77,7 @@ func (b *Block) String() string {
 
 func (b *Block) lock() {
 	b.lk.Lock()
-	if *Dflag {
-		//if pc, file, line, ok := runtime.Caller(3); ok {
-		//	funcName := runtime.FuncForPC(pc).Name()
-		//	dprintf("block %v locked by %s:%d (%v)\n", b, file, line, funcName)
-		//}
+	if false {
 		stack := make([]byte, 5*1024)
 		runtime.Stack(stack, false)
 		(&lockmaplk).Lock()
@@ -92,11 +88,7 @@ func (b *Block) lock() {
 
 func (b *Block) unlock() {
 	b.lk.Unlock()
-	if *Dflag {
-		//if pc, file, line, ok := runtime.Caller(3); ok {
-		//	funcName := runtime.FuncForPC(pc).Name()
-		//	dprintf("block %v unlocked by %s:%d (%v)\n", b, file, line, funcName)
-		//}
+	if false {
 		(&lockmaplk).Lock()
 		delete(lockmap, b)
 		(&lockmaplk).Unlock()
@@ -109,6 +101,10 @@ var (
 )
 
 func watchlocks() {
+	(&lockmaplk).Lock()
+	lockmap = make(map[*Block]string)
+	(&lockmaplk).Unlock()
+
 	for range time.NewTicker(10 * time.Second).C {
 		(&lockmaplk).Lock()
 		for b, stack := range lockmap {
@@ -335,10 +331,7 @@ func (d *Disk) size(part int) uint32 {
 }
 
 func (d *Disk) thread() {
-	if *Dflag {
-		(&lockmaplk).Lock()
-		lockmap = make(map[*Block]string)
-		(&lockmaplk).Unlock()
+	if false {
 		go watchlocks()
 	}
 

@@ -402,15 +402,14 @@ func rTstat(m *Msg) error {
 	return err
 }
 
-func _rTclunk(fid *Fid, remove int) error {
+func _rTclunk(fid *Fid, remove bool) error {
 	if fid.excl != nil {
 		exclFree(fid)
 	}
 
 	var err error
-	if remove != 0 && fid.qid.Type&plan9.QTAUTH == 0 {
-		err = permParent(fid, PermW)
-		if err == nil {
+	if remove && fid.qid.Type&plan9.QTAUTH == 0 {
+		if err = permParent(fid, PermW); err == nil {
 			err = fid.file.remove(fid.uid)
 		}
 	}
@@ -425,7 +424,7 @@ func rTremove(m *Msg) error {
 	if err != nil {
 		return err
 	}
-	return _rTclunk(fid, 1)
+	return _rTclunk(fid, true)
 }
 
 func rTclunk(m *Msg) error {
@@ -433,7 +432,12 @@ func rTclunk(m *Msg) error {
 	if err != nil {
 		return err
 	}
-	_rTclunk(fid, (fid.open & FidORclose))
+
+	var remove bool
+	if fid.open&FidORclose != 0 {
+		remove = true
+	}
+	_rTclunk(fid, remove)
 
 	return nil
 }
@@ -560,10 +564,10 @@ func rTcreate(m *Msg) error {
 	omode := int(m.t.Mode) & OMODE
 	var open int
 
-	if omode == 0 || omode == 2 || omode == 3 {
+	if omode == plan9.OREAD || omode == plan9.ORDWR || omode == plan9.OEXEC {
 		open |= FidORead
 	}
-	if omode == 1 || omode == 2 {
+	if omode == plan9.OWRITE || omode == plan9.ORDWR {
 		open |= FidOWrite
 	}
 	if open&(FidOWrite|FidORead) == 0 {
@@ -571,7 +575,7 @@ func rTcreate(m *Msg) error {
 	}
 
 	if m.t.Perm&plan9.DMDIR != 0 {
-		if (m.t.Mode&(64|16) != 0) || (open&FidOWrite != 0) {
+		if (m.t.Mode&(plan9.ORCLOSE|plan9.OTRUNC) != 0) || (open&FidOWrite != 0) {
 			return fmt.Errorf("illegal mode")
 		}
 
