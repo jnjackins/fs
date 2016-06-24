@@ -121,7 +121,7 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 func cmdSrv(cons *Cons, argv []string) error {
 	argv = fixFlags(argv)
 
-	var usage = "Usage: srv [-APWdp] [service]"
+	var usage = "Usage: srv [-AINPWdp] [service]"
 
 	flags := flag.NewFlagSet("srv", flag.ContinueOnError)
 	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
@@ -132,6 +132,7 @@ func cmdSrv(cons *Cons, argv []string) error {
 		Pflag = flags.Bool("P", false, "Run with no permission checking.")
 		Wflag = flags.Bool("W", false, "Allow wstat to make arbitrary changes to the user and group fields.")
 		dflag = flags.Bool("d", false, "Remove the named service.")
+		pflag = flags.Bool("p", false, "Edit a list of console services rather than 9P services.")
 	)
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
@@ -202,7 +203,12 @@ func cmdSrv(cons *Cons, argv []string) error {
 		return fmt.Errorf("srvAlloc: %v", err)
 	}
 
-	allocCon(c2, srv.mntpnt, conflags)
+	*pflag = false // TODO(jnj)
+	if *pflag {
+		openCons(c2)
+	} else {
+		allocCon(c2, srv.mntpnt, conflags)
+	}
 	return nil
 }
 

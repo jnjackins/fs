@@ -250,6 +250,8 @@ func (d *Disk) writeRaw(part int, addr uint32, buf []byte) error {
 // necessary. Try replacing this with a channel.
 func (d *Disk) queue(b *Block) {
 	d.lk.Lock()
+	defer d.lk.Unlock()
+
 	for d.nqueue >= QueueSize {
 		d.flowCond.Wait()
 	}
@@ -274,7 +276,6 @@ func (d *Disk) queue(b *Block) {
 		d.starveCond.Signal()
 	}
 	d.nqueue++
-	d.lk.Unlock()
 }
 
 func (d *Disk) read(b *Block) {
