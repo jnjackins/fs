@@ -50,16 +50,29 @@ func Test9p(t *testing.T) {
 	cons := openCons(conn)
 	defer cons.close()
 
+	testdata := make([]byte, 8000)
+	for i := range testdata {
+		testdata[i] = 'a'
+	}
+
 	commands := []struct{ cmd, match string }{
 		{cmd: "9p Tversion 8192 9P2000", match: "9P2000"},
+
+		// attach to /active
 		{cmd: "9p Tattach 0 ~1 nobody testfs/active"},
+
+		// create a test file
 		{cmd: "9p Twalk 0 1"},
 		{cmd: "9p Tcreate 1 test 0644 2"},
+
+		// stat and change attributes
 		{cmd: "9p Tstat 1"},
 		{cmd: "9p Twstat 1 '' '' '' 0666 ~1 ~1"},
 		{cmd: "9p Twstat 1 test2 '' '' ~1 ~1 ~1"},
 		{cmd: "9p Twstat 1 '' notauser '' ~1 ~1 ~1", match: "error"},
 		{cmd: "9p Twstat 1 '' adm '' ~1 ~1 ~1"},
+
+		// read and write
 		{cmd: "9p Twrite 1 0 foobar"},
 		{cmd: "9p Tread 1 0 6", match: "foobar"},
 		{cmd: "9p Twrite 1 6 baz"},
@@ -71,17 +84,36 @@ func Test9p(t *testing.T) {
 		{cmd: "9p Tread 1 0 9", match: "foobarbaz"},
 		{cmd: "9p Twrite 1 0 fail", match: "error"},
 		{cmd: "9p Tremove 1"},
+
+		// create directory, descend into, and create a file.
 		{cmd: "9p Twalk 0 1"},
 		{cmd: "9p Tcreate 1 testdir 020000000555 0"},
 		{cmd: "9p Tclunk 1"},
 		{cmd: "9p Twalk 0 1 testdir"},
 		{cmd: "9p Twalk 1 2"},
 		{cmd: "9p Tcreate 2 test3 0400 2"},
+
+		// clean up
 		{cmd: "9p Tremove 1", match: "error"},
 		{cmd: "9p Tstat 1", match: "error"},
 		{cmd: "9p Tremove 2"},
 		{cmd: "9p Twalk 0 1 testdir"},
 		{cmd: "9p Tremove 1"},
+
+		// test large reads and writes
+		{cmd: "9p Twalk 0 1"},
+		{cmd: "9p Tcreate 1 test 0644 2"},
+		{cmd: "9p Twrite 1 0 " + string(testdata)},
+		{cmd: "9p Twrite 1 100000 " + string(testdata)},
+		{cmd: "9p Tread 1 0 8000"},      // m
+		{cmd: "9p Tread 1 100000 8000"}, // m
+		{cmd: "9p Tremove 1"},
+
+		// test flush
+		// TODO(jnj): actually flush an ongoing operation
+		{cmd: "9p Tflush 1"},
+
+		// close /active
 		{cmd: "9p Tclunk 0"},
 	}
 

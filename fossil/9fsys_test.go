@@ -66,16 +66,3 @@ func testCleanupFsys(fsys *Fsys) error {
 	}
 	return nil
 }
-
-func TestFsys(t *testing.T) {
-	fsys, err := testAllocFsys()
-	if err != nil {
-		t.Fatalf("testAllocFsys: %v", err)
-	}
-
-	//t.Run("fsys.blah", func(t *testing.T) { testFsysBlah(t, fsys) })
-
-	if err := testCleanupFsys(fsys); err != nil {
-		t.Fatalf("testCleanupFsys: %v", err)
-	}
-}
