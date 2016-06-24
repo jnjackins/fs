@@ -478,7 +478,7 @@ func (mb *MetaBlock) alloc(n int) (int, error) {
 
 	mc, err := mb.metaChunks()
 	if err != nil {
-		logf("mbAlloc: metaChunks failed: %v\n", err)
+		logf("(*MetaBlock).alloc: metaChunks failed: %v\n", err)
 		return -1, err
 	}
 

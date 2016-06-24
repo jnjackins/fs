@@ -140,8 +140,8 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 
 	r.epoch = epoch
 
-	//	printf("sourceAlloc: have %v be.%d fse.%d %s\n", b->score,
-	//		b->l.epoch, r->fs->ehi, mode == OReadWrite? "rw": "ro");
+	//dprintf("allocSource: have %v be.%d fse.%d %s\n", b.score,
+	//		b.l.epoch, r.fs.ehi, mode == OReadWrite? "rw": "ro");
 	copy(r.score[:], b.score[:venti.ScoreSize])
 
 	r.scoreEpoch = b.l.epoch
@@ -149,7 +149,7 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	r.epb = epb
 	r.tag = b.l.tag
 
-	//	printf("%s: sourceAlloc: %p -> %v %d\n", r, r->score, r->offset);
+	//dprintf("%s: allocSource: %p -> %v %d\n", r, r.score, r.offset);
 
 	return r, nil
 }
@@ -185,6 +185,7 @@ func (r *Source) open(offset uint32, mode int, issnapshot bool) (*Source, error)
 		return nil, err
 	}
 	defer b.put()
+
 	return allocSource(r.fs, b, r, offset, mode, issnapshot)
 }
 
@@ -205,26 +206,52 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 		offset -= offset % uint32(epb)
 	}
 
-	/* try the given block and then try the last block */
-	var b *Block
-	var bn uint32
-	var e Entry
-	var i int
-	var err error
+	// try the given block and then try the last block
 	for {
-		bn = offset / uint32(epb)
-		b, err = r.block(bn, OReadWrite)
+		bn := offset / uint32(epb)
+		b, err := r.block(bn, OReadWrite)
 		if err != nil {
 			return nil, err
 		}
-		for i = int(offset % uint32(r.epb)); i < epb; i++ {
+		for i := int(offset % uint32(r.epb)); i < epb; i++ {
+			var e Entry
 			entryUnpack(&e, b.data, i)
+
 			if e.flags&venti.EntryActive == 0 && e.gen != ^uint32(0) {
-				goto Found
+				// found an entry - gen already set
+
+				defer b.put()
+
+				e.psize = uint16(psize)
+				e.dsize = uint16(dsize)
+				assert(psize != 0 && dsize != 0)
+
+				e.flags = venti.EntryActive
+				if dir {
+					e.flags |= venti.EntryDir
+				}
+
+				e.depth = 0
+				e.size = 0
+				copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
+				e.tag = 0
+				e.snap = 0
+				e.archive = false
+
+				entryPack(&e, b.data, i)
+				b.dirty()
+
+				offset = bn*uint32(epb) + uint32(i)
+				if offset+1 > size {
+					if err := r.setDirSize(offset + 1); err != nil {
+						return nil, err
+					}
+				}
+				return allocSource(r.fs, b, r, offset, OReadWrite, false)
 			}
 		}
-
 		b.put()
+
 		if offset == size {
 			logf("(*Source).create: cannot happen\n")
 			return nil, fmt.Errorf("(*Source).create: cannot happen")
@@ -233,36 +260,7 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 		offset = size
 	}
 
-	/* found an entry - gen already set */
-Found:
-	e.psize = uint16(psize)
-
-	e.dsize = uint16(dsize)
-	assert(psize != 0 && dsize != 0)
-	e.flags = venti.EntryActive
-	if dir {
-		e.flags |= venti.EntryDir
-	}
-	e.depth = 0
-	e.size = 0
-	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
-	e.tag = 0
-	e.snap = 0
-	e.archive = false
-	entryPack(&e, b.data, i)
-	b.dirty()
-
-	offset = bn*uint32(epb) + uint32(i)
-	if offset+1 > size {
-		if err := r.setDirSize(offset + 1); err != nil {
-			b.put()
-			return nil, err
-		}
-	}
-
-	rr, err := allocSource(r.fs, b, r, offset, OReadWrite, false)
-	b.put()
-	return rr, err
+	panic("not reached")
 }
 
 func (r *Source) kill(doremove bool) error {
@@ -930,7 +928,7 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 			b, err = r.parent.block(r.offset/uint32(r.epb), OReadOnly)
 			r.parent.unlock()
 			if err == nil {
-				logf("sourceAlloc: lost %v found %v\n", r.score, b.score)
+				logf("allocSource: lost %v found %v\n", r.score, b.score)
 				copy(r.score[:], b.score[:venti.ScoreSize])
 				r.scoreEpoch = b.l.epoch
 				return b, nil
