@@ -259,8 +259,6 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 
 		offset = size
 	}
-
-	panic("not reached")
 }
 
 func (r *Source) kill(doremove bool) error {
