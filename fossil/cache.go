@@ -166,9 +166,8 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	nbl := int(nblocks) * 4
 
 	c.nheap = int(nblocks)
-	var bl *BList
 	for i := 0; i < nbl; i++ {
-		bl = &BList{next: c.blfree}
+		bl := &BList{next: c.blfree}
 		c.blfree = bl
 	}
 
@@ -439,7 +438,6 @@ func (c *Cache) localLookup(part int, addr, vers uint32, waitlock bool) (*Block,
 			return nil, fmt.Errorf("error reading block %#.8x", addr)
 		}
 	}
-	/* NOT REACHED */
 }
 
 /*

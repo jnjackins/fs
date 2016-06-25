@@ -27,8 +27,8 @@ type Fs struct {
 	blockSize  int            /* immutable */
 	z          *venti.Session /* immutable */
 	snap       *Snap          /* immutable */
-	/* immutable; copy here & Fsys to ease error reporting */
-	name string
+
+	name string // immutable; copy here & Fsys to ease error reporting
 
 	metaFlushTicker *time.Ticker /* periodically flushes metadata cached in files */
 
@@ -44,8 +44,9 @@ type Fs struct {
 	ehi    uint32        /* epoch high */
 	elo    uint32        /* epoch low */
 	halted bool          /* epoch lock is held to halt (console initiated) */
-	source *Source       /* immutable: root of sources */
-	file   *File         /* immutable: root of files */
+
+	source *Source /* immutable: root of sources */
+	file   *File   /* immutable: root of files */
 }
 
 type Snap struct {
@@ -115,7 +116,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 	//dprintf("fs.ehi %d fs.elo %d active=%d\n", fs.ehi, fs.elo, super.active);
 
-	fs.source, err = sourceRoot(fs, super.active, mode)
+	fs.source, err = fs.sourceRoot(super.active, mode)
 	if err != nil {
 		/*
 		 * Perhaps it failed because the block is copy-on-write.
@@ -125,8 +126,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 			fs.close()
 			return nil, err
 		}
-		var b *Block
-		b, err = fs.cache.localData(super.active, BtDir, RootTag, OReadWrite, 0)
+		b, err := fs.cache.localData(super.active, BtDir, RootTag, OReadWrite, 0)
 		if err != nil {
 			fs.close()
 			return nil, fmt.Errorf("(*Cache).localData: %v", err)
@@ -147,8 +147,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		var oscore venti.Score
 		venti.LocalToGlobal(super.active, &oscore)
 		super.active = b.addr
-		var bs *Block
-		bs, err = fs.cache.local(PartSuper, 0, OReadWrite)
+		bs, err := fs.cache.local(PartSuper, 0, OReadWrite)
 		if err != nil {
 			b.put()
 			fs.close()
@@ -161,10 +160,10 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		bs.dirty()
 		bs.removeLink(venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
 		bs.put()
-		fs.source, err = sourceRoot(fs, super.active, mode)
+		fs.source, err = fs.sourceRoot(super.active, mode)
 		if err != nil {
 			fs.close()
-			return nil, fmt.Errorf("sourceRoot: %v", err)
+			return nil, fmt.Errorf("(*Fs).sourceRoot: %v", err)
 		}
 	}
 

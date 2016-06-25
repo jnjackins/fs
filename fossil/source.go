@@ -44,7 +44,7 @@ func (r *Source) isLocked() bool {
 	return r.b != nil
 }
 
-func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapshot bool) (*Source, error) {
+func (fs *Fs) allocSource(b *Block, p *Source, offset uint32, mode int, issnapshot bool) (*Source, error) {
 	assert(p == nil || p.isLocked())
 
 	var epb int
@@ -154,7 +154,7 @@ func allocSource(fs *Fs, b *Block, p *Source, offset uint32, mode int, issnapsho
 	return r, nil
 }
 
-func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
+func (fs *Fs) sourceRoot(addr uint32, mode int) (*Source, error) {
 	b, err := fs.cache.localData(addr, BtDir, RootTag, mode, 0)
 	if err != nil {
 		return nil, err
@@ -166,7 +166,7 @@ func sourceRoot(fs *Fs, addr uint32, mode int) (*Source, error) {
 		return nil, EBadRoot
 	}
 
-	return allocSource(fs, b, nil, 0, mode, false)
+	return fs.allocSource(b, nil, 0, mode, false)
 }
 
 func (r *Source) open(offset uint32, mode int, issnapshot bool) (*Source, error) {
@@ -186,7 +186,7 @@ func (r *Source) open(offset uint32, mode int, issnapshot bool) (*Source, error)
 	}
 	defer b.put()
 
-	return allocSource(r.fs, b, r, offset, mode, issnapshot)
+	return r.fs.allocSource(b, r, offset, mode, issnapshot)
 }
 
 func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
@@ -247,7 +247,7 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 						return nil, err
 					}
 				}
-				return allocSource(r.fs, b, r, offset, OReadWrite, false)
+				return r.fs.allocSource(b, r, offset, OReadWrite, false)
 			}
 		}
 		b.put()
@@ -509,7 +509,7 @@ func (r *Source) setEntry(e *Entry) error {
 	return nil
 }
 
-func (p *Block) walk(index int, mode int, fs *Fs, e *Entry) (*Block, error) {
+func (p *Block) walk(index, mode int, fs *Fs, e *Entry) (*Block, error) {
 	var b *Block
 	var typ int
 	var err error
@@ -530,8 +530,7 @@ func (p *Block) walk(index int, mode int, fs *Fs, e *Entry) (*Block, error) {
 	}
 
 	if p.l.epoch != fs.ehi {
-		logf("blockWalk: parent not writable\n")
-		panic("abort")
+		panic("(*Block).walk: parent not writable")
 	}
 
 	if b.l.epoch == fs.ehi {
@@ -583,14 +582,11 @@ func (p *Block) walk(index int, mode int, fs *Fs, e *Entry) (*Block, error) {
  * The entry e for r is contained in block p.
  */
 func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
-	var b *Block
-	var err error
-
 	assert(r.b != nil)
 	assert(depth <= venti.PointerDepth)
 
 	typ := EntryType(e)
-	b, err = r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
+	b, err := r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -639,14 +635,11 @@ func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
 }
 
 func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
-	var b, nb, ob, rb *Block
-	var err error
-
 	assert(r.b != nil)
 	assert(depth <= venti.PointerDepth)
 
 	typ := EntryType(e)
-	rb, err = r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
+	rb, err := r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -661,25 +654,23 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 	 * We may stop early, but something is better than nothing.
 	 */
 	oe := *e
-
-	ob = nil
-	b = rb
+	b := rb
 
 	var score venti.Score
 	copy(score[:], b.data)
 
 	/* BUG: explain typ++.  i think it is a real bug */
 	var d int
+	var ob *Block
 	for d = int(e.depth); d > depth; d-- {
-		nb, err = r.fs.cache.global(&score, typ-1, tag, OReadWrite)
+		nb, err := r.fs.cache.global(&score, typ-1, tag, OReadWrite)
 		if err != nil {
 			break
 		}
 		if ob != nil && ob != rb {
 			ob.put()
 		}
-		ob = b
-		b = nb
+		ob, b = b, nb
 
 		typ++
 	}
@@ -741,7 +732,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
  * If early is set, we stop earlier in the tree.  Setting early
  * to 1 gives us the block that contains the pointer to bn.
  */
-func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, error) {
+func (r *Source) _block(bn uint32, mode, early int, tag uint32) (*Block, error) {
 	assert(r.b != nil)
 	assert(bn != NilBlock)
 
@@ -813,8 +804,7 @@ func (r *Source) _block(bn uint32, mode int, early int, tag uint32) (*Block, err
 }
 
 func (r *Source) block(bn uint32, mode int) (*Block, error) {
-	b, err := r._block(bn, mode, 0, 0)
-	return b, err
+	return r._block(bn, mode, 0, 0)
 }
 
 func (r *Source) close() {
@@ -863,11 +853,9 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 		 * are reclaimed.  Thus it's okay that the epoch is so low.
 		 * Proceed.
 		 */
-		//assert(r->epoch >= r->fs->elo);
+		//assert(r.epoch >= r.fs.elo);
 		if r.epoch == r.fs.ehi {
-			var b *Block
-			var err error
-			b, err = r.fs.cache.global(r.score, BtDir, r.tag, OReadWrite)
+			b, err := r.fs.cache.global(r.score, BtDir, r.tag, OReadWrite)
 			if err != nil {
 				return nil, err
 			}
@@ -879,9 +867,7 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 		if err := r.parent.lock(OReadWrite); err != nil {
 			return nil, err
 		}
-		var b *Block
-		var err error
-		b, err = r.parent.block(r.offset/uint32(r.epb), OReadWrite)
+		b, err := r.parent.block(r.offset/uint32(r.epb), OReadWrite)
 		r.parent.unlock()
 		if err != nil {
 			return nil, err
@@ -902,9 +888,7 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 			return r.fs.cache.global(r.score, BtDir, r.tag, mode)
 		}
 
-		var b *Block
-		var err error
-		b, err = r.fs.cache.localData(addr, BtDir, r.tag, mode, r.scoreEpoch)
+		b, err := r.fs.cache.localData(addr, BtDir, r.tag, mode, r.scoreEpoch)
 		if err == nil {
 			return b, nil
 		}
@@ -1042,7 +1026,7 @@ func (r *Source) load(e *Entry) (*Block, error) {
 	return b, nil
 }
 
-func sizeToDepth(s uint64, psize int, dsize int) int {
+func sizeToDepth(s uint64, psize, dsize int) int {
 	var d int
 
 	/* determine pointer depth */
