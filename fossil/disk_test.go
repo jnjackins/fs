@@ -12,7 +12,7 @@ func testAllocDisk() (*Disk, error) {
 		return nil, err
 	}
 
-	disk, err := diskAlloc(fd)
+	disk, err := allocDisk(fd)
 	if err != nil {
 		return nil, err
 	}

@@ -89,7 +89,7 @@ func format(argv []string) {
 	}
 
 	dprintf("format: allocating disk structure\n")
-	disk, err := diskAlloc(fd)
+	disk, err := allocDisk(fd)
 	if err != nil {
 		fatalf("could not open disk: %v", err)
 	}

@@ -14,21 +14,10 @@ import (
 const QueueSize = 100 // maximum block to queue
 
 type Disk struct {
-	lk  *sync.Mutex
-	ref int
-
 	fd int
 	h  Header
 
-	flowCond   *sync.Cond
-	starveCond *sync.Cond
-	flushCond  *sync.Cond
-	dieCond    *sync.Cond
-
-	nqueue int
-
-	cur  *Block // block to do on current scan
-	next *Block // blocks to do next scan
+	queue chan *Block
 }
 
 type Block struct {
@@ -66,7 +55,6 @@ type Block struct {
 	/* block ordering for cache -> disk */
 	prior *BList /* list of blocks before this one */
 
-	ionext  *Block
 	iostate int32
 	ioready *sync.Cond
 }
@@ -131,7 +119,7 @@ var partname = []string{
 	PartVenti: "venti",
 }
 
-func diskAlloc(fd int) (*Disk, error) {
+func allocDisk(fd int) (*Disk, error) {
 	buf := make([]byte, HeaderSize)
 	if _, err := syscall.Pread(fd, buf, HeaderOffset); err != nil {
 		return nil, fmt.Errorf("short read: %v", err)
@@ -143,14 +131,10 @@ func diskAlloc(fd int) (*Disk, error) {
 	}
 
 	disk := &Disk{
-		lk:  new(sync.Mutex),
-		fd:  fd,
-		h:   h,
-		ref: 2,
+		fd:    fd,
+		h:     h,
+		queue: make(chan *Block, QueueSize),
 	}
-	disk.starveCond = sync.NewCond(disk.lk)
-	disk.flowCond = sync.NewCond(disk.lk)
-	disk.flushCond = sync.NewCond(disk.lk)
 
 	go disk.thread()
 
@@ -159,16 +143,7 @@ func diskAlloc(fd int) (*Disk, error) {
 
 func (d *Disk) free() {
 	d.flush()
-
-	/* kill slave */
-	d.lk.Lock()
-
-	d.dieCond = sync.NewCond(d.lk)
-	d.starveCond.Signal()
-	for d.ref > 1 {
-		d.dieCond.Wait()
-	}
-	d.lk.Unlock()
+	close(d.queue) // kill disk thread
 	syscall.Close(d.fd)
 }
 
@@ -245,50 +220,17 @@ func (d *Disk) writeRaw(part int, addr uint32, buf []byte) error {
 	return nil
 }
 
-// TODO(jnj): I don't know if ordering blocks on the queue
-// by address is a performance optimization, or if it is
-// necessary. Try replacing this with a channel.
-func (d *Disk) queue(b *Block) {
-	d.lk.Lock()
-	defer d.lk.Unlock()
-
-	for d.nqueue >= QueueSize {
-		d.flowCond.Wait()
-	}
-	var bp **Block
-	if d.cur == nil || b.addr > d.cur.addr {
-		bp = &d.cur
-	} else {
-		bp = &d.next
-	}
-
-	var bb *Block
-	for bb = *bp; bb != nil; bb = *bp {
-		if b.addr < bb.addr {
-			break
-		}
-		bp = &bb.ionext
-	}
-
-	b.ionext = bb
-	*bp = b
-	if d.nqueue == 0 {
-		d.starveCond.Signal()
-	}
-	d.nqueue++
-}
-
 func (d *Disk) read(b *Block) {
 	assert(b.iostate == BioEmpty || b.iostate == BioLabel)
 	b.setIOState(BioReading)
-	d.queue(b)
+	d.queue <- b
 }
 
 func (d *Disk) write(b *Block) {
 	assert(atomic.LoadInt32(&b.nlock) == 1)
 	assert(b.iostate == BioDirty)
 	b.setIOState(BioWriting)
-	d.queue(b)
+	d.queue <- b
 }
 
 func (d *Disk) writeAndWait(b *Block) {
@@ -316,12 +258,6 @@ func (d *Disk) blockSize() int {
 }
 
 func (d *Disk) flush() error {
-	d.lk.Lock()
-	for d.nqueue > 0 {
-		d.flushCond.Wait()
-	}
-	d.lk.Unlock()
-
 	/* there really should be a cleaner interface to flush an fd */
 	var stat syscall.Stat_t
 	return syscall.Fstat(d.fd, &stat)
@@ -336,26 +272,7 @@ func (d *Disk) thread() {
 		go watchlocks()
 	}
 
-	d.lk.Lock()
-
-	for {
-		for d.nqueue == 0 {
-			if d.dieCond != nil {
-				goto Done
-			}
-			d.starveCond.Wait()
-		}
-		assert(d.cur != nil || d.next != nil)
-
-		if d.cur == nil {
-			d.cur = d.next
-			d.next = nil
-		}
-
-		b := d.cur
-		d.cur = b.ionext
-		d.lk.Unlock()
-
+	for b := range d.queue {
 		// no one should hold onto blocking in the
 		// reading or writing state, so this lock should
 		// not cause deadlock.
@@ -388,19 +305,6 @@ func (d *Disk) thread() {
 			}
 		}
 		b.put() /* remove extra reference, unlock */
-		d.lk.Lock()
-		d.nqueue--
-		if d.nqueue == QueueSize-1 {
-			d.flowCond.Signal()
-		}
-		if d.nqueue == 0 {
-			d.flushCond.Signal()
-		}
 	}
-
-Done:
 	dprintf("disk thread exiting\n")
-	d.ref--
-	d.dieCond.Signal()
-	d.lk.Unlock()
 }

@@ -76,10 +76,10 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		return nil, err
 	}
 
-	disk, err := diskAlloc(fd)
+	disk, err := allocDisk(fd)
 	if err != nil {
 		syscall.Close(fd)
-		return nil, fmt.Errorf("diskAlloc: %v", err)
+		return nil, fmt.Errorf("allocDisk: %v", err)
 	}
 
 	fs := &Fs{
