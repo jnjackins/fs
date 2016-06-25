@@ -193,7 +193,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 			}
 		}()
 
-		fs.snap = snapInit(fs)
+		fs.initSnap()
 	}
 
 	return fs, nil
@@ -206,7 +206,7 @@ func (fs *Fs) close() {
 	if fs.metaFlushTicker != nil {
 		fs.metaFlushTicker.Stop()
 	}
-	snapClose(fs.snap)
+	fs.snap.close()
 	if fs.file != nil {
 		fs.file.metaFlush(false)
 		if !fs.file.decRef() {
@@ -1025,7 +1025,28 @@ func (fs *Fs) snapshotRemove() {
 	fs.rsearch("/snapshot")
 }
 
-func snapEvent(s *Snap) {
+func (fs *Fs) initSnap() {
+	s := &Snap{
+		fs:        fs,
+		tick:      time.NewTicker(10 * time.Second),
+		lk:        new(sync.Mutex),
+		archAfter: -1,
+		snapFreq:  -1,
+		snapLife:  -1,
+	}
+
+	// TODO(jnj): leakes goroutine? loop does not terminate when ticker
+	// is stopped
+	go func() {
+		for range s.tick.C {
+			s.event()
+		}
+	}()
+
+	fs.snap = s
+}
+
+func (s *Snap) event() {
 	now := time.Now()
 	elapsed := time.Since(now.Truncate(24 * time.Hour))
 
@@ -1085,28 +1106,7 @@ func snapEvent(s *Snap) {
 	}
 }
 
-func snapInit(fs *Fs) *Snap {
-	s := &Snap{
-		fs:        fs,
-		tick:      time.NewTicker(10 * time.Second),
-		lk:        new(sync.Mutex),
-		archAfter: -1,
-		snapFreq:  -1,
-		snapLife:  -1,
-	}
-
-	// TODO(jnj): leakes goroutine? loop does not terminate when ticker
-	// is stopped
-	go func() {
-		for range s.tick.C {
-			snapEvent(s)
-		}
-	}()
-
-	return s
-}
-
-func snapGetTimes(s *Snap) (arch, snap, snaplife time.Duration) {
+func (s *Snap) getTimes() (arch, snap, snaplife time.Duration) {
 	if s == nil {
 		arch = -1
 		snap = -1
@@ -1122,7 +1122,7 @@ func snapGetTimes(s *Snap) (arch, snap, snaplife time.Duration) {
 	return
 }
 
-func snapSetTimes(s *Snap, arch, snap, snaplife time.Duration) {
+func (s *Snap) setTimes(arch, snap, snaplife time.Duration) {
 	if s == nil {
 		return
 	}
@@ -1134,7 +1134,7 @@ func snapSetTimes(s *Snap, arch, snap, snaplife time.Duration) {
 	s.lk.Unlock()
 }
 
-func snapClose(s *Snap) {
+func (s *Snap) close() {
 	if s == nil {
 		return
 	}

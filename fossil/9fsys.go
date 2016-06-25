@@ -415,7 +415,7 @@ func fsysSnapClean(cons *Cons, fsys *Fsys, argv []string) error {
 		}
 		life = time.Duration(min) * time.Minute
 	} else {
-		_, _, life = snapGetTimes(fsys.fs.snap)
+		_, _, life = fsys.fs.snap.getTimes()
 	}
 
 	fsys.fs.snapshotCleanup(life)
@@ -441,7 +441,7 @@ func fsysSnapTime(cons *Cons, fsys *Fsys, argv []string) error {
 		return EUsage
 	}
 
-	arch, snap, life := snapGetTimes(fsys.fs.snap)
+	arch, snap, life := fsys.fs.snap.getTimes()
 	var err error
 
 	// only consider flags that were explicitly set
@@ -486,11 +486,11 @@ func fsysSnapTime(cons *Cons, fsys *Fsys, argv []string) error {
 	}
 
 	if flags.NFlag() > 0 {
-		snapSetTimes(fsys.fs.snap, arch, snap, life)
+		fsys.fs.snap.setTimes(arch, snap, life)
 		return nil
 	}
 
-	arch, snap, life = snapGetTimes(fsys.fs.snap)
+	arch, snap, life = fsys.fs.snap.getTimes()
 	var buf string
 	if arch >= 0 {
 		buf = fmt.Sprintf("-a %s", time.Time{}.Add(arch).Format("1504"))
