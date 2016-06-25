@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"9fans.net/go/plan9"
+	"sigint.ca/fs/internal/plan9"
 )
 
 /* Topen/Tcreate mode */

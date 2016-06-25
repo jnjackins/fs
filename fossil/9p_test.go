@@ -73,9 +73,9 @@ func Test9p(t *testing.T) {
 		{cmd: "9p Twstat 1 '' adm '' ~1 ~1 ~1"},
 
 		// read and write
-		{cmd: "9p Twrite 1 0 foobar"},
+		{cmd: "9p Twrite 1 0 foobar", match: "count=6"},
 		{cmd: "9p Tread 1 0 6", match: "foobar"},
-		{cmd: "9p Twrite 1 6 baz"},
+		{cmd: "9p Twrite 1 6 baz", match: "count=3"},
 		{cmd: "9p Tread 1 0 9", match: "foobarbaz"},
 		{cmd: "9p Tclunk 1"},
 		{cmd: "9p Twalk 0 1 test2"},
@@ -103,8 +103,8 @@ func Test9p(t *testing.T) {
 		// test large reads and writes
 		{cmd: "9p Twalk 0 1"},
 		{cmd: "9p Tcreate 1 test 0644 2"},
-		{cmd: "9p Twrite 1 0 " + string(testdata)},
-		{cmd: "9p Twrite 1 100000 " + string(testdata)},
+		{cmd: "9p Twrite 1 0 " + string(testdata), match: "count=8000"},
+		{cmd: "9p Twrite 1 100000 " + string(testdata), match: "count=8000"},
 		{cmd: "9p Tread 1 8000 3", match: `\x00\x00\x00`},
 		{cmd: "9p Tread 1 0 8000", match: "aaaaaa"},
 		{cmd: "9p Tread 1 100000 8000", match: "aaaaaa"},

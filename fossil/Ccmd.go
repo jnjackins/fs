@@ -11,7 +11,7 @@ import (
 	"sync"
 	"syscall"
 
-	"9fans.net/go/plan9"
+	"sigint.ca/fs/internal/plan9"
 )
 
 var cmdbox struct {
