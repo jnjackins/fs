@@ -47,16 +47,6 @@ func start(argv []string) {
 	}
 
 	cliInit()
-
-	var cons *Cons
-	if *tflag {
-		tty, err := newTTY()
-		if err != nil {
-			fatalf("error opening tty: %v", err)
-		}
-		cons = tty
-	}
-
 	msgInit()
 	conInit()
 	cmdInit()
@@ -68,11 +58,23 @@ func start(argv []string) {
 	lstnInit()
 	usersInit()
 
+	var cons *Cons
+	if *tflag {
+		tty, err := newTTY()
+		if err != nil {
+			fatalf("error opening tty: %v", err)
+		}
+		cons = tty
+	}
+
 	for i := 0; i < len(cmd); i++ {
 		cons.printf("%s\n", cmd[i])
 		if err := cliExec(cons, cmd[i]); err != nil {
 			cons.printf("%v\n", err)
 		}
+	}
+	if len(cmd) > 0 {
+		cons.printf(cons.getPrompt())
 	}
 
 	runtime.Goexit()

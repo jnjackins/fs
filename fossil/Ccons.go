@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 )
 
 type Cons struct {
-	conn   io.ReadWriteCloser
+	conn io.ReadWriteCloser
+
+	lk     *sync.Mutex
 	prompt string
 }
 
@@ -22,8 +25,12 @@ func newTTY() (*Cons, error) {
 }
 
 func openCons(conn io.ReadWriteCloser) *Cons {
-	cons := &Cons{conn: conn}
+	cons := &Cons{
+		conn: conn,
+		lk:   new(sync.Mutex),
+	}
 	cons.setPrompt("")
+	cons.printf(cons.getPrompt())
 
 	go cons.proc()
 
@@ -35,14 +42,12 @@ func (cons *Cons) close() {
 }
 
 func (cons *Cons) proc() {
-	cons.printf(cons.prompt)
-
 	scanner := bufio.NewScanner(cons.conn)
 	for scanner.Scan() {
 		if err := cliExec(cons, scanner.Text()); err != nil {
 			cons.printf("%v\n", err)
 		}
-		cons.printf(cons.prompt)
+		cons.printf(cons.getPrompt())
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -66,5 +71,14 @@ func (cons *Cons) setPrompt(prompt string) {
 	if prompt == "" {
 		prompt = "prompt"
 	}
+	cons.lk.Lock()
 	cons.prompt = prompt + ": "
+	cons.lk.Unlock()
+}
+
+func (cons *Cons) getPrompt() string {
+	cons.lk.Lock()
+	defer cons.lk.Unlock()
+
+	return cons.prompt
 }
