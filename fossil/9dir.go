@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"9fans.net/go/plan9"
+	"sigint.ca/fs/internal/plan9"
 )
 
 /* one entry buffer for reading directories */
