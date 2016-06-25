@@ -103,7 +103,7 @@ func Test9p(t *testing.T) {
 		// test large reads and writes
 		{cmd: "9p Twalk 0 1"},
 		{cmd: "9p Tcreate 1 test 0644 2"},
-		{cmd: "9p Twrite 1 0 " + string(testdata), match: "count=8001"},
+		{cmd: "9p Twrite 1 0 " + string(testdata), match: "count=8000"},
 		{cmd: "9p Twrite 1 100000 " + string(testdata), match: "count=8000"},
 		{cmd: "9p Tread 1 8000 3", match: `\x00\x00\x00`},
 		{cmd: "9p Tread 1 0 8000", match: "aaaaaa"},
