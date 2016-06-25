@@ -32,6 +32,12 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(fmt.Sprintf("error formatting test fossil partition: %v", err))
 	}
+	defer func() {
+		if recover() != nil {
+			os.Remove(path)
+		}
+	}()
+
 	testFossilPath = path
 
 	exit := m.Run()

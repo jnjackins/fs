@@ -3,15 +3,40 @@ package main
 import "testing"
 
 func TestFs(t *testing.T) {
-	fs, err := openFs(testFossilPath, nil, 1000, OReadWrite)
+	fsys, err := testAllocFsys()
 	if err != nil {
-		t.Fatalf("error opening Fs at %s: %v", testFossilPath, err)
+		t.Fatalf("testAllocFsys: %v", err)
 	}
-	defer fs.close()
+	fs := fsys.fs
 
+	// first test with a clean fs
 	t.Run("fs.sync", func(t *testing.T) { testFsSync(t, fs) })
 	t.Run("fs.halt", func(t *testing.T) { testFsHalt(t, fs) })
 	t.Run("fs.snapshot", func(t *testing.T) { testFsSnapshot(t, fs) })
+
+	// create some dirty blocks
+	for _, c := range []struct{ cmd, match string }{
+		{cmd: "9p Tversion 8192 9P2000"},
+		{cmd: "9p Tattach 0 ~1 nobody testfs/active"},
+		{cmd: "9p Twalk 0 1"},
+		{cmd: "9p Tcreate 1 test 0644 2"},
+		{cmd: "9p Twrite 1 0 foobar"},
+		{cmd: "9p Tclunk 1"},
+		{cmd: "9p Tclunk 0"},
+	} {
+		if err := cliExec(nil, c.cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// test again with a dirty fs
+	t.Run("fs.sync", func(t *testing.T) { testFsSync(t, fs) })
+	t.Run("fs.halt", func(t *testing.T) { testFsHalt(t, fs) })
+	t.Run("fs.snapshot", func(t *testing.T) { testFsSnapshot(t, fs) })
+
+	if err := testCleanupFsys(fsys); err != nil {
+		t.Fatalf("testCleanupFsys: %v", err)
+	}
 }
 
 func testFsSync(t *testing.T, fs *Fs) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -202,6 +203,11 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 		c.ref += 2
 		go unlinkThread(c)
 		go flushThread(c)
+
+		// Allow for unlinkThread and flushThread to be scheduled
+		// and reach their respective wait points, to avoid potentially
+		// missing a signal.
+		runtime.Gosched()
 	}
 
 	c.check()
@@ -1896,7 +1902,7 @@ func flushThread(c *Cache) {
 				 * Pause a little.
 				 */
 				if i == 0 {
-					//dprintf("flushThread: found nothing to flush - %d dirty\n", c.ndirty);
+					dprintf("flushThread: found nothing to flush - %d dirty\n", c.ndirty)
 					time.Sleep(250 * time.Millisecond)
 				}
 				break
@@ -1907,8 +1913,8 @@ func flushThread(c *Cache) {
 			/*
 			 * All the blocks are being written right now -- there's nothing to do.
 			 * We might be spinning with (*Cache).flush though -- he'll just keep
-			 * kicking us until c->ndirty goes down.  Probably we should sleep
-			 * on something that the diskThread can kick, but for now we'll
+			 * kicking us until c.ndirty goes down.  Probably we should sleep
+			 * on something that the (*Disk).thread can kick, but for now we'll
 			 * just pause for a little while waiting for disks to finish.
 			 */
 			time.Sleep(100 * time.Millisecond)
@@ -1930,12 +1936,11 @@ func (c *Cache) flush(wait bool) {
 	c.lk.Lock()
 	if wait {
 		for c.ndirty != 0 {
-			//	printf("(*Cache).flush: %d dirty blocks, uhead %p\n",
-			//		c->ndirty, c->uhead);
+			dprintf("(*Cache).flush: %d dirty blocks, uhead %p\n", c.ndirty, c.uhead)
 			c.flushcond.Signal()
 			c.flushwait.Wait()
 		}
-		//	printf("(*Cache).flush: done (uhead %p)\n", c->ndirty, c->uhead);
+		dprintf("(*Cache).flush: done (uhead %p)\n", c.uhead)
 	} else if c.ndirty != 0 {
 		c.flushcond.Signal()
 	}

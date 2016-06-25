@@ -427,8 +427,7 @@ func (fs *Fs) epochLow(low uint32) error {
 	defer fs.elk.Unlock()
 
 	if low > fs.ehi {
-		err := fmt.Errorf("bad low epoch (must be <= %d)", fs.ehi)
-		return err
+		return fmt.Errorf("bad low epoch (must be <= %d)", fs.ehi)
 	}
 
 	var super Super
@@ -1080,7 +1079,7 @@ func snapEvent(s *Snap) {
 		snaplife = 24 * time.Hour
 	}
 	if s.lastCleanup.Add(snaplife).Before(now) {
-		s.fs.snapshotCleanup(s.snapLife)
+		s.fs.snapshotCleanup(snaplife)
 		s.lastCleanup = now
 	}
 }
