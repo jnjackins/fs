@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -130,7 +129,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		b, err = fs.cache.localData(super.active, BtDir, RootTag, OReadWrite, 0)
 		if err != nil {
 			fs.close()
-			return nil, fmt.Errorf("cacheLocalData: %v", err)
+			return nil, fmt.Errorf("(*Cache).localData: %v", err)
 		}
 
 		if b.l.epoch == fs.ehi {
@@ -153,7 +152,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		if err != nil {
 			b.put()
 			fs.close()
-			return nil, fmt.Errorf("cacheLocal: %v", err)
+			return nil, fmt.Errorf("(*Cache).local: %v", err)
 		}
 
 		superPack(&super, bs.data)
@@ -178,7 +177,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 	if err != nil {
 		fs.close()
-		return nil, fmt.Errorf("fileRoot: %v", err)
+		return nil, fmt.Errorf("rootFile: %v", err)
 	}
 
 	//dprintf("got file root\n")
@@ -211,7 +210,7 @@ func (fs *Fs) close() {
 	if fs.file != nil {
 		fs.file.metaFlush(false)
 		if !fs.file.decRef() {
-			log.Fatalf("fsClose: files still in use\n")
+			fatalf("(*Fs).close: files still in use")
 		}
 	}
 
@@ -241,7 +240,7 @@ func (fs *Fs) getBlockSize() int {
 func superGet(c *Cache, super *Super) (*Block, error) {
 	b, err := c.local(PartSuper, 0, OReadWrite)
 	if err != nil {
-		logf("superGet: cacheLocal failed: %v\n", err)
+		logf("superGet: (*Cache).local failed: %v\n", err)
 		return nil, err
 	}
 

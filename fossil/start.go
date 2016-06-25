@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -82,7 +81,7 @@ func start(argv []string) {
 func readCmdPart(file string, cmd []string) []string {
 	fd, err := os.Open(file)
 	if err != nil {
-		log.Fatal(err)
+		fatalf("%v", err)
 	}
 	defer fd.Close()
 

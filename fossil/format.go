@@ -62,7 +62,7 @@ func format(argv []string) {
 	}
 
 	if _, err = syscall.Pread(fd, buf, HeaderOffset); err != nil {
-		log.Fatalf("could not read fs header block: %v", err)
+		fatalf("could not read fs header block: %v", err)
 	}
 
 	dprintf("format: unpacking header\n")
@@ -75,7 +75,7 @@ func format(argv []string) {
 	// TODO(jnj)
 	//d, err := dirfstat(f)
 	//if err != nil {
-	//	log.Fatalf("dirfstat: %v", err)
+	//	fatalf("dirfstat: %v", err)
 	//}
 	//if d.Type == 'M' && !force && !confirm("fs file is mounted via devmnt (is not a kernel device); are you sure?") {
 	//	return
@@ -85,13 +85,13 @@ func format(argv []string) {
 	partition(fd, int(bsize), &h)
 	headerPack(&h, buf)
 	if _, err := syscall.Pwrite(fd, buf, HeaderOffset); err != nil {
-		log.Fatalf("could not write fs header: %v", err)
+		fatalf("could not write fs header: %v", err)
 	}
 
 	dprintf("format: allocating disk structure\n")
 	disk, err := diskAlloc(fd)
 	if err != nil {
-		log.Fatalf("could not open disk: %v", err)
+		fatalf("could not open disk: %v", err)
 	}
 
 	dprintf("format: writing labels\n")
@@ -120,14 +120,7 @@ func format(argv []string) {
 
 	if score == "" {
 		dprintf("format: populating top-level fs entries\n")
-
-		// suppress inner debug output
-		old := *Dflag
-		*Dflag = false
-
 		topLevel(argv[0], z)
-
-		*Dflag = old
 	}
 }
 
@@ -145,10 +138,10 @@ func confirm(msg string) bool {
 
 func partition(fd int, bsize int, h *Header) {
 	if bsize%512 != 0 {
-		log.Fatalf("block size must be a multiple of 512 bytes")
+		fatalf("block size must be a multiple of 512 bytes")
 	}
 	if bsize > venti.MaxLumpSize {
-		log.Fatalf("block size must be less than %d", venti.MaxLumpSize)
+		fatalf("block size must be less than %d", venti.MaxLumpSize)
 	}
 
 	*h = Header{
@@ -159,14 +152,14 @@ func partition(fd int, bsize int, h *Header) {
 
 	size, err := devsize(fd)
 	if err != nil {
-		log.Fatalf("error getting file size: %v", err)
+		fatalf("error getting file size: %v", err)
 	}
 
 	nblock := uint32(size / int64(bsize))
 
 	/* sanity check */
 	if nblock < uint32((HeaderOffset*10)/bsize) {
-		log.Fatalf("file too small: nblock=%d", nblock)
+		fatalf("file too small: nblock=%d", nblock)
 	}
 
 	h.super = (HeaderOffset + 2*uint32(bsize)) / uint32(bsize)
@@ -287,10 +280,10 @@ func (d *Disk) blockAlloc(typ int, tag uint32, buf []byte) uint32 {
 
 	var l Label
 	if err := labelUnpack(&l, buf, int(blockAlloc_addr%uint32(lpb))); err != nil {
-		log.Fatalf("bad label: %v", err)
+		fatalf("bad label: %v", err)
 	}
 	if l.state != BsFree {
-		log.Fatalf("want to allocate block already in use")
+		fatalf("want to allocate block already in use")
 	}
 	l.epoch = 1
 	l.epochClose = ^uint32(0)
@@ -324,20 +317,20 @@ func (d *Disk) superInit(label string, root uint32, score *venti.Score, buf []by
 
 func (d *Disk) blockRead(part int, addr uint32, buf []byte) {
 	if err := d.readRaw(part, addr, buf); err != nil {
-		log.Fatalf("read failed: %v", err)
+		fatalf("read failed: %v", err)
 	}
 }
 
 func (d *Disk) blockWrite(part int, addr uint32, buf []byte) {
 	if err := d.writeRaw(part, addr, buf); err != nil {
-		log.Fatalf("write failed: %v", err)
+		fatalf("write failed: %v", err)
 	}
 }
 
 func addFile(root *File, name string, mode uint) {
 	f, err := root.create(name, uint32(mode)|ModeDir, "adm")
 	if err != nil {
-		log.Fatalf("could not create file: %s: %v", name, err)
+		fatalf("could not create file: %s: %v", name, err)
 	}
 	f.decRef()
 }
@@ -346,12 +339,12 @@ func topLevel(name string, z *venti.Session) {
 	/* ok, now we can open as a fs */
 	fs, err := openFs(name, z, 100, OReadWrite)
 	if err != nil {
-		log.Fatalf("could not open file system: %v", err)
+		fatalf("could not open file system: %v", err)
 	}
 	fs.elk.RLock()
 	root := fs.getRoot()
 	if root == nil {
-		log.Fatalf("could not open root")
+		fatalf("could not open root")
 	}
 	addFile(root, "active", 0555)
 	addFile(root, "archive", 0555)
@@ -364,7 +357,7 @@ func topLevel(name string, z *venti.Session) {
 func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ int, buf []byte) int {
 	n, err := z.Read(score, typ, buf)
 	if err != nil {
-		log.Fatalf("ventiRead %v (%d) failed: %v", score, typ, err)
+		fatalf("ventiRead %v (%d) failed: %v", score, typ, err)
 	}
 	venti.ZeroExtend(typ, buf, n, d.blockSize())
 	return n
@@ -373,12 +366,12 @@ func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ int, buf []by
 func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uint32) {
 	score, err := venti.ParseScore(s)
 	if err != nil {
-		log.Fatalf("bad score %q: %v", s, err)
+		fatalf("bad score %q: %v", s, err)
 	}
 
 	z, err := venti.Dial(host, false)
 	if err != nil {
-		log.Fatalf("connect to venti: %v", err)
+		fatalf("connect to venti: %v", err)
 	}
 
 	tag := formatTagGen()
@@ -387,7 +380,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	d.ventiRead(z, score, venti.RootType, buf)
 	var root venti.Root
 	if err := venti.RootUnpack(&root, buf); err != nil {
-		log.Fatalf("corrupted root: vtRootUnpack: %v", err)
+		fatalf("corrupted root: vtRootUnpack: %v", err)
 	}
 	n := d.ventiRead(z, root.Score, venti.DirType, buf)
 
@@ -398,7 +391,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	e := new(Entry)
 	if n <= 2*venti.EntrySize {
 		if err := entryUnpack(e, buf, 0); err != nil {
-			log.Fatalf("bad root: top entry: %v", err)
+			fatalf("bad root: top entry: %v", err)
 		}
 		n = d.ventiRead(z, e.score, venti.DirType, buf)
 	}
@@ -409,13 +402,13 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	for i := int(0); i < 3; i++ {
 		err := entryUnpack(e, buf, i)
 		if err != nil || e.flags&venti.EntryActive == 0 || e.psize < 256 || e.dsize < 256 {
-			log.Fatalf("bad root: entry %d", i)
+			fatalf("bad root: entry %d", i)
 		}
 		fmt.Fprintf(os.Stderr, "%v\n", e.score)
 	}
 
 	if n > 3*venti.EntrySize {
-		log.Fatalf("bad root: entry count")
+		fatalf("bad root: entry count")
 	}
 
 	d.blockWrite(PartData, addr, buf)
@@ -427,16 +420,16 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 
 	mb, err := unpackMetaBlock(buf, d.blockSize())
 	if err != nil {
-		log.Fatalf("bad root: unpackMetaBlock: %v", err)
+		fatalf("bad root: unpackMetaBlock: %v", err)
 	}
 	var me MetaEntry
 	mb.meUnpack(&me, 0)
 	var de DirEntry
 	if err := mb.deUnpack(&de, &me); err != nil {
-		log.Fatalf("bad root: dirUnpack: %v", err)
+		fatalf("bad root: dirUnpack: %v", err)
 	}
 	if de.qidSpace == 0 {
-		log.Fatalf("bad root: no qidSpace")
+		fatalf("bad root: no qidSpace")
 	}
 	qid = de.qidMax
 

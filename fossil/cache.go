@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -264,18 +263,18 @@ func (c *Cache) check() {
 
 	for i := uint32(0); i < uint32(c.nheap); i++ {
 		if c.heap[i].heap != i {
-			log.Fatalf("mis-heaped at %d: %d", i, c.heap[i].heap)
+			fatalf("mis-heaped at %d: %d", i, c.heap[i].heap)
 		}
 		if i > 0 && c.heap[(i-1)>>1].used-now > c.heap[i].used-now {
-			log.Fatalf("bad heap ordering")
+			fatalf("bad heap ordering")
 		}
 		k := int((i << 1) + 1)
 		if k < c.nheap && c.heap[i].used-now > c.heap[k].used-now {
-			log.Fatalf("bad heap ordering")
+			fatalf("bad heap ordering")
 		}
 		k++
 		if k < c.nheap && c.heap[i].used-now > c.heap[k].used-now {
-			log.Fatalf("bad heap ordering")
+			fatalf("bad heap ordering")
 		}
 	}
 

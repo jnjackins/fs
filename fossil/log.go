@@ -12,7 +12,6 @@ func init() {
 	log.SetPrefix(os.Args[0] + ": ")
 }
 
-// TODO(jnj): this should go to stderr as well as any connected console.
 func logf(format string, args ...interface{}) {
 	log.Printf(format, args...)
 }
