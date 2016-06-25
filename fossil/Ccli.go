@@ -30,8 +30,7 @@ func cliExec(cons *Cons, buf string) error {
 	for _, c := range clibox.cmd {
 		if c.argv0 == argv[0] {
 			clibox.lock.Unlock()
-			err := c.cmd(cons, argv)
-			if err != nil && err != EUsage {
+			if err := c.cmd(cons, argv); err != nil && err != EUsage {
 				return err
 			}
 			return nil

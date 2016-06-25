@@ -330,7 +330,6 @@ func fsysClose(cons *Cons, fsys *Fsys, argv []string) error {
 	// Oooh. This could be hard. What if fsys.ref != 1?
 	// Also, fs.close() either does the job or panics, can we
 	// gracefully detect it's still busy?
-
 	// More thought and care needed here.
 	if fsys.ref != 1 {
 		return fmt.Errorf("refusing to close with fsys.ref=%d; halt %s and then kill fossil", fsys.ref, fsys.name)
@@ -544,8 +543,7 @@ func fsysHalt(cons *Cons, fsys *Fsys, argv []string) error {
 		return EUsage
 	}
 
-	fsys.fs.halt()
-	return nil
+	return fsys.fs.halt()
 }
 
 func fsysUnhalt(cons *Cons, fsys *Fsys, argv []string) error {
@@ -565,8 +563,7 @@ func fsysUnhalt(cons *Cons, fsys *Fsys, argv []string) error {
 		return fmt.Errorf("file system %s not halted", fsys.name)
 	}
 
-	fsys.fs.unhalt()
-	return nil
+	return fsys.fs.unhalt()
 }
 
 func fsysRemove(cons *Cons, fsys *Fsys, argv []string) error {
@@ -1804,17 +1801,18 @@ func fsysXXX(cons *Cons, name string, argv []string) error {
 	/* some commands want the name... */
 	if fsyscmd[i].f1 != nil {
 		if name == FsysAll {
-			return fmt.Errorf("cannot use fsys %#q with %#q command", FsysAll, argv[0])
+			return fmt.Errorf("cannot use fsys %q with %q command", FsysAll, argv[0])
 		}
 		return fsyscmd[i].f1(cons, name, argv)
 	}
 
 	/* ... but most commands want the Fsys */
-	var err error
-	var fsys *Fsys
 	if name == FsysAll {
 		fsysbox.lock.RLock()
-		for fsys = fsysbox.head; fsys != nil; fsys = fsys.next {
+		defer fsysbox.lock.RUnlock()
+
+		var err error
+		for fsys := fsysbox.head; fsys != nil; fsys = fsys.next {
 			fsys.ref++
 			err1 := fsysXXX1(cons, fsys, i, argv)
 			if err == nil && err1 != nil {
@@ -1822,16 +1820,17 @@ func fsysXXX(cons *Cons, name string, argv []string) error {
 			}
 			fsys.ref--
 		}
-		fsysbox.lock.RUnlock()
+
+		return err
 	} else {
 		fsys, err := _getFsys(name)
 		if err != nil {
 			return err
 		}
-		err = fsysXXX1(cons, fsys, i, argv)
-		fsys.put()
+		defer fsys.put()
+
+		return fsysXXX1(cons, fsys, i, argv)
 	}
-	return err
 }
 
 func cmdFsysXXX(cons *Cons, argv []string) error {
@@ -1866,7 +1865,7 @@ func cmdFsys(cons *Cons, argv []string) error {
 	}
 
 	if argc == 1 {
-		fsys := (*Fsys)(nil)
+		var fsys *Fsys
 		if argv[0] != FsysAll {
 			var err error
 			fsys, err = getFsys(argv[0])
