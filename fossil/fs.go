@@ -252,10 +252,10 @@ func superGet(c *Cache, super *Super) (*Block, error) {
 	return b, nil
 }
 
-func superWrite(b *Block, super *Super, forceWrite int) {
+func superWrite(b *Block, super *Super, forceWrite bool) {
 	superPack(super, b.data)
 	b.dirty()
-	if forceWrite != 0 {
+	if forceWrite {
 		for !b.write(Waitlock) {
 			/* this should no longer happen */
 			logf("could not write super block; waiting 10 seconds\n")
@@ -437,7 +437,7 @@ func (fs *Fs) epochLow(low uint32) error {
 
 	super.epochLow = low
 	fs.elo = low
-	superWrite(bs, &super, 1)
+	superWrite(bs, &super, true)
 	bs.put()
 
 	return nil
@@ -521,7 +521,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	 * super.active to disk.  It will be the address of the most recent root that has
 	 * gone to disk.
 	 */
-	superWrite(bs, &super, 1)
+	superWrite(bs, &super, true)
 
 	bs.removeLink(venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
 	bs.put()
@@ -833,7 +833,7 @@ func (fs *Fs) nextQid(qid *uint64) error {
 	 * since fileMetaAlloc will record a dependency between the
 	 * block holding this qid and the super block.  See file.c:/^fileMetaAlloc.
 	 */
-	superWrite(b, &super, 0)
+	superWrite(b, &super, false)
 
 	b.put()
 	return nil

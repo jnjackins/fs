@@ -13,7 +13,7 @@ type WalkPtr struct {
 	n       int
 	m       int
 	e       Entry
-	typ     uint8
+	typ     BlockType
 	tag     uint32
 }
 
@@ -38,7 +38,7 @@ func initWalk(w *WalkPtr, b *Block, size uint) {
 	}
 }
 
-func nextWalk(w *WalkPtr, score *venti.Score, typ *uint8, tag *uint32, e **Entry) bool {
+func nextWalk(w *WalkPtr, score *venti.Score, typ *BlockType, tag *uint32, e **Entry) bool {
 	if w.n >= w.m {
 		return false
 	}
@@ -47,7 +47,7 @@ func nextWalk(w *WalkPtr, score *venti.Score, typ *uint8, tag *uint32, e **Entry
 		*e = &w.e
 		entryUnpack(&w.e, w.data, w.n)
 		copy(score[:], w.e.score[:venti.ScoreSize])
-		*typ = uint8(etype(&w.e))
+		*typ = etype(&w.e)
 		*tag = w.e.tag
 	} else {
 		*e = nil

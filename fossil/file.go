@@ -59,7 +59,7 @@ func (f *File) free() {
 
 /*
  * the file is locked already
- * f->msource is unlocked
+ * f.msource is unlocked
  */
 func dirLookup(f *File, elem string) (*File, error) {
 	meta := f.msource
@@ -499,13 +499,11 @@ Err1:
 }
 
 func (f *File) read(cnt int, offset int64) ([]byte, error) {
-	var err error
-
 	if false {
 		dprintf("fileRead: %s %d, %d\n", f.dir.elem, cnt, offset)
 	}
 
-	if err = f.rLock(); err != nil {
+	if err := f.rLock(); err != nil {
 		return nil, err
 	}
 	defer f.rUnlock()
@@ -516,7 +514,7 @@ func (f *File) read(cnt int, offset int64) ([]byte, error) {
 
 	f.rAccess()
 
-	if err = f.source.lock(OReadOnly); err != nil {
+	if err := f.source.lock(OReadOnly); err != nil {
 		return nil, err
 	}
 	s := f.source
@@ -628,10 +626,9 @@ func (f *File) setSize(size uint64) error {
 	if err := f.source.lock(-1); err != nil {
 		return err
 	}
-	err := f.source.setSize(size)
-	f.source.unlock()
+	defer f.source.unlock()
 
-	return err
+	return f.source.setSize(size)
 }
 
 func (f *File) write(buf []byte, cnt int, offset int64, uid string) (int, error) {
@@ -862,16 +859,16 @@ func (f *File) getId() uint64 {
 
 func (f *File) getMcount() uint32 {
 	f.metaLock()
-	mcount := f.dir.mcount
-	f.metaUnlock()
-	return mcount
+	defer f.metaUnlock()
+
+	return f.dir.mcount
 }
 
 func (f *File) getMode() uint32 {
 	f.metaLock()
-	mode := f.dir.mode
-	f.metaUnlock()
-	return mode
+	defer f.metaUnlock()
+
+	return f.dir.mode
 }
 
 func (f *File) isDir() bool {
@@ -903,14 +900,14 @@ func (f *File) getSize(size *uint64) error {
 	if err := f.rLock(); err != nil {
 		return err
 	}
+	defer f.rUnlock()
+
 	if err := f.source.lock(OReadOnly); err != nil {
-		f.rUnlock()
 		return err
 	}
 
 	*size = f.source.getSize()
 	f.source.unlock()
-	f.rUnlock()
 
 	return nil
 }
@@ -1732,7 +1729,6 @@ func (f *File) walkSources() error {
  * convert File* to full path name in malloced string.
  * this hasn't been as useful as we hoped it would be.
  */
-
 func (f *File) name() string {
 	const root = "/"
 

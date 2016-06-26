@@ -105,14 +105,14 @@ func shaBlock(score *venti.Score, b *Block, data []byte, bsize uint) {
 	venti.Sha1(score, data[:n])
 }
 
-func etype(e *Entry) uint {
-	var t uint
+func etype(e *Entry) BlockType {
+	var t BlockType
 	if e.flags&venti.EntryDir != 0 {
 		t = BtDir
 	} else {
 		t = BtData
 	}
-	return t + uint(e.depth)
+	return t + BlockType(e.depth)
 }
 
 func copyBlock(b *Block, blockSize uint) []byte {
@@ -139,13 +139,10 @@ const (
 	ArchFaked
 )
 
-func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
-	var err error
-
+func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 	p.nvisit++
 
-	var b *Block
-	b, err = p.c.localData(addr, int(typ), tag, OReadWrite, 0)
+	b, err := p.c.localData(addr, typ, tag, OReadWrite, 0)
 	if err != nil {
 		logf("archive(%d, %#x): cannot find block: %v\n", p.snapEpoch, addr, err)
 		if err == ELabelMismatch {
@@ -277,7 +274,7 @@ func archWalk(p *Param, addr uint32, typ uint8, tag uint32) (int, error) {
 					 * are not treated as in the active tree.
 					 */
 					if b.l.state&BsCopied == 0 && (e == nil || e.snap == 0) {
-						b.removeLink(addr, int(p.l.typ), p.l.tag, false)
+						b.removeLink(addr, p.l.typ, p.l.tag, false)
 					}
 				}
 			}

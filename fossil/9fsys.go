@@ -668,10 +668,10 @@ func fsysLabel(cons *Cons, fsys *Fsys, argv []string) error {
 
 	if argc == 6 {
 		if argv[1] != "-" {
-			l.typ = uint8(atoi(argv[1]))
+			l.typ = BlockType(atoi(argv[1]))
 		}
 		if argv[2] != "-" {
-			l.state = uint8(atoi(argv[2]))
+			l.state = BlockState(atoi(argv[2]))
 		}
 		if argv[3] != "-" {
 			l.epoch = strtoul(argv[3], 0)

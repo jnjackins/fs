@@ -73,7 +73,7 @@ type Cache struct {
 type BList struct {
 	part  int
 	addr  uint32
-	typ   uint8
+	typ   BlockType
 	tag   uint32
 	epoch uint32
 	vers  uint32
@@ -200,8 +200,8 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 
 	if mode == OReadWrite {
 		c.ref += 2
-		go unlinkThread(c)
-		go flushThread(c)
+		go c.unlinkThread()
+		go c.flushThread()
 
 		// Allow for unlinkThread and flushThread to be scheduled
 		// and reach their respective wait points, to avoid potentially
@@ -231,7 +231,7 @@ func (c *Cache) free() {
 
 	/* flush everything out */
 	for {
-		unlinkBody(c)
+		c.unlinkBody()
 		c.lk.Unlock()
 		for c.flushBlock() {
 		}
@@ -259,7 +259,7 @@ func (c *Cache) dump() {
 	for i := 0; i < c.nblocks; i++ {
 		b := c.blocks[i]
 		logf("%d. p=%d a=%d %v t=%d ref=%d state=%s io=%s\n",
-			i, b.part, b.addr, b.score, b.l.typ, b.ref, bsStr(int(b.l.state)), bioStr(b.iostate))
+			i, b.part, b.addr, b.score, b.l.typ, b.ref, b.l.state, b.iostate)
 	}
 }
 
@@ -500,7 +500,7 @@ func (c *Cache) _local(part int, addr uint32, mode int, epoch uint32) (*Block, e
 	atomic.StoreInt32(&b.nlock, 1)
 
 	if part == PartData && b.iostate == BioEmpty {
-		if err := readLabel(c, &b.l, addr); err != nil {
+		if err := c.readLabel(&b.l, addr); err != nil {
 			b.put()
 			return nil, err
 		}
@@ -552,12 +552,12 @@ func (c *Cache) local(part int, addr uint32, mode int) (*Block, error) {
  * if it's not there, load it, bumping some other block.
  * check tag and type.
  */
-func (c *Cache) localData(addr uint32, typ int, tag uint32, mode int, epoch uint32) (*Block, error) {
+func (c *Cache) localData(addr uint32, typ BlockType, tag uint32, mode int, epoch uint32) (*Block, error) {
 	b, err := c._local(PartData, addr, mode, epoch)
 	if err != nil {
 		return nil, err
 	}
-	if int(b.l.typ) != typ || b.l.tag != tag {
+	if b.l.typ != typ || b.l.tag != tag {
 		logf("(*Cache).localData: addr=%d type got %d exp %d: tag got %x exp %x\n", addr, b.l.typ, typ, b.l.tag, tag)
 		b.put()
 		return nil, ELabelMismatch
@@ -571,7 +571,7 @@ func (c *Cache) localData(addr uint32, typ int, tag uint32, mode int, epoch uint
  * if it's not there, load it, bumping some other block.
  * check tag and type if it's really a local block in disguise.
  */
-func (c *Cache) global(score *venti.Score, typ int, tag uint32, mode int) (*Block, error) {
+func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) (*Block, error) {
 	addr := venti.GlobalToLocal(score)
 	if addr != NilBlock {
 		return c.localData(addr, typ, tag, mode, 0)
@@ -586,7 +586,7 @@ func (c *Cache) global(score *venti.Score, typ int, tag uint32, mode int) (*Bloc
 
 	var b *Block
 	for b = c.heads[h]; b != nil; b = b.next {
-		if b.part != PartVenti || bytes.Compare(b.score[:], score[:]) != 0 || int(b.l.typ) != typ {
+		if b.part != PartVenti || bytes.Compare(b.score[:], score[:]) != 0 || b.l.typ != typ {
 			continue
 		}
 		heapDel(b)
@@ -603,7 +603,7 @@ func (c *Cache) global(score *venti.Score, typ int, tag uint32, mode int) (*Bloc
 
 		b.part = PartVenti
 		b.addr = NilBlock
-		b.l.typ = uint8(typ)
+		b.l.typ = typ
 		copy(b.score[:], score[:venti.ScoreSize])
 
 		/* chain onto correct hash */
@@ -656,7 +656,7 @@ func (c *Cache) global(score *venti.Score, typ int, tag uint32, mode int) (*Bloc
  */
 var lastAlloc uint32
 
-func (c *Cache) allocBlock(typ int, tag uint32, epoch uint32, epochLow uint32) (*Block, error) {
+func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, error) {
 	var b *Block
 	var err error
 
@@ -730,7 +730,7 @@ Found:
 
 	assert(b.iostate == BioLabel || b.iostate == BioClean)
 	fl.last = addr
-	lab.typ = uint8(typ)
+	lab.typ = typ
 	lab.tag = tag
 	lab.state = BsAlloc
 	lab.epoch = epoch
@@ -1166,9 +1166,9 @@ func (b *Block) write(waitlock bool) bool {
 // Change the I/O state of block b.
 // Just an assignment except for magic in
 // switch statement (read comments there).
-func (b *Block) setIOState(iostate int32) {
+func (b *Block) setIOState(iostate IOState) {
 	if false {
-		dprintf("iostate part=%d addr=%x %s.%s\n", b.part, b.addr, bioStr(b.iostate), bioStr(iostate))
+		dprintf("iostate part=%d addr=%x %s.%s\n", b.part, b.addr, b.iostate, iostate)
 	}
 
 	c := b.c
@@ -1203,7 +1203,7 @@ func (b *Block) setIOState(iostate int32) {
 			// flushThread checks block iostates without a lock;
 			// set it atomically so that flushThread can fetch without
 			// setting off the race detector.
-			atomic.StoreInt32(&b.iostate, iostate)
+			atomic.StoreInt32((*int32)(&b.iostate), int32(iostate))
 
 			b.vers = c.vers
 			c.vers++
@@ -1254,7 +1254,7 @@ func (b *Block) setIOState(iostate int32) {
 	// flushThread checks block iostates without a lock;
 	// set it atomically so that flushThread can fetch without
 	// setting off the race detector.
-	atomic.StoreInt32(&b.iostate, iostate)
+	atomic.StoreInt32((*int32)(&b.iostate), int32(iostate))
 
 	// Now that the state has changed, we can wake the waiters.
 	if dowakeup {
@@ -1309,7 +1309,7 @@ func (b *Block) copy(tag, ehi, elo uint32) (*Block, error) {
 		logf("(*Block).copy %#x %v but fs is [%d,%d]\n", b.addr, b.l, elo, ehi)
 	}
 
-	bb, err := b.c.allocBlock(int(b.l.typ), tag, ehi, elo)
+	bb, err := b.c.allocBlock(b.l.typ, tag, ehi, elo)
 	if err != nil {
 		b.put()
 		return nil, err
@@ -1361,7 +1361,7 @@ func (b *Block) copy(tag, ehi, elo uint32) (*Block, error) {
  *
  * If b depends on bb, it doesn't anymore, so we remove bb from the prior list.
  */
-func (b *Block) removeLink(addr uint32, typ int, tag uint32, recurse bool) {
+func (b *Block) removeLink(addr uint32, typ BlockType, tag uint32, recurse bool) {
 	var p *BList
 
 	/* remove bb from prior list */
@@ -1382,7 +1382,7 @@ func (b *Block) removeLink(addr uint32, typ int, tag uint32, recurse bool) {
 	bl := BList{
 		part:    PartData,
 		addr:    addr,
-		typ:     uint8(typ),
+		typ:     typ,
 		tag:     tag,
 		epoch:   b.l.epoch,
 		recurse: recurse,
@@ -1432,7 +1432,7 @@ func doRemoveLink(c *Cache, p *BList) {
 	if recurse {
 		mode = OReadOnly
 	}
-	b, err := c.localData(p.addr, int(p.typ), p.tag, mode, 0)
+	b, err := c.localData(p.addr, p.typ, p.tag, mode, 0)
 	if err != nil {
 		return
 	}
@@ -1459,7 +1459,7 @@ func doRemoveLink(c *Cache, p *BList) {
 			var score venti.Score
 			copy(score[:], b.data[i*venti.ScoreSize:])
 			a := venti.GlobalToLocal(&score)
-			if a == NilBlock || readLabel(c, &l, a) != nil {
+			if a == NilBlock || c.readLabel(&l, a) != nil {
 				continue
 			}
 			if l.state&BsClosed != 0 {
@@ -1479,7 +1479,7 @@ func doRemoveLink(c *Cache, p *BList) {
 			b.put()
 
 			doRemoveLink(c, &bl)
-			b, err = c.localData(p.addr, int(p.typ), p.tag, OReadOnly, 0)
+			b, err = c.localData(p.addr, p.typ, p.tag, OReadOnly, 0)
 			if err != nil {
 				logf("warning: lost block in doRemoveLink\n")
 				return
@@ -1566,81 +1566,6 @@ func blistFree(c *Cache, bl *BList) {
 	c.lk.Unlock()
 }
 
-func bsStr(state int) string {
-	if state == BsFree {
-		return "Free"
-	}
-	if state == BsBad {
-		return "Bad"
-	}
-
-	s := fmt.Sprintf("%x", state)
-	if state&BsAlloc == 0 {
-		s += ",Free" /* should not happen */
-	}
-	if state&BsCopied != 0 {
-		s += ",Copied"
-	}
-	if state&BsVenti != 0 {
-		s += ",Venti"
-	}
-	if state&BsClosed != 0 {
-		s += ",Closed"
-	}
-	return s
-}
-
-func bioStr(iostate int32) string {
-	switch iostate {
-	default:
-		return "Unknown!!"
-	case BioEmpty:
-		return "Empty"
-	case BioLabel:
-		return "Label"
-	case BioClean:
-		return "Clean"
-	case BioDirty:
-		return "Dirty"
-	case BioReading:
-		return "Reading"
-	case BioWriting:
-		return "Writing"
-	case BioReadError:
-		return "ReadError"
-	case BioVentiError:
-		return "VentiError"
-	case BioMax:
-		return "Max"
-	}
-}
-
-var bttab = []string{
-	"BtData",
-	"BtData+1",
-	"BtData+2",
-	"BtData+3",
-	"BtData+4",
-	"BtData+5",
-	"BtData+6",
-	"BtData+7",
-	"BtDir",
-	"BtDir+1",
-	"BtDir+2",
-	"BtDir+3",
-	"BtDir+4",
-	"BtDir+5",
-	"BtDir+6",
-	"BtDir+7",
-}
-
-func btStr(typ int) string {
-	if typ < len(bttab) {
-		return bttab[typ]
-	}
-	return "unknown"
-}
-
 func upHeap(i int, b *Block) int {
 	c := b.c
 	now := c.now
@@ -1710,7 +1635,7 @@ func heapDel(b *Block) {
 
 /*
  * Insert a block into the heap.
- * Called with c->lk held.
+ * Called with c.lk held.
  */
 func heapIns(b *Block) {
 	assert(b.heap == BadHeap)
@@ -1722,7 +1647,7 @@ func heapIns(b *Block) {
 /*
  * Get just the label for a block.
  */
-func readLabel(c *Cache, l *Label, addr uint32) error {
+func (c *Cache) readLabel(l *Label, addr uint32) error {
 	lpb := c.size / LabelSize
 	a := addr / uint32(lpb)
 	b, err := c.local(PartLabel, a, OReadOnly)
@@ -1741,9 +1666,9 @@ func readLabel(c *Cache, l *Label, addr uint32) error {
 
 /*
  * Process unlink queue.
- * Called with c->lk held.
+ * Called with c.lk held.
  */
-func unlinkBody(c *Cache) {
+func (c *Cache) unlinkBody() {
 	var p *BList
 
 	for c.uhead != nil {
@@ -1762,7 +1687,7 @@ func unlinkBody(c *Cache) {
 /*
  * Occasionally unlink the blocks on the cache unlink queue.
  */
-func unlinkThread(c *Cache) {
+func (c *Cache) unlinkThread() {
 	c.lk.Lock()
 	for {
 		for c.uhead == nil && c.die == nil {
@@ -1771,7 +1696,7 @@ func unlinkThread(c *Cache) {
 		if c.die != nil {
 			break
 		}
-		unlinkBody(c)
+		c.unlinkBody()
 	}
 
 	c.ref--
@@ -1794,7 +1719,7 @@ func (a BAddrSorter) Less(i, j int) bool {
 }
 
 // Scan the block list for dirty blocks; add them to the list c.baddr.
-func flushFill(c *Cache) {
+func (c *Cache) flushFill() {
 	c.lk.Lock()
 	if c.ndirty == 0 {
 		c.lk.Unlock()
@@ -1812,7 +1737,7 @@ func flushFill(c *Cache) {
 		// fetching iostate here is racy, but it's okay to wait until
 		// next time to flush if we get an old value. fetch atomically
 		// to silence the race detector. stores are also done atomically.
-		iostate := atomic.LoadInt32(&b.iostate)
+		iostate := IOState(atomic.LoadInt32((*int32)(&b.iostate)))
 		if iostate == BioDirty || iostate == BioWriting {
 			ndirty++
 		}
@@ -1845,7 +1770,7 @@ func (c *Cache) flushBlock() bool {
 	for {
 		if c.br == c.be {
 			if c.bw == 0 || c.bw == c.be {
-				flushFill(c)
+				c.flushFill()
 			}
 			c.br = 0
 			c.be = c.bw
@@ -1888,7 +1813,7 @@ func (c *Cache) flushBlock() bool {
 /*
  * Occasionally flush dirty blocks from memory to the disk.
  */
-func flushThread(c *Cache) {
+func (c *Cache) flushThread() {
 	c.lk.Lock()
 	for c.die == nil {
 		c.flushcond.Wait()

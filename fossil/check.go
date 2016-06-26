@@ -130,7 +130,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	chk.printf("checking epoch %d...\n", epoch)
 
 	for a = 0; a < uint32(chk.nblocks); a++ {
-		if err := readLabel(chk.cache, &l, (a+chk.hint)%uint32(chk.nblocks)); err != nil {
+		if err := chk.cache.readLabel(&l, (a+chk.hint)%uint32(chk.nblocks)); err != nil {
 			chk.errorf("could not read label for addr %#0.8x", a)
 			continue
 		}
@@ -185,7 +185,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
  * (v) if b is a past life of b' then only one of b and b' is active
  *	(too hard to check)
  */
-func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ int, tag, epoch uint32) bool {
+func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ BlockType, tag, epoch uint32) bool {
 	if b != nil && chk.walkdepth == 0 && chk.printblocks {
 		chk.printf("%v %d %#.8x %#.8x\n", b.score, b.l.typ, b.l.tag, b.l.epoch)
 	}
@@ -387,12 +387,10 @@ Exit:
  */
 func checkLeak(chk *Fsck) {
 	var l Label
-
-	nfree := int64(0)
-	nlost := int64(0)
+	var nfree, nlost int64
 
 	for a := uint32(0); a < uint32(chk.nblocks); a++ {
-		if err := readLabel(chk.cache, &l, a); err != nil {
+		if err := chk.cache.readLabel(&l, a); err != nil {
 			chk.errorf("could not read label: addr %#x %d %d: %v", a, l.typ, l.state, err)
 			continue
 		}
@@ -411,9 +409,9 @@ func checkLeak(chk *Fsck) {
 		}
 		nlost++
 
-		//		chk.warnf("unreachable block: addr %#x type %d tag %#x "
-		//			"state %s epoch %d close %d", a, l.type, l.tag,
-		//			bsStr(l.state), l.epoch, l.epochClose);
+		//chk.warnf("unreachable block: addr %#x type %d tag %#x "
+		//	"state %s epoch %d close %d", a, l.type, l.tag,
+		//	l.state, l.epoch, l.epochClose);
 		b, err := chk.cache.local(PartData, a, OReadOnly)
 		if err != nil {
 			chk.errorf("could not read block %#.8x", a)

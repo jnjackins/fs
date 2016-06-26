@@ -511,7 +511,7 @@ func (r *Source) setEntry(e *Entry) error {
 
 func (p *Block) walk(index, mode int, fs *Fs, e *Entry) (*Block, error) {
 	var b *Block
-	var typ int
+	var typ BlockType
 	var err error
 	c := fs.cache
 	if p.l.typ&BtLevelMask == 0 {
@@ -519,7 +519,7 @@ func (p *Block) walk(index, mode int, fs *Fs, e *Entry) (*Block, error) {
 		typ = EntryType(e)
 		b, err = c.global(e.score, typ, e.tag, mode)
 	} else {
-		typ = int(p.l.typ) - 1
+		typ = p.l.typ - 1
 		var score venti.Score
 		copy(score[:], p.data[index*venti.ScoreSize:])
 		b, err = c.global(&score, typ, e.tag, mode)
@@ -712,7 +712,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 
 	/* (iii) */
 	if rb.addr != NilBlock {
-		p.removeLink(rb.addr, int(rb.l.typ), rb.l.tag, true)
+		p.removeLink(rb.addr, rb.l.typ, rb.l.tag, true)
 	}
 
 	rb.put()

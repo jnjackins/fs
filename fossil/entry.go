@@ -79,6 +79,6 @@ func entryUnpack(e *Entry, p []byte, index int) error {
 	return nil
 }
 
-func EntryType(e *Entry) int {
-	return (bool2int(e.flags&venti.EntryDir != 0))<<3 | int(e.depth)
+func EntryType(e *Entry) BlockType {
+	return BlockType((bool2int(e.flags&venti.EntryDir != 0))<<3 | int(e.depth))
 }

@@ -273,7 +273,7 @@ func (d *Disk) rootInit(e *Entry, buf []byte) uint32 {
 // static
 var blockAlloc_addr uint32
 
-func (d *Disk) blockAlloc(typ int, tag uint32, buf []byte) uint32 {
+func (d *Disk) blockAlloc(typ BlockType, tag uint32, buf []byte) uint32 {
 	bsize := d.blockSize()
 	lpb := bsize / LabelSize
 	d.blockRead(PartLabel, blockAlloc_addr/uint32(lpb), buf)
@@ -287,7 +287,7 @@ func (d *Disk) blockAlloc(typ int, tag uint32, buf []byte) uint32 {
 	}
 	l.epoch = 1
 	l.epochClose = ^uint32(0)
-	l.typ = uint8(typ)
+	l.typ = typ
 	l.state = BsAlloc
 	l.tag = tag
 	labelPack(&l, buf, int(blockAlloc_addr%uint32(lpb)))

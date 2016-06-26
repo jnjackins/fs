@@ -2,104 +2,18 @@ package main
 
 import (
 	"fmt"
-	"runtime"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
-
-	"sigint.ca/fs/venti"
 )
 
-const QueueSize = 100 // maximum block to queue
+const QueueSize = 100 // maximum number of blocks to queue
 
 type Disk struct {
 	fd int
 	h  Header
 
 	queue chan *Block
-}
-
-type Block struct {
-	c   *Cache
-	ref int
-
-	// The thread that has locked a Block may refer to it by
-	// multiple names.  nlock counts the number of
-	// references the locking thread holds.  It will call
-	// blockPut once per reference.
-	nlock int32
-
-	lk *sync.Mutex
-
-	part  int
-	addr  uint32
-	score *venti.Score
-	l     Label
-
-	dmap []byte
-
-	data []byte
-
-	/* the following is private; used by cache */
-	next *Block /* doubly linked hash chains */
-	prev **Block
-	heap uint32 /* index in heap table */
-	used uint32 /* last reference times */
-
-	vers uint32 /* version of dirty flag */
-
-	uhead *BList /* blocks to unlink when this block is written */
-	utail *BList
-
-	/* block ordering for cache -> disk */
-	prior *BList /* list of blocks before this one */
-
-	iostate int32
-	ioready *sync.Cond
-}
-
-func (b *Block) String() string {
-	return fmt.Sprintf("%d", b.addr)
-}
-
-func (b *Block) lock() {
-	b.lk.Lock()
-	if false {
-		stack := make([]byte, 5*1024)
-		runtime.Stack(stack, false)
-		(&lockmaplk).Lock()
-		lockmap[b] = string(stack)
-		(&lockmaplk).Unlock()
-	}
-}
-
-func (b *Block) unlock() {
-	b.lk.Unlock()
-	if false {
-		(&lockmaplk).Lock()
-		delete(lockmap, b)
-		(&lockmaplk).Unlock()
-	}
-}
-
-var (
-	lockmaplk sync.Mutex
-	lockmap   map[*Block]string
-)
-
-func watchlocks() {
-	(&lockmaplk).Lock()
-	lockmap = make(map[*Block]string)
-	(&lockmaplk).Unlock()
-
-	for range time.NewTicker(10 * time.Second).C {
-		(&lockmaplk).Lock()
-		for b, stack := range lockmap {
-			dprintf("block %v is locked!\n%s\n\n", b, stack)
-		}
-		(&lockmaplk).Unlock()
-	}
 }
 
 /* disk partitions; keep in sync with []partname */
