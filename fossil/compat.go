@@ -3,12 +3,7 @@ package main
 import (
 	"math/rand"
 	"strconv"
-	"time"
 )
-
-func nsec() int64 {
-	return int64(time.Now().Nanosecond())
-}
 
 func atoi(s string) int {
 	i, err := strconv.Atoi(s)

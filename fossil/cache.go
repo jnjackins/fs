@@ -650,25 +650,19 @@ func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) 
 	/* NOT REACHED */
 }
 
-/*
- * allocate a new on-disk block and load it into the memory cache.
- * BUG: if the disk is full, should we flush some of it to Venti?
- */
-var lastAlloc uint32
-
+// allocate a new on-disk block and load it into the memory cache.
+// BUG: if the disk is full, should we flush some of it to Venti?
 func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, error) {
-	var b *Block
-	var err error
-
 	n := uint32(c.size / LabelSize)
 	fl := c.fl
 
 	fl.lk.Lock()
+	defer fl.lk.Unlock()
+
 	addr := fl.last
-	b, err = c.local(PartLabel, addr/n, OReadOnly)
+	b, err := c.local(PartLabel, addr/n, OReadOnly)
 	if err != nil {
 		logf("(*Cache).allocBlock: xxx %v\n", err)
-		fl.lk.Unlock()
 		return nil, err
 	}
 
@@ -681,7 +675,7 @@ func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, 
 			nwrap++
 			if nwrap >= 2 {
 				b.put()
-				err = fmt.Errorf("disk is full")
+				err := fmt.Errorf("disk is full")
 
 				/*
 				 * try to avoid a continuous spew of console
@@ -691,7 +685,6 @@ func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, 
 					logf("(*Cache).allocBlock: xxx1 %v\n", err)
 				}
 				fl.last = 0
-				fl.lk.Unlock()
 				return nil, err
 			}
 		}
@@ -702,7 +695,6 @@ func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, 
 			if err != nil {
 				fl.last = addr
 				logf("(*Cache).allocBlock: xxx2 %v\n", err)
-				fl.lk.Unlock()
 				return nil, err
 			}
 		}
@@ -711,16 +703,15 @@ func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, 
 			continue
 		}
 		if lab.state == BsFree {
-			goto Found
+			break
 		}
 		if lab.state&BsClosed != 0 {
 			if lab.epochClose <= epochLow || lab.epoch == lab.epochClose {
-				goto Found
+				break
 			}
 		}
 	}
 
-Found:
 	b.put()
 	b, err = c.local(PartData, addr, OOverWrite)
 	if err != nil {
@@ -749,9 +740,7 @@ Found:
 	if false {
 		dprintf("fsAlloc %d type=%d tag = %x\n", addr, typ, tag)
 	}
-	lastAlloc = addr
 	fl.nused++
-	fl.lk.Unlock()
 	return b, nil
 }
 
