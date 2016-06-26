@@ -283,28 +283,24 @@ func superWrite(b *Block, super *Super, forceWrite bool) {
  * TODO: This should be rewritten to eliminate most of the duplication.
  */
 func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
-	var dir, f *File
-
 	if dstpath != "" {
 		elem := filepath.Base(dstpath)
 		p := filepath.Dir(dstpath)
 		if p == "." {
 			p = "/"
 		}
-		var err error
-		dir, err = openFile(fs, p)
+		dir, err := openFile(fs, p)
 		if err != nil {
 			return nil, err
 		}
-		f, err = dir.create(elem, ModeDir|ModeSnapshot|0555, "adm")
+		f, err := dir.create(elem, ModeDir|ModeSnapshot|0555, "adm")
 		dir.decRef()
 		return f, err
 	} else if doarchive {
 		/*
 		 * a snapshot intended to be archived to venti.
 		 */
-		var err error
-		dir, err = openFile(fs, "/archive")
+		dir, err := openFile(fs, "/archive")
 		if err != nil {
 			return nil, err
 		}
@@ -312,7 +308,7 @@ func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 
 		/* yyyy */
 		s := fmt.Sprintf("%d", now.Year())
-		f, err = dir.walk(s)
+		f, err := dir.walk(s)
 		if err != nil {
 			f, err = dir.create(s, ModeDir|0555, "adm")
 		}
@@ -346,8 +342,7 @@ func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 		 * There may well be a better naming scheme.
 		 * (I'd have used hh:mm but ':' is reserved in Microsoft file systems.)
 		 */
-		var err error
-		dir, err = openFile(fs, "/snapshot")
+		dir, err := openFile(fs, "/snapshot")
 		if err != nil {
 			return nil, err
 		}
@@ -356,7 +351,7 @@ func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 		/* yyyy */
 		s := fmt.Sprintf("%d", now.Year())
 
-		f, err = dir.walk(s)
+		f, err := dir.walk(s)
 		if err != nil {
 			f, err = dir.create(s, ModeDir|0555, "adm")
 		}
@@ -546,8 +541,6 @@ func saveQid(fs *Fs) error {
 }
 
 func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
-	var src, dst *File
-
 	assert(fs.mode == OReadWrite)
 
 	if fs.halted {
@@ -567,20 +560,15 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 		srcpath = "/active"
 	}
 
+	src, err := openFile(fs, srcpath)
+	if err != nil {
+		return fmt.Errorf("snapshot: %v", err)
+	}
 	defer func() {
 		if src != nil {
 			src.decRef()
 		}
-		if dst != nil {
-			dst.decRef()
-		}
 	}()
-
-	var err error
-	src, err = openFile(fs, srcpath)
-	if err != nil {
-		return fmt.Errorf("snapshot: %v", err)
-	}
 
 	/*
 	 * It is important that we maintain the invariant that:
@@ -617,10 +605,10 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	 *
 	 * In this state, it's perfectly okay to make more pointers to sb and mb.
 	 */
-	if err = bumpEpoch(fs, false); err != nil {
+	if err := bumpEpoch(fs, false); err != nil {
 		return fmt.Errorf("snapshot: %v", err)
 	}
-	if err = src.walkSources(); err != nil {
+	if err := src.walkSources(); err != nil {
 		return fmt.Errorf("snapshot: %v", err)
 	}
 
@@ -632,16 +620,21 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	/*
 	 * Create the directory where we will store the copy of src.
 	 */
-	dst, err = fs.openSnapshot(dstpath, doarchive)
+	dst, err := fs.openSnapshot(dstpath, doarchive)
 	if err != nil {
 		return fmt.Errorf("snapshot: %v", err)
 	}
+	defer func() {
+		if dst != nil {
+			dst.decRef()
+		}
+	}()
 
 	/*
 	 * Actually make the copy by setting dst's source and msource
 	 * to be src's.
 	 */
-	if err = dst.snapshot(src, fs.ehi-1, doarchive); err != nil {
+	if err := dst.snapshot(src, fs.ehi-1, doarchive); err != nil {
 		return fmt.Errorf("snapshot: %v", err)
 	}
 
@@ -704,8 +697,6 @@ func vtWriteBlock(z *venti.Session, buf []byte, n uint, typ uint, score *venti.S
 }
 
 func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntry, score *venti.Score) error {
-	var i, o int
-
 	e := *pe
 	ee := *pee
 	de := *pde
@@ -727,11 +718,11 @@ func mkVac(z *venti.Session, blockSize uint, pe *Entry, pee *Entry, pde *DirEntr
 
 	buf = make([]byte, 8192)
 	mb := initMetaBlock(buf, int(n+MetaHeaderSize+MetaIndexSize), 1)
-	var err error
-	o, err = mb.alloc(int(n))
+	o, err := mb.alloc(int(n))
 	if err != nil {
 		panic("abort")
 	}
+	var i int
 	var me MetaEntry
 	mb.search(de.elem, &i, &me)
 	assert(me.offset == 0)
@@ -816,11 +807,8 @@ func (fs *Fs) unhalt() error {
 }
 
 func (fs *Fs) nextQid(qid *uint64) error {
-	var b *Block
 	var super Super
-	var err error
-
-	b, err = superGet(fs.cache, &super)
+	b, err := superGet(fs.cache, &super)
 	if err != nil {
 		return err
 	}
@@ -855,11 +843,10 @@ func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
 		return 0
 	}
 
-	var de DirEntry
-	var r, n int
+	var n int
 	for {
-		var deeReadErr error
-		r, deeReadErr = dee.read(&de)
+		var de DirEntry
+		r, deeReadErr := dee.read(&de)
 		if r <= 0 {
 			if deeReadErr != nil {
 				dprintf("fsEsearch1: deeRead: %v\n", deeReadErr)
@@ -947,11 +934,10 @@ func fsRsearch1(f *File, s string) int {
 		return 0
 	}
 
-	var de DirEntry
-	var r, n int
+	var n int
 	for {
-		var deeReadErr error
-		r, deeReadErr = dee.read(&de)
+		var de DirEntry
+		r, deeReadErr := dee.read(&de)
 		if r <= 0 {
 			if deeReadErr != nil {
 				dprintf("fsRsearch1: deeRead: %v\n", deeReadErr)
