@@ -307,10 +307,10 @@ func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 		now := time.Now()
 
 		/* yyyy */
-		s := fmt.Sprintf("%d", now.Year())
-		f, err := dir.walk(s)
+		year := fmt.Sprintf("%d", now.Year())
+		f, err := dir.walk(year)
 		if err != nil {
-			f, err = dir.create(s, ModeDir|0555, "adm")
+			f, err = dir.create(year, ModeDir|0555, "adm")
 		}
 		dir.decRef()
 		if err != nil {
@@ -533,18 +533,14 @@ func (fs *Fs) saveQid() error {
 	qidMax := super.qid
 	b.put()
 
-	if err := fs.file.setQidSpace(0, qidMax); err != nil {
-		return err
-	}
-
-	return nil
+	return fs.file.setQidSpace(0, qidMax)
 }
 
 func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	assert(fs.mode == OReadWrite)
 
 	if fs.halted {
-		return fmt.Errorf("snapshot: file system is halted")
+		return fmt.Errorf("file system is halted")
 	}
 
 	/*
@@ -609,7 +605,7 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 		return fmt.Errorf("bump epoch: %v", err)
 	}
 	if err := src.walkSources(); err != nil {
-		return fmt.Errorf("snapshot: %v", err)
+		return fmt.Errorf("walk sources: %v", err)
 	}
 
 	/*
@@ -622,7 +618,7 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	 */
 	dst, err := fs.openSnapshot(dstpath, doarchive)
 	if err != nil {
-		return fmt.Errorf("snapshot: %v", err)
+		return fmt.Errorf("open snapshot dstpath=%q doarchive=%v: %v", dstpath, doarchive, err)
 	}
 	defer func() {
 		if dst != nil {
@@ -635,7 +631,7 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	 * to be src's.
 	 */
 	if err := dst.snapshot(src, fs.ehi-1, doarchive); err != nil {
-		return fmt.Errorf("snapshot: %v", err)
+		return fmt.Errorf("snapshot %q: %v", dst.name(), err)
 	}
 
 	src.decRef()
