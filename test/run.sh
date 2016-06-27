@@ -39,6 +39,8 @@ mkdir active snap archive
 	9pfuse -a main/active fossil.srv active;
 	9pfuse -a main/snapshot fossil.srv snap;
 	9pfuse -a main/archive fossil.srv archive;
+
+	echo "the quick brown fox jumps over the lazy dog" >active/test
 ) &
 
 echo "starting fossil"

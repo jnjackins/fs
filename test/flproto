@@ -1,5 +1,6 @@
 fsys main config fossil.part
-fsys main open -AWPV
+fsys main venti 127.0.0.1
+fsys main open -AWP
 fsys main
 snaptime -s 10 -t 120
 srv fossil.srv
