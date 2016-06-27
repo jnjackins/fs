@@ -33,9 +33,9 @@ func ZeroExtend(typ int, buf []byte, size, newsize int) int {
 }
 
 func ZeroTruncate(typ int, buf []byte, n int) int {
-	var i int
 	switch typ {
 	default:
+		var i int
 		for i = n; i > 0; i-- {
 			if buf[i-1] != 0 {
 				break

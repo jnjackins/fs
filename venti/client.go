@@ -16,7 +16,6 @@ var (
 )
 
 func Dial(host string, canfail bool) (*Session, error) {
-	var z *Session
 	var conn net.Conn
 	var na string
 
@@ -48,7 +47,7 @@ func Dial(host string, canfail bool) (*Session, error) {
 		}
 	}
 
-	z = newSession()
+	z := newSession()
 	if conn != nil {
 		z.connErr = err
 	}
@@ -114,7 +113,7 @@ func StdioServer(server string) (*Session, error) {
 */
 
 func (z *Session) Ping() error {
-	var p *Packet = packetAlloc()
+	p := packetAlloc()
 
 	var err error
 	p, err = z.RPC_client(QPing, p)
@@ -194,16 +193,13 @@ func (z *Session) Sync() error {
 }
 
 func (z *Session) Write(score *Score, type_ int, buf []byte) error {
-	var p *Packet = packetAlloc()
-
+	p := packetAlloc()
 	packetAppend(p, buf, len(buf))
 	return z.WritePacket(score, type_, p)
 }
 
 func (z *Session) WritePacket(score *Score, type_ int, p *Packet) error {
-	var n int = packetSize(p)
-	var hdr []byte
-
+	n := packetSize(p)
 	if n > MaxLumpSize || n < 0 {
 		packetFree(p)
 		return ELumpSize
@@ -214,7 +210,7 @@ func (z *Session) WritePacket(score *Score, type_ int, p *Packet) error {
 		return nil
 	}
 
-	hdr, _ = packetHeader(p, 4)
+	hdr, _ := packetHeader(p, 4)
 	hdr[0] = byte(type_)
 	hdr[1] = 0 /* pad */
 	hdr[2] = 0 /* pad */
@@ -286,8 +282,6 @@ func (z *Session) RPC_client(op int, p *Packet) (*Packet, error) {
 	 * single threaded for the momment
 	 */
 	z.lk.Lock()
-	defer z.lk.Unlock()
-
 	if z.cstate != StateConnected {
 		err = ENotConnected
 		goto Err
@@ -319,6 +313,7 @@ func (z *Session) RPC_client(op int, p *Packet) (*Packet, error) {
 		}
 
 		packetFree(p)
+		z.lk.Unlock()
 		return nil, errors.New(errstr)
 	}
 
@@ -327,6 +322,7 @@ func (z *Session) RPC_client(op int, p *Packet) (*Packet, error) {
 		goto Err
 	}
 
+	z.lk.Unlock()
 	return p, nil
 
 Err:
@@ -334,6 +330,7 @@ Err:
 	if p != nil {
 		packetFree(p)
 	}
+	z.lk.Unlock()
 	z.Disconnect(1)
 	return nil, err
 }
