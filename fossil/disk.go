@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -13,7 +14,8 @@ type Disk struct {
 	fd int
 	h  Header
 
-	queue chan *Block
+	queue     chan *Block
+	flushcond *sync.Cond
 }
 
 /* disk partitions; keep in sync with []partname */
@@ -45,9 +47,10 @@ func allocDisk(fd int) (*Disk, error) {
 	}
 
 	disk := &Disk{
-		fd:    fd,
-		h:     h,
-		queue: make(chan *Block, QueueSize),
+		fd:        fd,
+		h:         h,
+		queue:     make(chan *Block, QueueSize),
+		flushcond: sync.NewCond(new(sync.Mutex)),
 	}
 
 	go disk.thread()
@@ -172,6 +175,12 @@ func (d *Disk) blockSize() int {
 }
 
 func (d *Disk) flush() error {
+	d.flushcond.L.Lock()
+	for len(d.queue) > 0 {
+		d.flushcond.Wait()
+	}
+	d.flushcond.L.Unlock()
+
 	/* there really should be a cleaner interface to flush an fd */
 	var stat syscall.Stat_t
 	return syscall.Fstat(d.fd, &stat)
@@ -182,10 +191,6 @@ func (d *Disk) size(part int) uint32 {
 }
 
 func (d *Disk) thread() {
-	if false {
-		go watchlocks()
-	}
-
 	for b := range d.queue {
 		// no one should hold onto blocking in the
 		// reading or writing state, so this lock should
@@ -219,6 +224,10 @@ func (d *Disk) thread() {
 			}
 		}
 		b.put() /* remove extra reference, unlock */
+
+		if len(d.queue) == 0 {
+			d.flushcond.Signal()
+		}
 	}
 	dprintf("disk thread exiting\n")
 }
