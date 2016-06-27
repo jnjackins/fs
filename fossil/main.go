@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+var argv0 string
+
 var Dflag = flag.Bool("D", false, "toggle debug mode")
 
 func main() {
