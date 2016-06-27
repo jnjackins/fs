@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
-	"time"
 
 	"sigint.ca/fs/venti"
 )
@@ -194,45 +193,45 @@ type Block struct {
 	ioready *sync.Cond
 }
 
-var (
-	lockmaplk sync.Mutex
-	lockmap   map[*Block]string
-)
-
-func watchlocks() {
-	(&lockmaplk).Lock()
-	lockmap = make(map[*Block]string)
-	(&lockmaplk).Unlock()
-
-	for range time.NewTicker(10 * time.Second).C {
-		(&lockmaplk).Lock()
-		for b, stack := range lockmap {
-			dprintf("block %v is locked!\n%s\n\n", b, stack)
-		}
-		(&lockmaplk).Unlock()
-	}
-}
-
 func (b *Block) String() string {
 	return fmt.Sprintf("%d", b.addr)
 }
 
 func (b *Block) lock() {
 	b.lk.Lock()
-	if false {
-		stack := make([]byte, 5*1024)
-		runtime.Stack(stack, false)
-		(&lockmaplk).Lock()
-		lockmap[b] = string(stack)
-		(&lockmaplk).Unlock()
+	if *Dflag {
+		if b.c.lockinfo == nil {
+			b.c.lockinfo = make(map[*Block]string)
+		}
+
+		if pc, file, line, ok := runtime.Caller(1); ok {
+			fn := runtime.FuncForPC(pc)
+			caller := fmt.Sprintf("%s:%d (%s): ", file, line, fn.Name())
+			buf := make([]byte, 5*1024)
+			runtime.Stack(buf, false)
+			caller += string(buf) + "\n"
+
+			b.c.llk.Lock()
+			b.c.lockinfo[b] = caller
+			b.c.llk.Unlock()
+		}
 	}
 }
 
 func (b *Block) unlock() {
 	b.lk.Unlock()
-	if false {
-		(&lockmaplk).Lock()
-		delete(lockmap, b)
-		(&lockmaplk).Unlock()
+	if *Dflag {
+		b.c.llk.Lock()
+		delete(b.c.lockinfo, b)
+		b.c.llk.Unlock()
+	}
+}
+
+func printLocks(cons *Cons, c *Cache) {
+	c.llk.Lock()
+	defer c.llk.Unlock()
+
+	for block, caller := range c.lockinfo {
+		cons.printf("block %v locked by: %s\n", block, caller)
 	}
 }

@@ -70,6 +70,7 @@ var fsyscmd = []struct {
 	{"epoch", fsysEpoch, nil},
 	{"halt", fsysHalt, nil},
 	{"label", fsysLabel, nil},
+	{"printlocks", fsysPrintLocks, nil},
 	{"remove", fsysRemove, nil},
 	{"snap", fsysSnap, nil},
 	{"snaptime", fsysSnapTime, nil},
@@ -527,6 +528,28 @@ func fsysSync(cons *Cons, fsys *Fsys, argv []string) error {
 	n := fsys.fs.cache.dirty()
 	fsys.fs.sync()
 	cons.printf("\t%s sync: wrote %d blocks\n", fsys.name, n)
+	return nil
+}
+
+func fsysPrintLocks(cons *Cons, fsys *Fsys, argv []string) error {
+	var usage string = "Usage: [fsys name] printlocks"
+
+	flags := flag.NewFlagSet("printlocks", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
+	if err := flags.Parse(argv[1:]); err != nil {
+		return EUsage
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return EUsage
+	}
+
+	if !*Dflag {
+		return errors.New("debug mode disabled")
+	}
+
+	printLocks(cons, fsys.fs.cache)
+
 	return nil
 }
 

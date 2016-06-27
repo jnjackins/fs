@@ -68,6 +68,10 @@ type Cache struct {
 	// block counts
 	nused int
 	ndisk int
+
+	// for debugging: see block.go:/printLocks/
+	llk      sync.Mutex
+	lockinfo map[*Block]string
 }
 
 type BList struct {
