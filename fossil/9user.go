@@ -307,8 +307,6 @@ func (u *User) String() string {
 }
 
 func usersFileWrite(box *Ubox) error {
-	var err error
-
 	fsys, err := getFsys("main")
 	if err != nil {
 		return err
@@ -325,8 +323,7 @@ func usersFileWrite(box *Ubox) error {
 	 * 	the owner/group/permissions need to be thought out.
 	 */
 
-	var dir *File
-	dir, err = openFile(fs, "/active")
+	dir, err := fs.openFile("/active")
 	if err != nil {
 		return err
 	}
@@ -576,14 +573,12 @@ func usersFileRead(path string) error {
 		path = "/active/adm/users"
 	}
 
-	var file *File
-	var buf []byte
-	file, err = openFile(fsys.getFs(), path)
+	file, err := fsys.getFs().openFile(path)
 	if err == nil {
 		var size uint64
 		if err = file.getSize(&size); err == nil {
 			length := int(size)
-			buf, err = file.read(int(size), 0)
+			buf, err := file.read(int(size), 0)
 			if len(buf) == length && err == nil {
 				err = uboxInit(string(buf))
 			}

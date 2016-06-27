@@ -289,7 +289,7 @@ func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 		if p == "." {
 			p = "/"
 		}
-		dir, err := openFile(fs, p)
+		dir, err := fs.openFile(p)
 		if err != nil {
 			return nil, err
 		}
@@ -300,7 +300,7 @@ func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 		/*
 		 * a snapshot intended to be archived to venti.
 		 */
-		dir, err := openFile(fs, "/archive")
+		dir, err := fs.openFile("/archive")
 		if err != nil {
 			return nil, err
 		}
@@ -319,18 +319,18 @@ func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 		dir = f
 
 		/* mmdd[#] */
-		s = fmt.Sprintf("%02d%02d", now.Month(), now.Day())
+		day := fmt.Sprintf("%02d%02d", now.Month(), now.Day())
 		post := ""
 		for n := 0; ; n++ {
 			if n != 0 {
 				post = fmt.Sprintf(".%d", n)
 			}
-			f, err = dir.walk(s + post)
+			f, err = dir.walk(day + post)
 			if err == nil {
 				f.decRef()
 				continue
 			}
-			f, err = dir.create(s+post, ModeDir|ModeSnapshot|0555, "adm")
+			f, err = dir.create(day+post, ModeDir|ModeSnapshot|0555, "adm")
 			break
 		}
 		dir.decRef()
@@ -342,7 +342,7 @@ func (fs *Fs) openSnapshot(dstpath string, doarchive bool) (*File, error) {
 		 * There may well be a better naming scheme.
 		 * (I'd have used hh:mm but ':' is reserved in Microsoft file systems.)
 		 */
-		dir, err := openFile(fs, "/snapshot")
+		dir, err := fs.openFile("/snapshot")
 		if err != nil {
 			return nil, err
 		}
@@ -409,7 +409,7 @@ func (fs *Fs) needArch(archAfter time.Duration) bool {
 	defer fs.elk.RUnlock()
 
 	need := true
-	if f, err := openFile(fs, buf); err == nil {
+	if f, err := fs.openFile(buf); err == nil {
 		need = false
 		f.decRef()
 	}
@@ -438,7 +438,7 @@ func (fs *Fs) epochLow(low uint32) error {
 	return nil
 }
 
-func bumpEpoch(fs *Fs, doarchive bool) error {
+func (fs *Fs) bumpEpoch(doarchive bool) error {
 	/*
 	 * Duplicate the root block.
 	 *
@@ -524,7 +524,7 @@ func bumpEpoch(fs *Fs, doarchive bool) error {
 	return nil
 }
 
-func saveQid(fs *Fs) error {
+func (fs *Fs) saveQid() error {
 	var super Super
 	b, err := superGet(fs.cache, &super)
 	if err != nil {
@@ -560,9 +560,9 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 		srcpath = "/active"
 	}
 
-	src, err := openFile(fs, srcpath)
+	src, err := fs.openFile(srcpath)
 	if err != nil {
-		return fmt.Errorf("snapshot: %v", err)
+		return fmt.Errorf("fs.openFile %s: %v", srcpath, err)
 	}
 	defer func() {
 		if src != nil {
@@ -605,8 +605,8 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	 *
 	 * In this state, it's perfectly okay to make more pointers to sb and mb.
 	 */
-	if err := bumpEpoch(fs, false); err != nil {
-		return fmt.Errorf("snapshot: %v", err)
+	if err := fs.bumpEpoch(false); err != nil {
+		return fmt.Errorf("bump epoch: %v", err)
 	}
 	if err := src.walkSources(); err != nil {
 		return fmt.Errorf("snapshot: %v", err)
@@ -649,11 +649,11 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 	 * added snapshot both in /active and in /archive/yyyy/mmdd[.#].
 	 */
 	if doarchive {
-		if err = saveQid(fs); err != nil {
-			return fmt.Errorf("snapshot: %v", err)
+		if err := fs.saveQid(); err != nil {
+			return fmt.Errorf("save qid: %v", err)
 		}
-		if err = bumpEpoch(fs, true); err != nil {
-			return fmt.Errorf("snapshot: %v", err)
+		if err := fs.bumpEpoch(true); err != nil {
+			return fmt.Errorf("bump epoch: %v", err)
 		}
 	}
 
@@ -669,7 +669,7 @@ func (fs *Fs) vac(name string, score *venti.Score) error {
 	fs.elk.RLock()
 	defer fs.elk.RUnlock()
 
-	f, err := openFile(fs, name)
+	f, err := fs.openFile(name)
 	if err != nil {
 		return err
 	}
@@ -777,6 +777,7 @@ func (fs *Fs) sync() error {
 
 	fs.file.metaFlush(true)
 	fs.cache.flush(true)
+	fs.cache.disk.flush()
 
 	return nil
 }
@@ -888,7 +889,7 @@ func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
 }
 
 func (fs *Fs) esearch(path string, savetime time.Time, plo *uint32) int {
-	f, err := openFile(fs, path)
+	f, err := fs.openFile(path)
 	if err != nil {
 		return 0
 	}
@@ -980,7 +981,7 @@ func fsRsearch1(f *File, s string) int {
 }
 
 func (fs *Fs) rsearch(path_ string) int {
-	f, err := openFile(fs, path_)
+	f, err := fs.openFile(path_)
 	if err != nil {
 		return 0
 	}

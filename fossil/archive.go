@@ -444,7 +444,7 @@ Done:
 
 func (a *Arch) kick() {
 	if a == nil {
-		logf("warning: archKick nil\n")
+		logf("warning: (*Arch).kick: nil arch\n")
 		return
 	}
 

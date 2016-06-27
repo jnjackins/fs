@@ -583,7 +583,7 @@ func fsysRemove(cons *Cons, fsys *Fsys, argv []string) error {
 
 	fsys.fs.elk.RLock()
 	for argc > 0 {
-		file, err := openFile(fsys.fs, argv[0])
+		file, err := fsys.fs.openFile(argv[0])
 		if err != nil {
 			cons.printf("%s: %v\n", argv[0], err)
 		} else {
@@ -618,7 +618,7 @@ func fsysClri(cons *Cons, fsys *Fsys, argv []string) error {
 
 	fsys.fs.elk.RLock()
 	for argc > 0 {
-		if err := fileClriPath(fsys.fs, argv[0], uidadm); err != nil {
+		if err := fsys.fs.fileClriPath(argv[0], uidadm); err != nil {
 			cons.printf("clri %s: %v\n", argv[0], err)
 		}
 		argc--
@@ -1033,9 +1033,7 @@ func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
 
 // TODO(jnj): errors?
 func fsysEsearch(cons *Cons, fs *Fs, path string, elo uint32) int {
-	var f *File
-
-	f, err := openFile(fs, path)
+	f, err := fs.openFile(path)
 	if err != nil {
 		return 0
 	}
@@ -1177,7 +1175,7 @@ func fsysCreate(cons *Cons, fsys *Fsys, argv []string) error {
 		elem = path
 	}
 
-	parent, err := openFile(fsys.fs, parentPath)
+	parent, err := fsys.fs.openFile(parentPath)
 	if err != nil {
 		return err
 	}
@@ -1227,7 +1225,7 @@ func fsysStat(cons *Cons, fsys *Fsys, argv []string) error {
 
 	fsys.fs.elk.RLock()
 	for i := 0; i < argc; i++ {
-		f, err := openFile(fsys.fs, argv[i])
+		f, err := fsys.fs.openFile(argv[i])
 		if err != nil {
 			cons.printf("%s: %v\n", argv[i], err)
 			continue
@@ -1266,7 +1264,7 @@ func fsysWstat(cons *Cons, fsys *Fsys, argv []string) error {
 	fsys.fs.elk.RLock()
 	defer fsys.fs.elk.RUnlock()
 
-	f, err := openFile(fsys.fs, argv[0])
+	f, err := fsys.fs.openFile(argv[0])
 	if err != nil {
 		return fmt.Errorf("console wstat - walk - %v", err)
 	}

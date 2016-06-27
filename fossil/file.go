@@ -299,7 +299,7 @@ func (f *File) walk(elem string) (*File, error) {
 	return f._walk(elem, false)
 }
 
-func _openFile(fs *Fs, path string, partial bool) (*File, error) {
+func (fs *Fs) _openFile(path string, partial bool) (*File, error) {
 	f := fs.file
 	f.incRef()
 
@@ -327,8 +327,8 @@ func _openFile(fs *Fs, path string, partial bool) (*File, error) {
 	return f, nil
 }
 
-func openFile(fs *Fs, path string) (*File, error) {
-	return _openFile(fs, path, false)
+func (fs *Fs) openFile(path string) (*File, error) {
+	return fs._openFile(path, false)
 }
 
 func (f *File) setTmp(istmp int) {
@@ -1186,8 +1186,8 @@ func clri(f *File, uid string) error {
 	return f.metaRemove(uid)
 }
 
-func fileClriPath(fs *Fs, path string, uid string) error {
-	f, err := _openFile(fs, path, true)
+func (fs *Fs) fileClriPath(path string, uid string) error {
+	f, err := fs._openFile(path, true)
 	if err != nil {
 		return err
 	}
@@ -1725,10 +1725,8 @@ func (f *File) walkSources() error {
 	return nil
 }
 
-/*
- * convert File* to full path name in malloced string.
- * this hasn't been as useful as we hoped it would be.
- */
+// Get full path name.
+// this hasn't been as useful as we hoped it would be.
 func (f *File) name() string {
 	const root = "/"
 

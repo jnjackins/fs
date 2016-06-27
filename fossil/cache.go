@@ -540,7 +540,6 @@ func (c *Cache) _local(part int, addr uint32, mode int, epoch uint32) (*Block, e
 			return nil, fmt.Errorf("error reading block %#.8x", addr)
 		}
 	}
-	/* NOT REACHED */
 }
 
 func (c *Cache) local(part int, addr uint32, mode int) (*Block, error) {
@@ -1844,9 +1843,7 @@ func (c *Cache) flushThread() {
 	c.lk.Unlock()
 }
 
-/*
- * Flush the cache.
- */
+// Flush the cache.
 func (c *Cache) flush(wait bool) {
 	c.lk.Lock()
 	if wait {
