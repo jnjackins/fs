@@ -369,7 +369,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 		fatalf("bad score %q: %v", s, err)
 	}
 
-	z, err := venti.Dial(host, false)
+	z, err := venti.Dial(host)
 	if err != nil {
 		fatalf("connect to venti: %v", err)
 	}

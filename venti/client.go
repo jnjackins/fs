@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 )
 
@@ -15,160 +14,92 @@ var (
 	ENotConnected         = errors.New("not connected to venti server")
 )
 
-func Dial(host string, canfail bool) (*Session, error) {
-	var conn net.Conn
-	var na string
-
+func Dial(host string) (*Session, error) {
 	if host == "" {
-		host = os.Getenv("venti")
-	}
-	if host == "" {
-		host = "$venti"
+		return nil, errors.New("no venti host set")
 	}
 
-	var err error
-	if host == "" {
-		if !canfail {
-			err = errors.New("no venti host set")
-		}
-		na = ""
-		conn = nil
-	} else {
-		if !strings.Contains(host, ":") {
-			// append default venti port
-			host += ":17034"
-		}
-		conn, err = net.Dial("tcp", host)
+	if !strings.Contains(host, ":") {
+		// append default venti port
+		host += ":17034"
 	}
-
+	conn, err := net.Dial("tcp", host)
 	if err != nil {
-		if !canfail {
-			return nil, fmt.Errorf("venti dialstring %s: %v", na, err)
-		}
+		return nil, fmt.Errorf("dial %s: %v", host, err)
 	}
 
 	z := newSession()
-	if conn != nil {
-		z.connErr = err
+	if err := z.setConn(conn); err != nil {
+		return nil, fmt.Errorf("set session conn: %v")
 	}
-	z.SetConn(conn)
+
 	return z, nil
 }
 
 func (z *Session) Redial(host string) error {
-	if host == "" {
-		host = os.Getenv("venti")
-	}
-	if host == "" {
-		host = "$venti"
-	}
-
 	conn, err := net.Dial("tcp", host)
 	if err != nil {
 		return err
 	}
 
-	z.Reset()
-	z.SetConn(conn)
+	z.reset()
+	if err := z.setConn(conn); err != nil {
+		return fmt.Errorf("set session conn: %v")
+	}
+
 	return nil
 }
 
-/*
-func StdioServer(server string) (*Session, error) {
-	var pfd [2]int
-	var z *Session
-
-	if server == "" {
-		return nil, errors.New("empty server name")
-	}
-
-	if err := access(server, AEXEC); err != nil {
-		return nil, err
-	}
-
-	if err := syscall.Pipe(pfd[:]); err != nil {
-		return nil, err
-	}
-
-	switch fork() {
-	case -1:
-		syscall.Close(pfd[0])
-		syscall.Close(pfd[1])
-		return nil, OSError()
-
-	case 0:
-		syscall.Close(pfd[0])
-		syscall.Dup2(pfd[1], 0)
-		syscall.Dup2(pfd[1], 1)
-		execl(server, "ventiserver", "-i", nil)
-		os.Exit(1)
-	}
-
-	syscall.Close(pfd[1])
-
-	z = ClientAlloc()
-	SetFd(z, pfd[0])
-	return z, nil
-}
-*/
-
 func (z *Session) Ping() error {
-	p := packetAlloc()
+	p := allocPacket()
 
 	var err error
-	p, err = z.RPC_client(QPing, p)
+	p, err = z.rpc(qPing, p)
 	if err != nil {
 		return err
 	}
-	packetFree(p)
+	p.free()
 	return nil
 }
 
 func (z *Session) Hello() error {
-	return z._hello(false)
-}
-
-func (z *Session) _hello(locked bool) error {
-	var p *Packet
 	var buf [10]uint8
-	var sid string
 
-	p = packetAlloc()
-	defer packetFree(p)
+	p := allocPacket()
+	defer p.free()
 
-	if err := AddString(p, z.GetVersion()); err != nil {
+	if err := p.addString(z.GetVersion()); err != nil {
 		return err
 	}
-	if err := AddString(p, z.GetUid()); err != nil {
+	if err := p.addString(z.GetUid()); err != nil {
 		return err
 	}
 	buf[0] = uint8(GetCryptoStrength(z))
 	buf[1] = 0
 	buf[2] = 0
-	packetAppend(p, buf[:], 3)
+	p.append(buf[:], 3)
 	var err error
-	p, err = z.RPC_client(QHello, p)
+	p, err = z.rpc(qHello, p)
 	if err != nil {
 		return err
 	}
-	defer packetFree(p)
+	defer p.free()
 
-	if err := GetString(p, &sid); err != nil {
+	sid, err := p.getString()
+	if err != nil {
 		return err
 	}
-	if err := packetConsume(p, buf[:], 2); err != nil {
+	if err := p.consume(buf[:], 2); err != nil {
 		return err
 	}
-	if packetSize(p) != 0 {
+	if p.getSize() != 0 {
 		return EProtocolBotch_client
 	}
 
-	if !locked {
-		z.lk.Lock()
-		defer z.lk.Unlock()
-	}
+	z.lk.Lock()
+	defer z.lk.Unlock()
 	z.sid = sid
-	z.auth.state = AuthOK
+	z.auth.state = authOK
 	//z.inHash = nil
 	//z.outHash = nil
 
@@ -176,32 +107,32 @@ func (z *Session) _hello(locked bool) error {
 }
 
 func (z *Session) Sync() error {
-	var p *Packet = packetAlloc()
+	var p *packet = allocPacket()
 
 	var err error
-	p, err = z.RPC_client(QSync, p)
+	p, err = z.rpc(qSync, p)
 	if err != nil {
 		return err
 	}
-	defer packetFree(p)
+	defer p.free()
 
-	if packetSize(p) != 0 {
+	if p.getSize() != 0 {
 		return EProtocolBotch_client
 	}
 
 	return nil
 }
 
-func (z *Session) Write(score *Score, type_ int, buf []byte) error {
-	p := packetAlloc()
-	packetAppend(p, buf, len(buf))
-	return z.WritePacket(score, type_, p)
+func (z *Session) Write(score *Score, typ int, buf []byte) error {
+	p := allocPacket()
+	p.append(buf, len(buf))
+	return z.writePacket(score, typ, p)
 }
 
-func (z *Session) WritePacket(score *Score, type_ int, p *Packet) error {
-	n := packetSize(p)
+func (z *Session) writePacket(score *Score, typ int, p *packet) error {
+	n := p.getSize()
 	if n > MaxLumpSize || n < 0 {
-		packetFree(p)
+		p.free()
 		return ELumpSize
 	}
 
@@ -210,68 +141,65 @@ func (z *Session) WritePacket(score *Score, type_ int, p *Packet) error {
 		return nil
 	}
 
-	hdr, _ := packetHeader(p, 4)
-	hdr[0] = byte(type_)
+	hdr, _ := p.header(4)
+	hdr[0] = byte(typ)
 	hdr[1] = 0 /* pad */
 	hdr[2] = 0 /* pad */
 	hdr[3] = 0 /* pad */
 	var err error
-	p, err = z.RPC_client(QWrite, p)
+	p, err = z.rpc(qWrite, p)
 	if err != nil {
 		return err
 	}
-	defer packetFree(p)
+	defer p.free()
 
-	if err := packetConsume(p, score[:], ScoreSize); err != nil {
+	if err := p.consume(score[:], ScoreSize); err != nil {
 		return err
 	}
-	if packetSize(p) != 0 {
+	if p.getSize() != 0 {
 		return EProtocolBotch_client
 	}
 
 	return nil
 }
 
-func (z *Session) Read(score *Score, type_ int, buf []byte) (int, error) {
-	var p *Packet
-
-	var err error
-	p, err = z.ReadPacket(score, type_, len(buf))
+func (z *Session) Read(score *Score, typ int, buf []byte) (int, error) {
+	p, err := z.readPacket(score, typ, len(buf))
 	if err != nil {
 		return -1, err
 	}
-	n := packetSize(p)
-	packetCopy(p, buf, 0, n)
-	packetFree(p)
+	n := p.getSize()
+	p.copy(buf, 0, n)
+	p.free()
 	return n, nil
 }
 
-func (z *Session) ReadPacket(score *Score, type_ int, n int) (*Packet, error) {
-	var p *Packet
-	var buf [10]uint8
-
+func (z *Session) readPacket(score *Score, typ int, n int) (*packet, error) {
 	if n < 0 || n > MaxLumpSize {
 		return nil, ELumpSize
 	}
 
-	p = packetAlloc()
+	p := allocPacket()
 	if bytes.Compare(score[:], ZeroScore[:]) == 0 {
 		return p, nil
 	}
 
-	packetAppend(p, score[:], ScoreSize)
-	buf[0] = uint8(type_)
+	p.append(score[:], ScoreSize)
+
+	var buf [10]uint8
+	buf[0] = uint8(typ)
 	buf[1] = 0 /* pad */
 	buf[2] = uint8(n >> 8)
 	buf[3] = uint8(n)
-	packetAppend(p, buf[:], 4)
-	return z.RPC_client(QRead, p)
+
+	p.append(buf[:], 4)
+
+	return z.rpc(qRead, p)
 }
 
-func (z *Session) RPC_client(op int, p *Packet) (*Packet, error) {
+func (z *Session) rpc(op int, p *packet) (*packet, error) {
 	var hdr []byte
 	var buf [2]uint8
-	var errstr string
 	var err error
 
 	if z == nil {
@@ -282,37 +210,34 @@ func (z *Session) RPC_client(op int, p *Packet) (*Packet, error) {
 	 * single threaded for the momment
 	 */
 	z.lk.Lock()
-	if z.cstate != StateConnected {
+	if z.cstate != stateConnected {
 		err = ENotConnected
 		goto Err
 	}
 
-	hdr, _ = packetHeader(p, 2)
+	hdr, _ = p.header(2)
 	hdr[0] = byte(op) /* op */
 	hdr[1] = 0        /* tid */
-	z.Debug("client send: ")
-	z.DebugMesg(p, "\n")
-	if err = z.SendPacket(p); err != nil {
+	if err = z.sendPacket(p); err != nil {
 		p = nil
 		goto Err
 	}
 
-	p, err = z.RecvPacket()
+	p, err = z.recvPacket()
 	if err != nil {
 		goto Err
 	}
-	z.Debug("client recv: ")
-	z.DebugMesg(p, "\n")
-	if err = packetConsume(p, buf[:], 2); err != nil {
+	if err = p.consume(buf[:], 2); err != nil {
 		goto Err
 	}
-	if buf[0] == RError {
-		if err = GetString(p, &errstr); err != nil {
+	if buf[0] == rError {
+		errstr, err := p.getString()
+		if err != nil {
 			err = EProtocolBotch_client
 			goto Err
 		}
 
-		packetFree(p)
+		p.free()
 		z.lk.Unlock()
 		return nil, errors.New(errstr)
 	}
@@ -326,11 +251,10 @@ func (z *Session) RPC_client(op int, p *Packet) (*Packet, error) {
 	return p, nil
 
 Err:
-	z.Debug("RPC failed: %v\n", err)
 	if p != nil {
-		packetFree(p)
+		p.free()
 	}
 	z.lk.Unlock()
-	z.Disconnect(1)
+	z.disconnect(1)
 	return nil, err
 }

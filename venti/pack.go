@@ -16,6 +16,15 @@ func checkSize(n int) error {
 	return nil
 }
 
+type Root struct {
+	Version   uint16
+	Name      string
+	Type      string
+	Score     *Score
+	BlockSize uint16
+	Prev      *Score
+}
+
 func RootPack(r *Root, buf []byte) {
 	pack.U16PUT(buf, r.Version)
 	buf = buf[2:]
@@ -54,6 +63,25 @@ func RootUnpack(r *Root, buf []byte) error {
 	buf = buf[ScoreSize:]
 
 	return nil
+}
+
+const (
+	EntryActive     = 1 << 0
+	EntryDir        = 1 << 1
+	EntryDepthShift = 2
+	EntryDepthMask  = 0x7 << 2
+	EntryLocal      = 1 << 5
+	EntryNoArchive  = 1 << 6
+)
+
+type Entry struct {
+	gen   uint32
+	psize uint16
+	dsize uint16
+	depth uint8
+	flags uint8
+	size  uint64
+	score [ScoreSize]uint8
 }
 
 func EntryPack(e *Entry, p []byte, index int) {

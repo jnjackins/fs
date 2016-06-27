@@ -9,6 +9,13 @@ var (
 	EProtocolBotch_server = errors.New("venti protocol botch")
 )
 
+type ServerVtbl struct {
+	read    func(*Session, [ScoreSize]uint8, int, int) *packet
+	write   func(*Session, [ScoreSize]uint8, int, *packet) int
+	closing func(*Session, int)
+	sync    func(*Session)
+}
+
 func NewServer(bl *ServerVtbl) *Session {
 	z := newSession()
 	z.bl = new(ServerVtbl)
@@ -18,11 +25,11 @@ func NewServer(bl *ServerVtbl) *Session {
 }
 
 func srvHello(z *Session, version string, uid string, _1 int, _2 []byte, _3 int, _4 []byte, _5 int) error {
-	z.auth.state = AuthFailed
+	z.auth.state = authFailed
 	z.lk.Lock()
 	defer z.lk.Unlock()
 
-	if z.auth.state != AuthHello {
+	if z.auth.state != authHello {
 		return EAuthState
 	}
 
@@ -31,121 +38,110 @@ func srvHello(z *Session, version string, uid string, _1 int, _2 []byte, _3 int,
 	}
 
 	z.uid = uid
-	z.auth.state = AuthOK
+	z.auth.state = authOK
 	return nil
 }
 
-func dispatchHello(z *Session, pkt **Packet) error {
-	var version string
-	var uid string
-	var crypto []byte
-	var codec []byte
+func dispatchHello(z *Session, pkt **packet) error {
+	p := *pkt
+
+	version, err := p.getString()
+	if err != nil {
+		return err
+	}
+	uid, err := p.getString()
+	if err != nil {
+		return err
+	}
+
 	var buf [10]uint8
-	var ncrypto int
-	var ncodec int
-	var cryptoStrength int
-	var p *Packet
-
-	p = *pkt
-
-	version = ""
-	uid = ""
-	crypto = nil
-	codec = nil
-
-	if err := GetString(p, &version); err != nil {
+	if err := p.consume(buf[:], 2); err != nil {
 		return err
 	}
-	if err := GetString(p, &uid); err != nil {
-		return err
-	}
-	if err := packetConsume(p, buf[:], 2); err != nil {
-		return err
-	}
-	cryptoStrength = int(buf[0])
-	ncrypto = int(buf[1])
-	crypto = make([]byte, ncrypto)
-	if err := packetConsume(p, crypto, ncrypto); err != nil {
+	cryptoStrength := int(buf[0])
+	ncrypto := int(buf[1])
+	crypto := make([]byte, ncrypto)
+	if err := p.consume(crypto, ncrypto); err != nil {
 		return err
 	}
 
-	if err := packetConsume(p, buf[:], 1); err != nil {
+	if err := p.consume(buf[:], 1); err != nil {
 		return err
 	}
-	ncodec = int(buf[0])
-	codec = make([]byte, ncodec)
-	if err := packetConsume(p, codec, ncodec); err != nil {
+	ncodec := int(buf[0])
+	codec := make([]byte, ncodec)
+	if err := p.consume(codec, ncodec); err != nil {
 		return err
 	}
 
-	if packetSize(p) != 0 {
+	if p.getSize() != 0 {
 		return EProtocolBotch_server
 	}
 
 	if err := srvHello(z, version, uid, cryptoStrength, crypto, ncrypto, codec, ncodec); err != nil {
-		packetFree(p)
+		p.free()
 		*pkt = nil
 	} else {
-		if err := AddString(p, z.GetSid()); err != nil {
+		if err := p.addString(z.GetSid()); err != nil {
 			return err
 		}
 		buf[0] = uint8(GetCrypto(z))
 		buf[1] = uint8(GetCodec(z))
-		packetAppend(p, buf[:], 2)
+		p.append(buf[:], 2)
 	}
 
 	return nil
 }
 
-func dispatchRead(z *Session, pkt **Packet) error {
-	var p *Packet
+func dispatchRead(z *Session, pkt **packet) error {
+	var p *packet
 	var type_ int
 	var n int
 	var score [ScoreSize]uint8
 	var buf [4]uint8
 
 	p = *pkt
-	if err := packetConsume(p, score[:], ScoreSize); err != nil {
+	if err := p.consume(score[:], ScoreSize); err != nil {
 		return err
 	}
-	if err := packetConsume(p, buf[:], 4); err != nil {
+	if err := p.consume(buf[:], 4); err != nil {
 		return err
 	}
 	type_ = int(buf[0])
 	n = int(buf[2])<<8 | int(buf[3])
-	if packetSize(p) != 0 {
+	if p.getSize() != 0 {
 		return EProtocolBotch_server
 	}
 
-	packetFree(p)
+	p.free()
 	*pkt = (z.bl.read)(z, score, type_, n)
 	return nil
 }
 
-func dispatchWrite(z *Session, pkt **Packet) error {
-	var p *Packet
+func dispatchWrite(z *Session, pkt **packet) error {
+	var p *packet
 	var type_ int
 	var score [ScoreSize]uint8
 	var buf [4]uint8
 
 	p = *pkt
-	if err := packetConsume(p, buf[:], 4); err != nil {
+	if err := p.consume(buf[:], 4); err != nil {
 		return err
 	}
 	type_ = int(buf[0])
-	if (z.bl.write)(z, score, type_, p) == 0 {
+	if z.bl.write(z, score, type_, p) == 0 {
 		*pkt = nil
 	} else {
-		*pkt = packetAlloc()
-		packetAppend(*pkt, score[:], ScoreSize)
+		*pkt = allocPacket()
+		(*pkt).append(score[:], ScoreSize)
 	}
 
 	return nil
 }
 
-func dispatchSync(z *Session, pkt **Packet) error {
-	(z.bl.sync)(z)
-	if packetSize(*pkt) != 0 {
+func dispatchSync(z *Session, pkt **packet) error {
+	z.bl.sync(z)
+	if (*pkt).getSize() != 0 {
 		return EProtocolBotch_server
 	}
 
@@ -157,12 +153,12 @@ func Export(z *Session) error {
 		return ENotServer
 	}
 
-	go ExportThread(z)
+	go exportThread(z)
 	return nil
 }
 
-func ExportThread(z *Session) {
-	var p *Packet
+func exportThread(z *Session) {
+	var p *packet
 	var buf [10]uint8
 	var hdr []byte
 	var op int
@@ -176,21 +172,13 @@ func ExportThread(z *Session) {
 		goto Exit
 	}
 
-	z.Debug("server connected!\n")
-	if false {
-		z.SetDebug(true)
-	}
-
 	for {
-		p, err = z.RecvPacket()
+		p, err = z.recvPacket()
 		if err != nil {
 			break
 		}
 
-		z.Debug("server recv: ")
-		z.DebugMesg(p, "\n")
-
-		if err = packetConsume(p, buf[:], 2); err != nil {
+		if err = p.consume(buf[:], 2); err != nil {
 			err = EProtocolBotch_server
 			break
 		}
@@ -202,52 +190,49 @@ func ExportThread(z *Session) {
 			err = EProtocolBotch_server
 			goto Exit
 
-		case QPing:
+		case qPing:
 			break
 
-		case QGoodbye:
+		case qGoodbye:
 			clean = 1
 			goto Exit
 
-		case QHello:
+		case qHello:
 			if err = dispatchHello(z, &p); err != nil {
 				goto Exit
 			}
 
-		case QRead:
+		case qRead:
 			if err = dispatchRead(z, &p); err != nil {
 				goto Exit
 			}
 
-		case QWrite:
+		case qWrite:
 			if err = dispatchWrite(z, &p); err != nil {
 				goto Exit
 			}
 
-		case QSync:
+		case qSync:
 			if err = dispatchSync(z, &p); err != nil {
 				goto Exit
 			}
 		}
 
 		if p != nil {
-			hdr, _ = packetHeader(p, 2)
+			hdr, _ = p.header(2)
 			hdr[0] = byte(op + 1)
 			hdr[1] = byte(tid)
 		} else {
-			p = packetAlloc()
-			hdr, _ = packetHeader(p, 2)
-			hdr[0] = RError
+			p = allocPacket()
+			hdr, _ = p.header(2)
+			hdr[0] = rError
 			hdr[1] = byte(tid)
-			if err = AddString(p, err.Error()); err != nil {
+			if err = p.addString(err.Error()); err != nil {
 				goto Exit
 			}
 		}
 
-		z.Debug("server send: ")
-		z.DebugMesg(p, "\n")
-
-		if err = z.SendPacket(p); err != nil {
+		if err = z.sendPacket(p); err != nil {
 			p = nil
 			goto Exit
 		}
@@ -255,11 +240,10 @@ func ExportThread(z *Session) {
 
 Exit:
 	if p != nil {
-		packetFree(p)
+		p.free()
 	}
 	if z.bl.closing != nil {
 		z.bl.closing(z, clean)
 	}
 	z.Close()
-	z.Free()
 }

@@ -8,49 +8,49 @@ import (
 
 /* op codes */
 const (
-	RError = 1 + iota
-	QPing
-	RPing
-	QHello
-	RHello
-	QGoodbye
-	RGoodbye
-	QAuth0
-	RAuth0
-	QAuth1
-	RAuth1
-	QRead
-	RRead
-	QWrite
-	RWrite
-	QSync
-	RSync
-	MaxOp
+	rError = 1 + iota
+	qPing
+	rPing
+	qHello
+	rHello
+	qGoodbye
+	rGoodbye
+	qAuth0
+	rAuth0
+	qAuth1
+	rAuth1
+	qRead
+	rRead
+	qWrite
+	rWrite
+	qSync
+	rSync
+	maxOp
 )
 
 /* connection state */
 const (
-	StateAlloc = iota
-	StateConnected
-	StateClosed
+	stateAlloc = iota
+	stateConnected
+	stateClosed
 )
 
 /* auth state */
 const (
-	AuthHello = iota
-	Auth0
-	Auth1
-	AuthOK
-	AuthFailed
+	authHello = iota
+	auth0
+	auth1
+	authOK
+	authFailed
 )
 
-type Version struct {
+type version struct {
 	version int
 	s       string
 }
 
-var Versions = []Version{
-	{Version02, "02"},
+var versions = []version{
+	{version02, "02"},
 }
 
 var (
@@ -71,12 +71,10 @@ type Session struct {
 	bl             *ServerVtbl
 	cstate         int
 	conn           net.Conn
-	connErr        error
 	auth           Auth
 	inLock         *sync.Mutex
-	part           *Packet
+	part           *packet
 	outLock        *sync.Mutex
-	debug          bool
 	version        int
 	ref            int
 	uid            string
@@ -90,10 +88,10 @@ type Session struct {
 func newSession() *Session {
 	z := new(Session)
 	z.lk = new(sync.Mutex)
-	//z->inHash = Sha1Alloc();
+	//z.inHash = Sha1Alloc()
 	z.inLock = new(sync.Mutex)
-	z.part = packetAlloc()
-	//z->outHash = Sha1Alloc();
+	z.part = allocPacket()
+	//z.outHash = Sha1Alloc()
 	z.outLock = new(sync.Mutex)
 	z.conn = nil
 	z.uid = "anonymous"
@@ -101,11 +99,11 @@ func newSession() *Session {
 	return z
 }
 
-func (z *Session) Reset() {
+func (z *Session) reset() {
 	z.lk.Lock()
 	defer z.lk.Unlock()
 
-	z.cstate = StateAlloc
+	z.cstate = stateAlloc
 	if z.conn != nil {
 		z.conn.Close()
 		z.conn = nil
@@ -113,45 +111,37 @@ func (z *Session) Reset() {
 }
 
 func (z *Session) Connected() bool {
-	return z.cstate == StateConnected
+	return z.cstate == stateConnected
 }
 
-func (z *Session) Disconnect(errno int) {
-	var p *Packet
+func (z *Session) disconnect(errno int) {
+	var p *packet
 	var b []byte
 
-	z.Debug("Disconnect\n")
 	z.lk.Lock()
 	defer z.lk.Unlock()
 
-	if z.cstate == StateConnected && errno == 0 && z.bl == nil {
+	if z.cstate == stateConnected && errno == 0 && z.bl == nil {
 		/* clean shutdown */
-		p = packetAlloc()
+		p = allocPacket()
 
-		b, _ = packetHeader(p, 2)
-		b[0] = QGoodbye
+		b, _ = p.header(2)
+		b[0] = qGoodbye
 		b[1] = 0
-		z.SendPacket(p)
+		z.sendPacket(p)
 	}
 
 	if z.conn != nil {
 		z.conn.Close()
 	}
 	z.conn = nil
-	z.cstate = StateClosed
+	z.cstate = stateClosed
 }
 
 func (z *Session) Close() {
-	z.Disconnect(0)
-}
-
-func (z *Session) Free() {
-	if z == nil {
-		return
-	}
-	packetFree(z.part)
+	z.disconnect(0)
+	z.part.free()
 	*z = Session{}
-	z.conn = nil
 }
 
 func (z *Session) GetUid() string {
@@ -162,20 +152,11 @@ func (z *Session) GetSid() string {
 	return z.sid
 }
 
-func (z *Session) SetDebug(debug bool) bool {
+func (z *Session) setConn(conn net.Conn) error {
 	z.lk.Lock()
 	defer z.lk.Unlock()
 
-	old := z.debug
-	z.debug = debug
-	return old
-}
-
-func (z *Session) SetConn(conn net.Conn) error {
-	z.lk.Lock()
-	defer z.lk.Unlock()
-
-	if z.cstate != StateAlloc {
+	if z.cstate != stateAlloc {
 		return errors.New("bad state")
 	}
 	if z.conn != nil {
@@ -185,12 +166,8 @@ func (z *Session) SetConn(conn net.Conn) error {
 	return nil
 }
 
-func (z *Session) GetConn() net.Conn {
-	return z.conn
-}
-
 func (z *Session) SetCryptoStrength(c int) error {
-	if z.cstate != StateAlloc {
+	if z.cstate != stateAlloc {
 		return errors.New("bad state")
 	}
 	if c != CryptoStrengthNone {
@@ -207,7 +184,7 @@ func (z *Session) SetCompression(conn net.Conn) error {
 	z.lk.Lock()
 	defer z.lk.Unlock()
 
-	if z.cstate != StateAlloc {
+	if z.cstate != stateAlloc {
 		return errors.New("bad state")
 	}
 
@@ -232,16 +209,16 @@ func (z *Session) GetVersion() string {
 	if v == 0 {
 		return "unknown"
 	}
-	for i := range Versions {
-		if Versions[i].version == v {
-			return Versions[i].s
+	for i := range versions {
+		if versions[i].version == v {
+			return versions[i].s
 		}
 	}
 	panic("not reached")
 }
 
-/* hold z->inLock */
-func (z *Session) VersionRead(prefix string, ret *int) error {
+/* hold z.inLock */
+func (z *Session) versionRead(prefix string, ret *int) error {
 	q := prefix
 	buf := make([]byte, 0, MaxStringSize)
 	for {
@@ -271,19 +248,17 @@ func (z *Session) VersionRead(prefix string, ret *int) error {
 		}
 	}
 
-	z.Debug("version string in: %s\n", buf)
-
 	p := buf[len(prefix):]
 	for {
 		var i int
 		for i = 0; i < len(p) && p[i] != ':' && p[i] != '-'; i++ {
 		}
-		for j := range Versions {
-			if len(Versions[j].s) != i {
+		for j := range versions {
+			if len(versions[j].s) != i {
 				continue
 			}
-			if Versions[j].s == string(p[:i]) {
-				*ret = Versions[j].version
+			if versions[j].s == string(p[:i]) {
+				*ret = versions[j].version
 				return nil
 			}
 		}
@@ -296,12 +271,12 @@ func (z *Session) VersionRead(prefix string, ret *int) error {
 	}
 }
 
-func (z *Session) RecvPacket() (*Packet, error) {
+func (z *Session) recvPacket() (*packet, error) {
 	var buf [10]uint8
-	var p *Packet
+	var p *packet
 	var size int
 
-	if z.cstate != StateConnected {
+	if z.cstate != stateConnected {
 		return nil, errors.New("session not connected")
 	}
 
@@ -311,22 +286,22 @@ func (z *Session) RecvPacket() (*Packet, error) {
 	p = z.part
 
 	/* get enough for head size */
-	size = packetSize(p)
+	size = p.getSize()
 
 	for size < 2 {
-		b, err := packetTrailer(p, MaxFragSize)
+		b, err := p.trailer(maxFragSize)
 		if err != nil {
 			return nil, err
 		}
-		n, err := z.conn.Read(b[:MaxFragSize])
+		n, err := z.conn.Read(b[:maxFragSize])
 		if err != nil {
 			return nil, err
 		}
 		size += n
-		packetTrim(p, 0, size)
+		p.trim(0, size)
 	}
 
-	if err := packetConsume(p, buf[:], 2); err != nil {
+	if err := p.consume(buf[:], 2); err != nil {
 		return nil, err
 	}
 	length := int(buf[0])<<8 | int(buf[1])
@@ -334,10 +309,10 @@ func (z *Session) RecvPacket() (*Packet, error) {
 
 	for size < length {
 		n := length - size
-		if n > MaxFragSize {
-			n = MaxFragSize
+		if n > maxFragSize {
+			n = maxFragSize
 		}
-		b, err := packetTrailer(p, n)
+		b, err := p.trailer(n)
 		if err != nil {
 			return nil, err
 		}
@@ -347,67 +322,66 @@ func (z *Session) RecvPacket() (*Packet, error) {
 		size += n
 	}
 
-	return packetSplit(p, int(length))
+	return p.split(length)
 }
 
-func (z *Session) SendPacket(p *Packet) error {
-	var ioc IOchunk
+func (z *Session) sendPacket(p *packet) error {
+	var ioc ioChunk
 	var n int
 	var buf [2]uint8
 
 	/* add framing */
-	n = packetSize(p)
+	n = p.getSize()
 
 	if n >= 1<<16 {
-		packetFree(p)
+		p.free()
 		return EBigPacket
 	}
 
 	buf[0] = uint8(n >> 8)
 	buf[1] = uint8(n)
-	packetPrefix(p, buf[:], 2)
+	p.prefix(buf[:], 2)
 
 	for {
-		n, _ := packetFragments(p, []IOchunk{ioc}, 0)
+		n, _ := p.fragments([]ioChunk{ioc}, 0)
 		if n == 0 {
 			break
 		}
 		_, err := z.conn.Write(ioc.addr)
 		if err != nil {
-			packetFree(p)
+			p.free()
 			return err
 		}
 
-		packetConsume(p, nil, n)
+		p.consume(nil, n)
 	}
 
-	packetFree(p)
+	p.free()
 	return nil
 }
 
-func GetString(p *Packet, ret *string) error {
+func (p *packet) getString() (string, error) {
 	var buf [2]uint8
 	var n int
 
-	if err := packetConsume(p, buf[:], 2); err != nil {
-		return err
+	if err := p.consume(buf[:], 2); err != nil {
+		return "", err
 	}
 	n = (int(buf[0]) << 8) + int(buf[1])
 	if n > MaxStringSize {
-		return EBigString
+		return "", EBigString
 	}
 
 	s := make([]byte, n)
 	//setmalloctag(s, getcallerpc(&p))
-	if err := packetConsume(p, s, n); err != nil {
-		return err
+	if err := p.consume(s, n); err != nil {
+		return "", err
 	}
 
-	*ret = string(s)
-	return nil
+	return string(s), nil
 }
 
-func AddString(p *Packet, s string) error {
+func (p *packet) addString(s string) error {
 	var buf [2]uint8
 	var n int
 
@@ -422,20 +396,21 @@ func AddString(p *Packet, s string) error {
 
 	buf[0] = uint8(n >> 8)
 	buf[1] = uint8(n)
-	packetAppend(p, buf[:], 2)
-	packetAppend(p, []byte(s), n)
+	p.append(buf[:], 2)
+	p.append([]byte(s), n)
 	return nil
 }
 
 func (z *Session) Connect(password string) error {
 	z.lk.Lock()
 	defer z.lk.Unlock()
-	if z.cstate != StateAlloc {
+
+	if z.cstate != stateAlloc {
 		return errors.New("bad session state")
 	}
 
 	if z.conn == nil {
-		return z.connErr
+		panic("nil conn")
 	}
 
 	/* be a little anal */
@@ -445,11 +420,11 @@ func (z *Session) Connect(password string) error {
 	defer z.outLock.Unlock()
 
 	version := "venti-"
-	for i := range Versions {
+	for i := range versions {
 		if i != 0 {
 			version += ":"
 		}
-		version += Versions[i].s
+		version += versions[i].s
 	}
 	version += "-libventi\n"
 	if len(version) >= MaxStringSize {
@@ -463,21 +438,19 @@ func (z *Session) Connect(password string) error {
 		goto Err
 	}
 
-	z.Debug("version string out: %s", version)
-
-	if err = z.VersionRead("venti-", &z.version); err != nil {
+	if err = z.versionRead("venti-", &z.version); err != nil {
 		goto Err
 	}
 
-	z.Debug("version = %d: %s\n", z.version, z.GetVersion())
-
-	z.cstate = StateConnected
+	z.cstate = stateConnected
 
 	if z.bl != nil {
 		return nil
 	}
 
-	err = z._hello(true)
+	z.lk.Unlock()
+	err = z.Hello()
+	z.lk.Lock()
 	if err != nil {
 		goto Err
 	}
@@ -489,6 +462,6 @@ Err:
 		z.conn.Close()
 	}
 	z.conn = nil
-	z.cstate = StateClosed
+	z.cstate = stateClosed
 	return err
 }

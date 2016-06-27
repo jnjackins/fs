@@ -1,7 +1,6 @@
 package venti
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"errors"
 	"fmt"
@@ -9,55 +8,57 @@ import (
 	"sync"
 )
 
-type Packet struct {
+type packet struct {
 	size  int
 	asize int
-	next  *Packet
-	first *Frag
-	last  *Frag
-	local [NLocalFrag]Frag
+	next  *packet
+	first *frag
+	last  *frag
+	local [nLocalFrag]frag
 }
 
-type Mem struct {
+type mem struct {
 	lk   *sync.Mutex
 	ref  int
 	buf  []byte
 	eoff int // TODO: this is just len(buf)?
 	roff int
 	woff int
-	next *Mem
+	next *mem
 }
 
-type Frag struct {
+const maxFragSize = 9 * 1024
+
+type frag struct {
 	state int
-	mem   *Mem
+	mem   *mem
 	roff  int
 	woff  int
-	next  *Frag
+	next  *frag
 }
 
-type IOchunk struct {
+type ioChunk struct {
 	addr   []byte
 	length uint // TODO: necessary?
 }
 
 const (
-	BigMemSize   = MaxFragSize
-	SmallMemSize = BigMemSize / 8
-	NLocalFrag   = 2
+	bigMemSize   = maxFragSize
+	smallMemSize = bigMemSize / 8
+	nLocalFrag   = 2
 )
 
 /* position to carve out of a Mem */
 const (
-	PFront = iota
-	PMiddle
-	PEnd
+	pFront = iota
+	pMiddle
+	pEnd
 )
 
 const (
-	FragLocalFree = iota
-	FragLocalAlloc
-	FragGlobal
+	fragLocalFree = iota
+	fragLocalAlloc
+	fragGlobal
 )
 
 var (
@@ -68,25 +69,23 @@ var (
 
 var freeList struct {
 	lk        sync.Mutex
-	packet    *Packet
+	packet    *packet
 	npacket   int
-	frag      *Frag
+	frag      *frag
 	nfrag     int
-	bigMem    *Mem
+	bigMem    *mem
 	nbigMem   int
-	smallMem  *Mem
+	smallMem  *mem
 	nsmallMem int
 }
 
-func _FRAGSIZE(f *Frag) int { return f.woff - f.roff }
+func _FRAGSIZE(f *frag) int { return f.woff - f.roff }
 
-func _FRAGASIZE(f *Frag) int { return f.mem.eoff }
+func _FRAGASIZE(f *frag) int { return f.mem.eoff }
 
-func packetAlloc() *Packet {
-	var p *Packet
-
+func allocPacket() *packet {
 	(&freeList.lk).Lock()
-	p = freeList.packet
+	p := freeList.packet
 	if p != nil {
 		freeList.packet = p.next
 	} else {
@@ -95,7 +94,7 @@ func packetAlloc() *Packet {
 	(&freeList.lk).Unlock()
 
 	if p == nil {
-		p = new(Packet)
+		p = new(packet)
 	} else {
 		if p.size != -1 {
 			panic("p.size")
@@ -110,9 +109,9 @@ func packetAlloc() *Packet {
 	return p
 }
 
-func packetFree(p *Packet) {
-	var f *Frag
-	var ff *Frag
+func (p *packet) free() {
+	var f *frag
+	var ff *frag
 
 	if false {
 		fmt.Fprintf(os.Stderr, "packetFree %p\n", p)
@@ -134,63 +133,15 @@ func packetFree(p *Packet) {
 	(&freeList.lk).Unlock()
 }
 
-func packetDup(p *Packet, offset int, n int) (*Packet, error) {
-	var f *Frag
-	var ff *Frag
-	var pp *Packet
-
-	if offset < 0 || n < 0 || offset+n > p.size {
-		return nil, EBadSize
-	}
-
-	pp = packetAlloc()
-	if n == 0 {
-		return pp, nil
-	}
-
-	pp.size = n
-
-	/* skip offset */
-	for f = p.first; offset >= _FRAGSIZE(f); f = f.next {
-		offset -= _FRAGSIZE(f)
-	}
-
-	/* first frag */
-	ff = fragDup(pp, f)
-
-	ff.roff += offset
-	pp.first = ff
-	n -= _FRAGSIZE(ff)
-	pp.asize += _FRAGASIZE(ff)
-
-	/* the remaining */
-	for n > 0 {
-		f = f.next
-		ff.next = fragDup(pp, f)
-		ff = ff.next
-		n -= _FRAGSIZE(ff)
-		pp.asize += _FRAGASIZE(ff)
-	}
-
-	/* fix up last frag: note n <= 0 */
-	ff.woff += n
-
-	ff.next = nil
-	pp.last = ff
-
-	return pp, nil
-}
-
-func packetSplit(p *Packet, n int) (*Packet, error) {
-	var pp *Packet
-	var f *Frag
-	var ff *Frag
+func (p *packet) split(n int) (*packet, error) {
+	var f *frag
+	var ff *frag
 
 	if n < 0 || n > p.size {
 		return nil, EPacketSize
 	}
 
-	pp = packetAlloc()
+	pp := allocPacket()
 	if n == 0 {
 		return pp, nil
 	}
@@ -221,18 +172,18 @@ func packetSplit(p *Packet, n int) (*Packet, error) {
 	return pp, nil
 }
 
-func packetConsume(p *Packet, buf []byte, n int) error {
+func (p *packet) consume(buf []byte, n int) error {
 	if buf != nil {
-		if err := packetCopy(p, buf, 0, n); err != nil {
+		if err := p.copy(buf, 0, n); err != nil {
 			return err
 		}
 	}
-	return packetTrim(p, n, p.size-n)
+	return p.trim(n, p.size-n)
 }
 
-func packetTrim(p *Packet, offset int, n int) error {
-	var f *Frag
-	var ff *Frag
+func (p *packet) trim(offset int, n int) error {
+	var f *frag
+	var ff *frag
 
 	if offset < 0 || offset > p.size {
 		return EPacketOffset
@@ -292,11 +243,11 @@ func packetTrim(p *Packet, offset int, n int) error {
 	return nil
 }
 
-func packetHeader(p *Packet, n int) ([]byte, error) {
-	var f *Frag
-	var m *Mem
+func (p *packet) header(n int) ([]byte, error) {
+	var f *frag
+	var m *mem
 
-	if n <= 0 || n > MaxFragSize {
+	if n <= 0 || n > maxFragSize {
 		return nil, EPacketSize
 	}
 
@@ -316,7 +267,7 @@ func packetHeader(p *Packet, n int) ([]byte, error) {
 	}
 
 	/* add frag to front */
-	f = fragAlloc(p, n, PEnd, p.first)
+	f = fragAlloc(p, n, pEnd, p.first)
 
 	p.asize += _FRAGASIZE(f)
 	if p.first == nil {
@@ -326,11 +277,11 @@ func packetHeader(p *Packet, n int) ([]byte, error) {
 	return f.mem.buf[f.roff:], nil
 }
 
-func packetTrailer(p *Packet, n int) ([]byte, error) {
-	var m *Mem
-	var f *Frag
+func (p *packet) trailer(n int) ([]byte, error) {
+	var m *mem
+	var f *frag
 
-	if n <= 0 || n > MaxFragSize {
+	if n <= 0 || n > maxFragSize {
 		return nil, EPacketSize
 	}
 
@@ -349,9 +300,9 @@ func packetTrailer(p *Packet, n int) ([]byte, error) {
 	}
 
 	/* add frag to end */
-	pos := PFront
+	pos := pFront
 	if p.first == nil {
-		pos = PMiddle
+		pos = pMiddle
 	}
 	f = fragAlloc(p, n, pos, nil)
 
@@ -365,10 +316,10 @@ func packetTrailer(p *Packet, n int) ([]byte, error) {
 	return f.mem.buf[f.roff:], nil
 }
 
-func packetPrefix(p *Packet, buf []byte, n int) int {
-	var f *Frag
+func (p *packet) prefix(buf []byte, n int) int {
+	var f *frag
 	var nn int
-	var m *Mem
+	var m *mem
 
 	if n <= 0 {
 		return 1
@@ -394,10 +345,10 @@ func packetPrefix(p *Packet, buf []byte, n int) int {
 
 	for n > 0 {
 		nn = n
-		if nn > MaxFragSize {
-			nn = MaxFragSize
+		if nn > maxFragSize {
+			nn = maxFragSize
 		}
-		f = fragAlloc(p, nn, PEnd, p.first)
+		f = fragAlloc(p, nn, pEnd, p.first)
 		p.asize += _FRAGASIZE(f)
 		if p.first == nil {
 			p.last = f
@@ -410,10 +361,10 @@ func packetPrefix(p *Packet, buf []byte, n int) int {
 	return 1
 }
 
-func packetAppend(p *Packet, buf []byte, n int) int {
-	var f *Frag
+func (p *packet) append(buf []byte, n int) int {
+	var f *frag
 	var nn int
-	var m *Mem
+	var m *mem
 
 	if n <= 0 {
 		return 1
@@ -438,12 +389,12 @@ func packetAppend(p *Packet, buf []byte, n int) int {
 
 	for n > 0 {
 		nn = n
-		if nn > MaxFragSize {
-			nn = MaxFragSize
+		if nn > maxFragSize {
+			nn = maxFragSize
 		}
-		pos := PFront
+		pos := pFront
 		if p.first == nil {
-			pos = PMiddle
+			pos = pMiddle
 		}
 		f = fragAlloc(p, nn, pos, nil)
 		p.asize += _FRAGASIZE(f)
@@ -461,7 +412,7 @@ func packetAppend(p *Packet, buf []byte, n int) int {
 	return 1
 }
 
-func packetConcat(p *Packet, pp *Packet) int {
+func (p *packet) concat(pp *packet) int {
 	if pp.size == 0 {
 		return 1
 	}
@@ -481,8 +432,8 @@ func packetConcat(p *Packet, pp *Packet) int {
 	return 1
 }
 
-func packetPeek(p *Packet, buf []byte, offset int, n int) ([]byte, error) {
-	var f *Frag
+func (p *packet) peek(buf []byte, offset int, n int) ([]byte, error) {
+	var f *frag
 	var nn int
 	var b []byte
 
@@ -522,11 +473,11 @@ func packetPeek(p *Packet, buf []byte, offset int, n int) ([]byte, error) {
 	return buf, nil
 }
 
-func packetCopy(p *Packet, buf []byte, offset int, n int) error {
+func (p *packet) copy(buf []byte, offset int, n int) error {
 	var b []byte
 	var err error
 
-	b, err = packetPeek(p, buf, offset, n)
+	b, err = p.peek(buf, offset, n)
 	if err != nil {
 		return err
 	}
@@ -538,8 +489,8 @@ func packetCopy(p *Packet, buf []byte, offset int, n int) error {
 	return nil
 }
 
-func packetFragments(p *Packet, io []IOchunk, offset int) (int, error) {
-	var f *Frag
+func (p *packet) fragments(io []ioChunk, offset int) (int, error) {
+	var f *frag
 	var size int
 
 	if p.size == 0 || len(io) == 0 {
@@ -567,9 +518,9 @@ func packetFragments(p *Packet, io []IOchunk, offset int) (int, error) {
 }
 
 func packetStats() {
-	var p *Packet
-	var f *Frag
-	var m *Mem
+	var p *packet
+	var f *frag
+	var m *mem
 	var np int
 	var nf int
 	var nsm int
@@ -598,16 +549,16 @@ func packetStats() {
 	(&freeList.lk).Unlock()
 }
 
-func packetSize(p *Packet) int {
+func (p *packet) getSize() int {
 	if false {
-		var f *Frag
+		var f *frag
 		var size int = 0
 
 		for f = p.first; f != nil; f = f.next {
 			size += _FRAGSIZE(f)
 		}
 		if size != p.size {
-			fmt.Fprintf(os.Stderr, "packetSize %d %d\n", size, p.size)
+			fmt.Fprintf(os.Stderr, "(*packet).size %d %d\n", size, p.size)
 		}
 		if size != p.size {
 			panic("bad size")
@@ -617,26 +568,7 @@ func packetSize(p *Packet) int {
 	return p.size
 }
 
-func packetAllocatedSize(p *Packet) int {
-	if false {
-		var f *Frag
-		var asize int = 0
-
-		for f = p.first; f != nil; f = f.next {
-			asize += _FRAGASIZE(f)
-		}
-		if asize != p.asize {
-			fmt.Fprintf(os.Stderr, "packetAllocatedSize %d %d\n", asize, p.asize)
-		}
-		if asize != p.asize {
-			panic("bad asize")
-		}
-	}
-
-	return p.asize
-}
-
-func packetSha1(p *Packet) *Score {
+func (p *packet) sha1() *Score {
 	size := p.size
 	buf := make([]byte, 0, size)
 	for f := p.first; f != nil; f = f.next {
@@ -652,82 +584,13 @@ func packetSha1(p *Packet) *Score {
 	return &digest
 }
 
-func packetCmp(pkt0, pkt1 *Packet) int {
-	var f0 *Frag
-	var f1 *Frag
-	var n0 int
-	var n1 int
-	var x int
-
-	f0 = pkt0.first
-	f1 = pkt1.first
-
-	if f0 == nil {
-		if f1 == nil {
-			return 0
-		} else {
-			return -1
-		}
-	}
-	if f1 == nil {
-		return 1
-	}
-	n0 = _FRAGSIZE(f0)
-	n1 = _FRAGSIZE(f1)
-
-	for {
-		if n0 < n1 {
-			x = bytes.Compare(f0.mem.buf[f0.woff-n0:n0], f1.mem.buf[f1.woff-n1:n0])
-			if x != 0 {
-				return x
-			}
-			n1 -= n0
-			f0 = f0.next
-			if f0 == nil {
-				return -1
-			}
-			n0 = _FRAGSIZE(f0)
-		} else if n0 > n1 {
-			x = bytes.Compare(f0.mem.buf[f0.woff-n0:n1], f1.mem.buf[f1.woff-n1:n1])
-			if x != 0 {
-				return x
-			}
-			n0 -= n1
-			f1 = f1.next
-			if f1 == nil {
-				return 1
-			}
-			n1 = _FRAGSIZE(f1) /* n0 == n1 */
-		} else {
-			x = bytes.Compare(f0.mem.buf[f0.woff-n0:n0], f1.mem.buf[f1.woff-n1:n0])
-			if x != 0 {
-				return x
-			}
-			f0 = f0.next
-			f1 = f1.next
-			if f0 == nil {
-				if f1 == nil {
-					return 0
-				} else {
-					return -1
-				}
-			}
-			if f1 == nil {
-				return 1
-			}
-			n0 = _FRAGSIZE(f0)
-			n1 = _FRAGSIZE(f1)
-		}
-	}
-}
-
-func fragAlloc(p *Packet, n int, pos int, next *Frag) *Frag {
+func fragAlloc(p *packet, n int, pos int, next *frag) *frag {
 	/* look for local frag */
-	var f *Frag
+	var f *frag
 	for i := 0; i < len(p.local); i++ {
 		f = &p.local[0]
-		if f.state == FragLocalFree {
-			f.state = FragLocalAlloc
+		if f.state == fragLocalFree {
+			f.state = fragLocalAlloc
 			goto Found
 		}
 	}
@@ -742,8 +605,8 @@ func fragAlloc(p *Packet, n int, pos int, next *Frag) *Frag {
 	(&freeList.lk).Unlock()
 
 	if f == nil {
-		f = new(Frag)
-		f.state = FragGlobal
+		f = new(frag)
+		f.state = fragGlobal
 	}
 
 Found:
@@ -751,8 +614,8 @@ Found:
 		return f
 	}
 
-	if pos == PEnd && next == nil {
-		pos = PMiddle
+	if pos == pEnd && next == nil {
+		pos = pMiddle
 	}
 	m, err := memAlloc(n, pos)
 	if err != nil {
@@ -766,9 +629,9 @@ Found:
 	return f
 }
 
-func fragDup(p *Packet, f *Frag) *Frag {
-	var ff *Frag
-	var m *Mem
+func fragDup(p *packet, f *frag) *frag {
+	var ff *frag
+	var m *mem
 
 	m = f.mem
 
@@ -789,11 +652,11 @@ func fragDup(p *Packet, f *Frag) *Frag {
 	return ff
 }
 
-func fragFree(f *Frag) {
+func fragFree(f *frag) {
 	memFree(f.mem)
 
-	if f.state == FragLocalAlloc {
-		f.state = FragLocalFree
+	if f.state == fragLocalAlloc {
+		f.state = fragLocalFree
 		return
 	}
 
@@ -803,15 +666,15 @@ func fragFree(f *Frag) {
 	(&freeList.lk).Unlock()
 }
 
-func memAlloc(n int, pos int) (*Mem, error) {
-	var m *Mem
+func memAlloc(n int, pos int) (*mem, error) {
+	var m *mem
 	var nn int
 
-	if n < 0 || n > MaxFragSize {
+	if n < 0 || n > maxFragSize {
 		return nil, EPacketSize
 	}
 
-	if n <= SmallMemSize {
+	if n <= smallMemSize {
 		(&freeList.lk).Lock()
 		m = freeList.smallMem
 		if m != nil {
@@ -820,7 +683,7 @@ func memAlloc(n int, pos int) (*Mem, error) {
 			freeList.nsmallMem++
 		}
 		(&freeList.lk).Unlock()
-		nn = SmallMemSize
+		nn = smallMemSize
 	} else {
 		(&freeList.lk).Lock()
 		m = freeList.bigMem
@@ -830,11 +693,11 @@ func memAlloc(n int, pos int) (*Mem, error) {
 			freeList.nbigMem++
 		}
 		(&freeList.lk).Unlock()
-		nn = BigMemSize
+		nn = bigMemSize
 	}
 
 	if m == nil {
-		m = &Mem{
+		m = &mem{
 			lk:   new(sync.Mutex),
 			buf:  make([]byte, nn),
 			eoff: nn,
@@ -849,12 +712,12 @@ func memAlloc(n int, pos int) (*Mem, error) {
 	switch pos {
 	default:
 		panic("bad pos")
-	case PFront:
+	case pFront:
 		m.roff = 0
 		/* leave a little bit at end */
-	case PMiddle:
+	case pMiddle:
 		m.roff = m.eoff - n - 32
-	case PEnd:
+	case pEnd:
 		m.roff = m.eoff - n
 	}
 	/* check we did not blow it */
@@ -869,7 +732,7 @@ func memAlloc(n int, pos int) (*Mem, error) {
 	return m, nil
 }
 
-func memFree(m *Mem) {
+func memFree(m *mem) {
 	m.lk.Lock()
 	m.ref--
 	if m.ref > 0 {
@@ -885,12 +748,12 @@ func memFree(m *Mem) {
 	switch m.eoff {
 	default:
 		panic("bad mem size")
-	case SmallMemSize:
+	case smallMemSize:
 		(&freeList.lk).Lock()
 		m.next = freeList.smallMem
 		freeList.smallMem = m
 		(&freeList.lk).Unlock()
-	case BigMemSize:
+	case bigMemSize:
 		(&freeList.lk).Lock()
 		m.next = freeList.bigMem
 		freeList.bigMem = m
@@ -898,7 +761,7 @@ func memFree(m *Mem) {
 	}
 }
 
-func memHead(m *Mem, roff int, n int) int {
+func memHead(m *mem, roff int, n int) int {
 	m.lk.Lock()
 	if m.roff != roff {
 		m.lk.Unlock()
@@ -910,7 +773,7 @@ func memHead(m *Mem, roff int, n int) int {
 	return 1
 }
 
-func memTail(m *Mem, woff int, n int) int {
+func memTail(m *mem, woff int, n int) int {
 	m.lk.Lock()
 	if m.woff != woff {
 		m.lk.Unlock()

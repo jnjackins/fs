@@ -94,15 +94,10 @@ func ventihost(host string) string {
 	return host
 }
 
-func prventihost(host string) string {
+func dialVenti(host string) (*venti.Session, error) {
 	host = ventihost(host)
 	logf("dialing venti at %v\n", host)
-	return host
-}
-
-func vtDial(host string, canfail bool) (*venti.Session, error) {
-	host = prventihost(host)
-	return venti.Dial(host, canfail)
+	return venti.Dial(host)
 }
 
 func cmdPrintConfig(cons *Cons, argv []string) error {
@@ -1545,7 +1540,7 @@ func fsysVenti(cons *Cons, name string, argv []string) error {
 			return errors.New("file system was opened with -V")
 		}
 		fsys.session.Close()
-		fsys.session, err = vtDial(host, false)
+		fsys.session, err = dialVenti(host)
 		if err != nil {
 			return err
 		}
@@ -1555,7 +1550,7 @@ func fsysVenti(cons *Cons, name string, argv []string) error {
 	if fsys.session != nil {
 		fsys.session.Close()
 	}
-	fsys.session, err = vtDial(host, false)
+	fsys.session, err = dialVenti(host)
 	if err != nil {
 		return err
 	}
@@ -1673,7 +1668,7 @@ func fsysOpen(cons *Cons, name string, argv []string) error {
 		} else {
 			host = ""
 		}
-		fsys.session, err = vtDial(host, true)
+		fsys.session, err = dialVenti(host)
 		if err != nil && !noventi {
 			cons.printf("warning: connecting to venti: %v\n", err)
 		}

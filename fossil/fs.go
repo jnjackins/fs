@@ -224,7 +224,7 @@ func (fs *Fs) close() {
 func (fs *Fs) redial(host string) error {
 	fs.z.Close()
 	var err error
-	fs.z, err = venti.Dial(host, false)
+	fs.z, err = venti.Dial(host)
 	return err
 }
 
