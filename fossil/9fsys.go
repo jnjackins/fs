@@ -361,12 +361,12 @@ func fsysVac(cons *Cons, fsys *Fsys, argv []string) error {
 		return EUsage
 	}
 
-	var score venti.Score
-	if err := fsys.fs.vac(argv[0], &score); err != nil {
+	score, err := fsys.fs.vac(argv[0])
+	if err != nil {
 		return err
 	}
 
-	cons.printf("vac:%v\n", &score)
+	cons.printf("vac:%v\n", score)
 	return nil
 }
 
@@ -1541,9 +1541,7 @@ func fsysVenti(cons *Cons, name string, argv []string) error {
 		}
 		fsys.session.Close()
 		fsys.session, err = dialVenti(host)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	/* not yet open: try to dial */
@@ -1551,11 +1549,7 @@ func fsysVenti(cons *Cons, name string, argv []string) error {
 		fsys.session.Close()
 	}
 	fsys.session, err = dialVenti(host)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func freemem() uint32 {

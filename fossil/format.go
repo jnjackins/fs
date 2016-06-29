@@ -140,8 +140,8 @@ func partition(fd int, bsize int, h *Header) {
 	if bsize%512 != 0 {
 		fatalf("block size must be a multiple of 512 bytes")
 	}
-	if bsize > venti.MaxLumpSize {
-		fatalf("block size must be less than %d", venti.MaxLumpSize)
+	if bsize > venti.MaxBlockSize {
+		fatalf("block size must be less than %d", venti.MaxBlockSize)
 	}
 
 	*h = Header{
@@ -306,9 +306,10 @@ func (d *Disk) superInit(label string, root uint32, score *venti.Score, buf []by
 		active:    root,
 		next:      NilBlock,
 		current:   NilBlock,
+		last:      new(venti.Score),
 	}
 	copy(s.name[:], []byte(label))
-	copy(s.last[:], score[:venti.ScoreSize])
+	*s.last = *score
 
 	memset(buf, 0)
 	superPack(&s, buf)
@@ -330,7 +331,7 @@ func (d *Disk) blockWrite(part int, addr uint32, buf []byte) {
 func addFile(root *File, name string, mode uint) {
 	f, err := root.create(name, uint32(mode)|ModeDir, "adm")
 	if err != nil {
-		fatalf("could not create file: %s: %v", name, err)
+		fatalf("format: create %q: %v", name, err)
 	}
 	f.decRef()
 }
@@ -339,13 +340,10 @@ func topLevel(name string, z *venti.Session) {
 	/* ok, now we can open as a fs */
 	fs, err := openFs(name, z, 100, OReadWrite)
 	if err != nil {
-		fatalf("could not open file system: %v", err)
+		fatalf("format: open fs: %v", err)
 	}
 	fs.elk.RLock()
 	root := fs.getRoot()
-	if root == nil {
-		fatalf("could not open root")
-	}
 	addFile(root, "active", 0555)
 	addFile(root, "archive", 0555)
 	addFile(root, "snapshot", 0555)
@@ -378,8 +376,8 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	addr := d.blockAlloc(BtDir, tag, buf)
 
 	d.ventiRead(z, score, venti.RootType, buf)
-	var root venti.Root
-	if err := venti.RootUnpack(&root, buf); err != nil {
+	root, err := venti.RootUnpack(buf)
+	if err != nil {
 		fatalf("corrupted root: vtRootUnpack: %v", err)
 	}
 	n := d.ventiRead(z, root.Score, venti.DirType, buf)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"runtime"
@@ -589,7 +588,7 @@ func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) 
 
 	var b *Block
 	for b = c.heads[h]; b != nil; b = b.next {
-		if b.part != PartVenti || bytes.Compare(b.score[:], score[:]) != 0 || b.l.typ != typ {
+		if b.part != PartVenti || *b.score != *score || b.l.typ != typ {
 			continue
 		}
 		heapDel(b)
@@ -627,6 +626,8 @@ func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) 
 	default:
 		panic("bad iostate")
 	case BioEmpty:
+		// TODO(jnj): hack: format relies on this working for score == venti.ZeroScore,
+		// even when c.z == nil
 		n, err := c.z.Read(score, vtType[typ], b.data[:c.size])
 		if err != nil {
 			b.setIOState(BioVentiError)

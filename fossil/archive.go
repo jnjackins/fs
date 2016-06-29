@@ -55,24 +55,23 @@ func (a *Arch) free() {
 }
 
 func ventiSend(a *Arch, b *Block, data []byte) error {
-	if !a.z.Connected() {
-		return errors.New("ventiSend: not connected to venti")
+	if a.z == nil {
+		return errors.New("ventiSend: no venti session")
 	}
 
 	dprintf("ventiSend: sending %#x %v to venti\n", b.addr, &b.l)
 
-	n := venti.ZeroTruncate(vtType[b.l.typ], data, int(a.blockSize))
-	dprintf("ventiSend: truncate %d to %d\n", a.blockSize, n)
+	data = venti.ZeroTruncate(vtType[b.l.typ], data)
+	dprintf("ventiSend: truncate %d to %d\n", a.blockSize, len(data))
 
-	var score venti.Score
-	if err := a.z.Write(&score, vtType[b.l.typ], data[:n]); err != nil {
+	score, err := a.z.Write(vtType[b.l.typ], data)
+	if err != nil {
 		return fmt.Errorf("ventiSend: venti.Write block %#x failed: %v\n", b.addr, err)
 	}
 
-	if err := venti.Sha1Check(&score, data[:n]); err != nil {
-		var score2 venti.Score
-		venti.Sha1(&score2, data[:n])
-		return fmt.Errorf("ventiSend: venti.Write block %#x failed venti.Sha1Check %v %v\n", b.addr, score, &score2)
+	if err := venti.Sha1Check(score, data); err != nil {
+		score2 := venti.Sha1(data)
+		return fmt.Errorf("ventiSend: venti.Write block %#x failed venti.Sha1Check %v %v\n", b.addr, score, score2)
 	}
 
 	if err := a.z.Sync(); err != nil {
@@ -106,9 +105,9 @@ type Param struct {
 	score     *venti.Score
 }
 
-func shaBlock(score *venti.Score, b *Block, data []byte, bsize uint) {
-	n := venti.ZeroTruncate(vtType[b.l.typ], data, int(bsize))
-	venti.Sha1(score, data[:n])
+// TODO(jnj): take block only?
+func shaBlock(b *Block, data []byte) *venti.Score {
+	return venti.Sha1(venti.ZeroTruncate(vtType[b.l.typ], data))
 }
 
 func etype(e *Entry) BlockType {
@@ -309,7 +308,7 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 		}
 	}
 
-	shaBlock(p.score, b, *data, p.blockSize)
+	p.score = shaBlock(b, *data)
 	if false {
 		dprintf("ventisend %v %p %p %p\n", p.score, *data, b.data, w.data)
 	}
@@ -399,15 +398,18 @@ func (a *Arch) thread() {
 			Version:   venti.RootVersion,
 			Type:      "vac",
 			Name:      "fossil",
+			Score:     new(venti.Score),
 			BlockSize: uint16(a.blockSize),
+			Prev:      new(venti.Score),
 		}
-		copy(root.Score[:], p.score[:venti.ScoreSize])
-		copy(root.Prev[:], super.last[:venti.ScoreSize])
+		*(root.Score) = *(p.score)
+		*(root.Prev) = *(super.last)
 
 		var rbuf [venti.RootSize]uint8
 		venti.RootPack(&root, rbuf[:])
 
-		if err := a.z.Write(p.score, venti.RootType, rbuf[:venti.RootSize]); err != nil {
+		p.score, err = a.z.Write(venti.RootType, rbuf[:venti.RootSize])
+		if err != nil {
 			logf("venti.Write %#x: %v\n", addr, err)
 			time.Sleep(1 * time.Minute)
 			continue

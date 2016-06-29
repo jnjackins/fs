@@ -1,43 +1,29 @@
 package venti // import "sigint.ca/fs/venti"
+import (
+	"errors"
+	"fmt"
+	"os"
+)
 
-const ScoreSize = 20
-
+// TODO(jnj): enforce these maximums
 const (
-	MaxLumpSize   = 56 * 1024
+	MaxBlockSize  = 56 * 1024
 	PointerDepth  = 7
 	EntrySize     = 40
 	RootSize      = 300
 	MaxStringSize = 1000
 	AuthSize      = 1024
 	MaxFileSize   = (1 << 48) - 1
-	RootVersion   = 2
 )
 
-/* crypto strengths */
-const (
-	CryptoStrengthNone = iota
-	CryptoStrengthAuth
-	CryptoStrengthWeak
-	CryptoStrengthStrong
-)
+func checkSize(n int) error {
+	if n < 256 || n > MaxBlockSize {
+		return errors.New("bad block size")
+	}
+	return nil
+}
 
-/* crypto suites */
-const (
-	CryptoNone = iota
-	CryptoSSL3
-	CryptoTLS1
-	CryptoMax
-)
-
-/* codecs */
-const (
-	CodecNone = iota
-	CodecDeflate
-	CodecThwack
-	CodecMax
-)
-
-/* Lump Types */
+/* Block Types */
 const (
 	ErrType = iota
 	RootType
@@ -56,8 +42,10 @@ const (
 	MaxType
 )
 
-/* versions */
-const (
-	version01 = 1 + iota
-	version02
-)
+const debug = true
+
+func dprintf(format string, args ...interface{}) {
+	if debug {
+		fmt.Fprintf(os.Stderr, "(DEBUG) venti: "+format, args...)
+	}
+}

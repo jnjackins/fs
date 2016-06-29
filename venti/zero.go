@@ -2,8 +2,8 @@ package venti
 
 import "bytes"
 
-func ZeroExtend(typ int, buf []byte, size, newsize int) int {
-	switch typ {
+func ZeroExtend(blocktype int, buf []byte, size, newsize int) error {
+	switch blocktype {
 	default:
 		for i := size; i < newsize; i++ {
 			buf[i] = 0
@@ -27,26 +27,25 @@ func ZeroExtend(typ int, buf []byte, size, newsize int) int {
 		for ; i < newsize; i++ {
 			buf[i] = 0
 		}
-
 	}
-	return 1
+	return nil
 }
 
-func ZeroTruncate(typ int, buf []byte, n int) int {
-	switch typ {
+func ZeroTruncate(blocktype int, buf []byte) []byte {
+	switch blocktype {
 	default:
 		var i int
-		for i = n; i > 0; i-- {
+		for i = len(buf); i > 0; i-- {
 			if buf[i-1] != 0 {
 				break
 			}
 		}
-		return i
+		return buf[:i]
 	case RootType:
-		if n < RootSize {
-			return n
+		if len(buf) < RootSize {
+			return buf
 		}
-		return RootSize
+		return buf[:RootSize]
 	case PointerType0,
 		PointerType1,
 		PointerType2,
@@ -58,13 +57,13 @@ func ZeroTruncate(typ int, buf []byte, n int) int {
 		PointerType8,
 		PointerType9:
 		/* ignore slop at end of block */
-		i := (n / ScoreSize) * ScoreSize
+		i := (len(buf) / ScoreSize) * ScoreSize
 		for i >= 0 {
 			if bytes.Compare(buf[i:], ZeroScore[:]) != 0 {
 				break
 			}
 			i -= ScoreSize
 		}
-		return i
+		return buf[:i]
 	}
 }

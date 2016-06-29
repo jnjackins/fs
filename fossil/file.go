@@ -365,7 +365,6 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 	var pr, r, mr *Source
 
 	if err := f.lock(); err != nil {
-		err = fmt.Errorf("create %s: %v", elem, err)
 		return nil, err
 	}
 	defer f.unlock()
@@ -377,25 +376,24 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 	for ff = f.down; ff != nil; ff = ff.next {
 		if elem == ff.dir.elem && !ff.removed {
 			ff = nil
-			err = fmt.Errorf("create %s: %s", elem, EExists)
+			err = EExists
 			goto Err1
 		}
 	}
 
 	ff, err = dirLookup(f, elem)
 	if err == nil {
-		err = fmt.Errorf("create %s: %s", elem, EExists)
+		err = EExists
 		goto Err1
 	}
 
 	pr = f.source
 	if pr.mode != OReadWrite {
-		err = fmt.Errorf("create %s: %s", elem, EReadOnly)
+		err = EReadOnly
 		goto Err1
 	}
 
 	if err = f.source.lock2(f.msource, -1); err != nil {
-		err = fmt.Errorf("create %s: %v", elem, err)
 		goto Err1
 	}
 
@@ -404,13 +402,13 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 
 	r, err = pr.create(pr.dsize, isdir, 0)
 	if err != nil {
-		err = fmt.Errorf("create %s: %v", elem, err)
+		err = fmt.Errorf("create source: %v", err)
 		goto Err
 	}
 	if isdir {
 		mr, err = pr.create(pr.dsize, false, r.offset)
 		if err != nil {
-			err = fmt.Errorf("create %s: %v", elem, err)
+			err = fmt.Errorf("create meta source: %v", err)
 			goto Err
 		}
 	}
@@ -426,7 +424,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 
 	dir.size = 0
 	if err = f.fs.nextQid(&dir.qid); err != nil {
-		err = fmt.Errorf("create %s: %v", elem, err)
+		err = fmt.Errorf("next qid: %v")
 		goto Err
 	}
 	dir.uid = uid
@@ -439,7 +437,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 	dir.mode = mode
 
 	if ff.boff = f.metaAlloc(dir, 0); ff.boff == NilBlock {
-		err = fmt.Errorf("create %s: %v", elem, err)
+		err = errors.New("failed to alloc meta")
 		goto Err
 	}
 
@@ -452,7 +450,6 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 
 	if mode&ModeTemporary != 0 {
 		if err = r.lock2(mr, -1); err != nil {
-			err = fmt.Errorf("create %s: %v", elem, err)
 			goto Err1
 		}
 		ff.setTmp(1)

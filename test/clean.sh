@@ -1,4 +1,7 @@
 #!/bin/bash
+
+cd $(dirname $0)
+
 rm -f fossil.srv
 
 # umount likes to fail the first time if fossil has already died.

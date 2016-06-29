@@ -9,10 +9,8 @@ import (
 // of index entries in the block
 const BytesPerEntry = 100
 
-/*
- * variant on venti.Entry
- * there are extra fields when stored locally
- */
+// variant on venti.Entry
+// there are extra fields when stored locally
 type Entry struct {
 	gen     uint32 /* generation number */
 	psize   uint16 /* pointer block size */

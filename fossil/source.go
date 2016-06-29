@@ -211,11 +211,13 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 		bn := offset / uint32(epb)
 		b, err := r.block(bn, OReadWrite)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("get block: %v", err)
 		}
 		for i := int(offset % uint32(r.epb)); i < epb; i++ {
 			var e Entry
-			entryUnpack(&e, b.data, i)
+			if err := entryUnpack(&e, b.data, i); err != nil {
+				return nil, fmt.Errorf("unpack entry: %v", err)
+			}
 
 			if e.flags&venti.EntryActive == 0 && e.gen != ^uint32(0) {
 				// found an entry - gen already set
@@ -244,10 +246,14 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 				offset = bn*uint32(epb) + uint32(i)
 				if offset+1 > size {
 					if err := r.setDirSize(offset + 1); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("set dir size: %v", err)
 					}
 				}
-				return r.fs.allocSource(b, r, offset, OReadWrite, false)
+				rr, err := r.fs.allocSource(b, r, offset, OReadWrite, false)
+				if err != nil {
+					return nil, fmt.Errorf("alloc source: %v", err)
+				}
+				return rr, nil
 			}
 		}
 		b.put()
@@ -518,14 +524,19 @@ func (p *Block) walk(index, mode int, fs *Fs, e *Entry) (*Block, error) {
 		assert(p.l.typ == BtDir)
 		typ = EntryType(e)
 		b, err = c.global(e.score, typ, e.tag, mode)
+		if err != nil {
+			return nil, fmt.Errorf("fetch global block %v: %v", e.score, err)
+		}
 	} else {
 		typ = p.l.typ - 1
-		var score venti.Score
+		score := new(venti.Score)
 		copy(score[:], p.data[index*venti.ScoreSize:])
-		b, err = c.global(&score, typ, e.tag, mode)
+		b, err = c.global(score, typ, e.tag, mode)
+		if err != nil {
+			return nil, fmt.Errorf("fetch global block %v: %v", score, err)
+		}
 	}
-
-	if err != nil || mode == OReadOnly {
+	if mode == OReadOnly {
 		return b, nil
 	}
 
@@ -746,7 +757,7 @@ func (r *Source) _block(bn uint32, mode, early int, tag uint32) (*Block, error) 
 	var e Entry
 	b, err := r.load(&e)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load entry: %v", err)
 	}
 
 	if r.issnapshot && (e.flags&venti.EntryNoArchive != 0) {
@@ -759,7 +770,6 @@ func (r *Source) _block(bn uint32, mode, early int, tag uint32) (*Block, error) 
 			e.tag = tag
 		} else if e.tag != tag {
 			b.put()
-			logf("tag mismatch\n")
 			return nil, fmt.Errorf("tag mismatch")
 		}
 	}
@@ -783,9 +793,9 @@ func (r *Source) _block(bn uint32, mode, early int, tag uint32) (*Block, error) 
 			return nil, EBadAddr
 		}
 
-		if err = r.growDepth(b, &e, i); err != nil {
+		if err := r.growDepth(b, &e, i); err != nil {
 			b.put()
-			return nil, err
+			return nil, fmt.Errorf("grow depth: %v", err)
 		}
 	}
 
@@ -795,7 +805,7 @@ func (r *Source) _block(bn uint32, mode, early int, tag uint32) (*Block, error) 
 		bb, err := b.walk(index[i], m, r.fs, &e)
 		b.put()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("walk: %v", err)
 		}
 		b = bb
 	}

@@ -5,6 +5,8 @@
 
 set -e
 
+cd $(dirname $0)
+
 echo "building"
 go install -race sigint.ca/fs/fossil
 
@@ -35,7 +37,8 @@ fossil format -b 4K -y fossil.part
 mkdir active snap archive
 
 (
-	sleep 2;
+	sleep 2; 
+	pgrep fossil || exit
 	9pfuse -a main/active fossil.srv active;
 	9pfuse -a main/snapshot fossil.srv snap;
 	9pfuse -a main/archive fossil.srv archive;
