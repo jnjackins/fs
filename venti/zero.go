@@ -2,8 +2,8 @@ package venti
 
 import "bytes"
 
-func ZeroExtend(blocktype int, buf []byte, size, newsize int) error {
-	switch blocktype {
+func ZeroExtend(typ BlockType, buf []byte, size, newsize int) error {
+	switch typ {
 	default:
 		for i := size; i < newsize; i++ {
 			buf[i] = 0
@@ -31,8 +31,8 @@ func ZeroExtend(blocktype int, buf []byte, size, newsize int) error {
 	return nil
 }
 
-func ZeroTruncate(blocktype int, buf []byte) []byte {
-	switch blocktype {
+func ZeroTruncate(typ BlockType, buf []byte) []byte {
+	switch typ {
 	default:
 		var i int
 		for i = len(buf); i > 0; i-- {

@@ -13,6 +13,9 @@ const (
 	EntryNoArchive  = 1 << 6
 )
 
+const EntrySize = 40
+
+// TODO(jnj): update to libventi version
 type Entry struct {
 	gen   uint32
 	psize uint16
@@ -25,22 +28,21 @@ type Entry struct {
 
 func EntryPack(e *Entry, p []byte, index int) {
 	p = p[index*EntrySize:]
+
 	pack.U32PUT(p, e.gen)
 	p = p[4:]
 	pack.U16PUT(p, e.psize)
 	p = p[2:]
 	pack.U16PUT(p, e.dsize)
 	p = p[2:]
-	flags := int(e.flags) | (int(e.depth)<<EntryDepthShift)&EntryDepthMask
-	pack.U8PUT(p, uint8(flags))
+	flags := e.flags | (e.depth<<EntryDepthShift)&EntryDepthMask
+	pack.U8PUT(p, flags)
 	p = p[1:]
-	for i := 0; i < 5; i++ {
-		p[i] = 0
-	}
+	memset(p[:5], 0)
 	p = p[5:]
 	pack.U48PUT(p, e.size)
 	p = p[6:]
-	copy(p[:], e.score[:])
+	p = p[copy(p, e.score[:]):]
 }
 
 func EntryUnpack(p []byte, index int) (*Entry, error) {
@@ -54,21 +56,24 @@ func EntryUnpack(p []byte, index int) (*Entry, error) {
 	e.dsize = pack.U16GET(p)
 	p = p[2:]
 	e.flags = pack.U8GET(p)
+	p = p[1:]
 	e.depth = (e.flags & EntryDepthMask) >> EntryDepthShift
 	e.flags &^= EntryDepthMask
-	p = p[1:]
 	p = p[5:]
 	e.size = pack.U48GET(p)
 	p = p[6:]
-	copy(e.score[:], p)
+	p = p[copy(e.score[:], p):]
+
 	if e.flags&EntryActive == 0 {
 		return &e, nil
 	}
+
 	if err := checkSize(int(e.psize)); err != nil {
 		return nil, err
 	}
 	if err := checkSize(int(e.dsize)); err != nil {
 		return nil, err
 	}
+
 	return &e, nil
 }

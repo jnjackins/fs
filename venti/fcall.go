@@ -32,23 +32,23 @@ type fcall struct {
 	msgtype uint8
 	tag     uint8
 
-	err       string // Rerror
-	version   string // Thello
-	uid       string // Thello
-	strength  uint8  // Thello
-	crypto    []byte // Thello
-	ncrypto   uint   // Thello
-	codec     []byte // Thello
-	ncodec    uint   // Thello
-	sid       string // Rhello
-	rcrypto   uint8  // Rhello
-	rcodec    uint8  // Rhello
-	auth      []byte // TauthX, RauthX
-	nauth     uint   // TauthX, RauthX
-	score     *Score // Tread, Twrite
-	blocktype uint8  // Tread, Twrite
-	count     uint16 // Tread
-	data      []byte // Rread, Twrite
+	err      string    // Rerror
+	version  string    // Thello
+	uid      string    // Thello
+	strength uint8     // Thello
+	crypto   []byte    // Thello
+	ncrypto  uint      // Thello
+	codec    []byte    // Thello
+	ncodec   uint      // Thello
+	sid      string    // Rhello
+	rcrypto  uint8     // Rhello
+	rcodec   uint8     // Rhello
+	auth     []byte    // TauthX, RauthX
+	nauth    uint      // TauthX, RauthX
+	score    *Score    // Tread, Twrite
+	typ      BlockType // Tread, Twrite
+	count    uint16    // Tread
+	data     []byte    // Rread, Twrite
 }
 
 func (f *fcall) String() string {
@@ -83,11 +83,11 @@ func (f *fcall) String() string {
 	case rAuth1:
 		return fmt.Sprintf("Rauth1 tag %d auth %v", f.tag, f.nauth, f.auth, 0)
 	case tRead:
-		return fmt.Sprintf("Tread tag %d score %v blocktype %d count %d", f.tag, f.score, f.blocktype, f.count)
+		return fmt.Sprintf("Tread tag %d score %v blocktype %d count %d", f.tag, f.score, f.typ, f.count)
 	case rRead:
 		return fmt.Sprintf("Rread tag %d count %d", f.tag, len(f.data))
 	case tWrite:
-		return fmt.Sprintf("Twrite tag %d blocktype %d count %d", f.tag, f.blocktype, len(f.data))
+		return fmt.Sprintf("Twrite tag %d blocktype %d count %d", f.tag, f.typ, len(f.data))
 	case rWrite:
 		return fmt.Sprintf("Rwrite tag %d score %v", f.tag, f.score)
 	case tSync:
@@ -118,13 +118,13 @@ func marshalFcall(f *fcall) ([]byte, error) {
 	case tAuth1:
 	case tRead:
 		buf = append(buf, f.score[:]...)
-		buf = append(buf, f.blocktype)
+		buf = append(buf, uint8(f.typ))
 		var pad uint8 // TODO(jnj)
 		buf = append(buf, pad)
 		buf = append(buf, uint8(f.count>>8))
 		buf = append(buf, uint8(f.count))
 	case tWrite:
-		buf = append(buf, f.blocktype)
+		buf = append(buf, uint8(f.typ))
 		var pad uint32 // TODO(jnj)
 		buf = append(buf, uint8(pad>>16))
 		buf = append(buf, uint8(pad>>8))
@@ -147,11 +147,9 @@ func packString(s string) []byte {
 	return buf
 }
 
-func unmarshalFcall(buf []byte) (*fcall, error) {
-	f := &fcall{
-		msgtype: buf[0],
-		tag:     buf[1],
-	}
+func unmarshalFcall(f *fcall, buf []byte) error {
+	f.msgtype = buf[0]
+	f.tag = buf[1]
 	buf = buf[2:]
 
 	switch f.msgtype {
@@ -159,14 +157,14 @@ func unmarshalFcall(buf []byte) (*fcall, error) {
 		var err error
 		f.err, err = unpackString(&buf)
 		if err != nil {
-			return nil, fmt.Errorf("unpack err: %v", err)
+			return fmt.Errorf("unpack err: %v", err)
 		}
 	case rPing:
 	case rHello:
 		var err error
 		f.sid, err = unpackString(&buf)
 		if err != nil {
-			return nil, fmt.Errorf("unpack sid: %v", err)
+			return fmt.Errorf("unpack sid: %v", err)
 		}
 		f.rcrypto = buf[0]
 		f.rcodec = buf[1]
@@ -177,20 +175,22 @@ func unmarshalFcall(buf []byte) (*fcall, error) {
 	case rRead:
 		n := copy(f.data, buf)
 		buf = buf[n:]
+		f.count = uint16(n)
 	case rWrite:
 		f.score = new(Score)
 		n := copy(f.score[:], buf)
 		buf = buf[n:]
 	case rSync:
 	default:
-		return nil, fmt.Errorf("unrecognized message type: %d", f.msgtype)
+		return fmt.Errorf("unrecognized message type: %d", f.msgtype)
 	}
 
 	if len(buf) != 0 {
-		return nil, fmt.Errorf("%d bytes left after unmarshal", len(buf))
+		dprintf("OOPS: %d bytes left\n", len(buf))
+		return fmt.Errorf("%d bytes left after unmarshal", len(buf))
 	}
 
-	return f, nil
+	return nil
 }
 
 func unpackString(p *[]byte) (string, error) {
@@ -232,10 +232,10 @@ func (z *Session) transmit(f *fcall) error {
 	return nil
 }
 
-func (z *Session) receive() (*fcall, error) {
+func (z *Session) receive(rx *fcall) error {
 	var buf bytes.Buffer
 	if _, err := io.CopyN(&buf, z.c, 2); err != nil {
-		return nil, fmt.Errorf("read length: %v", err)
+		return fmt.Errorf("read length: %v", err)
 	}
 	data := buf.Bytes()
 	length := (uint(data[0]) << 8) | uint(data[1])
@@ -244,14 +244,13 @@ func (z *Session) receive() (*fcall, error) {
 	buf.Reset()
 	n, err := io.CopyN(&buf, z.c, int64(length))
 	if err != nil {
-		return nil, fmt.Errorf("read message: %v", err)
+		return fmt.Errorf("read message: %v", err)
 	}
 	dprintf("receive: got message %#x (len=%d)\n", buf.Bytes(), n)
 
-	f, err := unmarshalFcall(buf.Bytes())
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal fcall: %v", err)
+	if err := unmarshalFcall(rx, buf.Bytes()); err != nil {
+		return fmt.Errorf("unmarshal fcall: %v", err)
 	}
 
-	return f, nil
+	return nil
 }

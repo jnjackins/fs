@@ -352,11 +352,12 @@ func topLevel(name string, z *venti.Session) {
 	fs.close()
 }
 
-func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ int, buf []byte) int {
+func (d *Disk) ventiRead(z *venti.Session, score *venti.Score, typ venti.BlockType, buf []byte) int {
 	n, err := z.Read(score, typ, buf)
 	if err != nil {
 		fatalf("ventiRead %v (%d) failed: %v", score, typ, err)
 	}
+	dprintf("retrieved %v block from venti; zero-extending from %d to %d bytes", typ, n, d.blockSize())
 	venti.ZeroExtend(typ, buf, n, d.blockSize())
 	return n
 }

@@ -35,6 +35,9 @@ func Sha1Check(score *Score, data []byte) error {
 }
 
 func ParseScore(s string) (*Score, error) {
+	if len(s) != ScoreSize*2 {
+		return nil, fmt.Errorf("bad score size: %d", len(s))
+	}
 	var score Score
 	for i := 0; i < ScoreSize*2; i++ {
 		var c int

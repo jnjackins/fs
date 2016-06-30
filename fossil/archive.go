@@ -56,26 +56,26 @@ func (a *Arch) free() {
 
 func ventiSend(a *Arch, b *Block, data []byte) error {
 	if a.z == nil {
-		return errors.New("ventiSend: no venti session")
+		return errors.New("no venti session")
 	}
 
-	dprintf("ventiSend: sending %#x %v to venti\n", b.addr, &b.l)
+	dprintf("sending block %#x (type %s / %s) to venti\n", b.addr, b.l.typ, vtType[b.l.typ])
 
 	data = venti.ZeroTruncate(vtType[b.l.typ], data)
-	dprintf("ventiSend: truncate %d to %d\n", a.blockSize, len(data))
+	dprintf("block length zero-truncated from %d to %d\n", a.blockSize, len(data))
 
 	score, err := a.z.Write(vtType[b.l.typ], data)
 	if err != nil {
-		return fmt.Errorf("ventiSend: venti.Write block %#x failed: %v\n", b.addr, err)
+		return fmt.Errorf("venti write block %#x: %v\n", b.addr, err)
 	}
 
 	if err := venti.Sha1Check(score, data); err != nil {
-		score2 := venti.Sha1(data)
-		return fmt.Errorf("ventiSend: venti.Write block %#x failed venti.Sha1Check %v %v\n", b.addr, score, score2)
+		return fmt.Errorf("venti write block %#x: sha1 check failed: received %v, expected %v\n",
+			b.addr, score, venti.Sha1(data))
 	}
 
 	if err := a.z.Sync(); err != nil {
-		return fmt.Errorf("ventiSend: venti.Sync: %v", err)
+		return fmt.Errorf("venti sync: %v", err)
 	}
 	return nil
 }

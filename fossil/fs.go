@@ -667,26 +667,30 @@ func (fs *Fs) vac(name string) (*venti.Score, error) {
 
 	f, err := fs.openFile(name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open %q: %v", name, err)
 	}
 
 	var e, ee Entry
 	if err := f.getSources(&e, &ee); err != nil {
 		f.decRef()
-		return nil, err
+		return nil, fmt.Errorf("get sources for %q: %v", name, err)
 	}
 	var de DirEntry
 	if err := f.getDir(&de); err != nil {
 		f.decRef()
-		return nil, err
+		return nil, fmt.Errorf("get dir entry for %q: %v", name, err)
 	}
 	f.decRef()
 
-	return mkVac(fs.z, uint(fs.blockSize), &e, &ee, &de)
+	score, err := mkVac(fs.z, uint(fs.blockSize), &e, &ee, &de)
+	if err != nil {
+		return nil, fmt.Errorf("make vac for %q: %v", name, err)
+	}
+	return score, nil
 }
 
-func vtWriteBlock(z *venti.Session, buf []byte, typ int) (*venti.Score, error) {
-	score, err := z.Write(int(typ), buf)
+func vtWriteBlock(z *venti.Session, buf []byte, typ venti.BlockType) (*venti.Score, error) {
+	score, err := z.Write(typ, buf)
 	if err != nil {
 		return nil, err
 	}
@@ -705,21 +709,19 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 		return nil, fmt.Errorf("can only vac paths already stored on venti")
 	}
 
-	/*
-	 * Build metadata source for root.
-	 */
-	n := uint(deSize(&de))
+	// Build metadata source for root.
+	n := deSize(&de)
+	ntotal := n + MetaHeaderSize + MetaIndexSize
 
-	var buf []byte
-	if n+MetaHeaderSize+MetaIndexSize > uint(len(buf)) {
-		return nil, fmt.Errorf("DirEntry too big")
+	buf := make([]byte, 8192)
+	if ntotal > len(buf) {
+		return nil, fmt.Errorf("DirEntry too big: %d", n)
 	}
 
-	buf = make([]byte, 8192)
-	mb := initMetaBlock(buf, int(n+MetaHeaderSize+MetaIndexSize), 1)
+	mb := initMetaBlock(buf, ntotal, 1)
 	o, err := mb.alloc(int(n))
 	if err != nil {
-		panic("abort")
+		return nil, fmt.Errorf("alloc metablock: %v", err)
 	}
 	var i int
 	var me MetaEntry
@@ -735,16 +737,14 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	eee.size = uint64(n) + MetaHeaderSize + MetaIndexSize
 	eee.score, err = vtWriteBlock(z, buf[:eee.size], venti.DataType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error writing root metadata block to venti: %v", err)
 	}
 	eee.psize = 8192
 	eee.dsize = 8192
 	eee.depth = 0
 	eee.flags = venti.EntryActive
 
-	/*
-	 * Build root source with three entries in it.
-	 */
+	// Build root source with three entries in it.
 	entryPack(&e, buf, 0)
 	entryPack(&ee, buf, 1)
 	entryPack(&eee, buf, 2)
@@ -753,19 +753,22 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	var root venti.Root
 	root.Score, err = vtWriteBlock(z, buf[:n], venti.DirType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error writing root dir block to venti: %v", err)
 	}
 
-	/*
-	 * Save root.
-	 */
+	// Save root.
 	root.Version = venti.RootVersion
 
 	root.Type = "vac"
 	root.Name = de.elem
 	root.BlockSize = uint16(blockSize)
+	root.Prev = new(venti.Score) // TODO(jnj): bleh
 	venti.RootPack(&root, buf)
-	return vtWriteBlock(z, buf[:venti.RootSize], venti.RootType)
+	score, err := vtWriteBlock(z, buf[:venti.RootSize], venti.RootType)
+	if err != nil {
+		return nil, fmt.Errorf("error writing root data block to venti: %v", err)
+	}
+	return score, nil
 }
 
 func (fs *Fs) sync() error {

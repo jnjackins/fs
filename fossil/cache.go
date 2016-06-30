@@ -109,7 +109,7 @@ type FreeList struct {
 /*
  * Mapping from local block type to Venti type
  */
-var vtType = [BtMax]int{
+var vtType = [BtMax]venti.BlockType{
 	venti.DataType,     /* BtData | 0  */
 	venti.PointerType0, /* BtData | 1  */
 	venti.PointerType1, /* BtData | 2  */
@@ -634,11 +634,13 @@ func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) 
 			b.put()
 			return nil, fmt.Errorf("venti error reading block %v: %v", score, err)
 		}
+		assert(n <= c.size)
 		if err := venti.Sha1Check(score, b.data[:n]); err != nil {
 			b.setIOState(BioVentiError)
 			b.put()
 			return nil, fmt.Errorf("venti error: wrong score: %v: %v", score, err)
 		}
+		dprintf("retrieved block from venti; zero-extending from %d to %d bytes", n, c.size)
 		venti.ZeroExtend(vtType[typ], b.data, n, c.size)
 		b.setIOState(BioClean)
 		return b, nil
