@@ -11,14 +11,13 @@ const (
 	RootSize    = 300
 )
 
-// TODO(jnj): not pointers to scores
 type Root struct {
 	Version   uint16
 	Name      string
 	Type      string
-	Score     *Score
+	Score     Score
 	BlockSize uint16
-	Prev      *Score
+	Prev      Score
 }
 
 func RootPack(r *Root, buf []byte) {

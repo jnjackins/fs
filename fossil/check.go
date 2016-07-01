@@ -169,9 +169,9 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 		return
 	}
 
-	walkEpoch(chk, b, e.score, BtDir, e.tag, epoch)
+	walkEpoch(chk, b, &e.score, BtDir, e.tag, epoch)
 	if err := entryUnpack(&e, b.data, 1); err == nil {
-		chk.hint = venti.GlobalToLocal(e.score)
+		chk.hint = venti.GlobalToLocal(&e.score)
 	}
 }
 
@@ -187,7 +187,7 @@ func checkEpoch(chk *Fsck, epoch uint32) {
  */
 func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ BlockType, tag, epoch uint32) bool {
 	if b != nil && chk.walkdepth == 0 && chk.printblocks {
-		chk.printf("%v %d %#.8x %#.8x\n", b.score, b.l.typ, b.l.tag, b.l.epoch)
+		chk.printf("%v %d %#.8x %#.8x\n", &b.score, b.l.typ, b.l.tag, b.l.epoch)
 	}
 
 	if !chk.useventi && venti.GlobalToLocal(score) == NilBlock {
@@ -318,7 +318,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ BlockType, tag, epoc
 				continue
 			}
 			if false {
-				dprintf("%x[%d] tag=%x snap=%d score=%v\n", addr, i, e.tag, e.snap, e.score)
+				dprintf("%x[%d] tag=%x snap=%d score=%v\n", addr, i, e.tag, e.snap, &e.score)
 			}
 			ep = epoch
 			if e.snap != 0 {
@@ -363,7 +363,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ BlockType, tag, epoc
 				continue
 			}
 
-			if !walkEpoch(chk, bb, e.score, EntryType(&e), e.tag, ep) {
+			if !walkEpoch(chk, bb, &e.score, EntryType(&e), e.tag, ep) {
 				setBit(chk.errmap, bb.addr)
 				if err := chk.clre(chk, bb, i); err != nil {
 					chk.errorf("%v", err)
@@ -536,7 +536,7 @@ Err:
 }
 
 func scanSource(chk *Fsck, name string, r *Source) {
-	if !chk.useventi && venti.GlobalToLocal(r.score) == NilBlock {
+	if !chk.useventi && venti.GlobalToLocal(&r.score) == NilBlock {
 		return
 	}
 	e, err := r.getEntry()
@@ -545,7 +545,7 @@ func scanSource(chk *Fsck, name string, r *Source) {
 		return
 	}
 
-	a := venti.GlobalToLocal(e.score)
+	a := venti.GlobalToLocal(&e.score)
 	if !chk.useventi && a == NilBlock {
 		return
 	}
@@ -576,8 +576,8 @@ func scanSource(chk *Fsck, name string, r *Source) {
  */
 func chkDir(chk *Fsck, name string, source, meta *Source) {
 	if !chk.useventi &&
-		venti.GlobalToLocal(source.score) == NilBlock &&
-		venti.GlobalToLocal(meta.score) == NilBlock {
+		venti.GlobalToLocal(&source.score) == NilBlock &&
+		venti.GlobalToLocal(&meta.score) == NilBlock {
 		return
 	}
 
@@ -596,8 +596,8 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 		return
 	}
 
-	a1 := venti.GlobalToLocal(e1.score)
-	a2 := venti.GlobalToLocal(e2.score)
+	a1 := venti.GlobalToLocal(&e1.score)
+	a2 := venti.GlobalToLocal(&e2.score)
 	if (!chk.useventi && a1 == NilBlock && a2 == NilBlock) ||
 		(getBit(chk.smap, a1) != 0 && getBit(chk.smap, a2) != 0) {
 		source.unlock()
@@ -618,7 +618,7 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 			continue
 		}
 		if false {
-			dprintf("source %v:%d block %d addr %d\n", source.score, source.offset, o, b.addr)
+			dprintf("source %v:%d block %d addr %d\n", &source.score, source.offset, o, b.addr)
 		}
 		if b.addr != NilBlock && getBit(chk.errmap, b.addr) != 0 {
 			chk.warnf("previously reported error in block %ux is in %s", b.addr, name)

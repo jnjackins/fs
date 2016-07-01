@@ -32,12 +32,12 @@ type Source struct {
 	// sources that have become invalid because they belong to an old
 	// snapshot.
 	epoch      uint32
-	b          *Block       /* block containing this source */
-	score      *venti.Score /* score of block containing this source */
-	scoreEpoch uint32       /* epoch of block containing this source */
-	epb        int          /* immutable: entries per block in parent */
-	tag        uint32       /* immutable: tag of parent */
-	offset     uint32       /* immutable: entry offset in parent */
+	b          *Block      /* block containing this source */
+	score      venti.Score /* score of block containing this source */
+	scoreEpoch uint32      /* epoch of block containing this source */
+	epb        int         /* immutable: entries per block in parent */
+	tag        uint32      /* immutable: tag of parent */
+	offset     uint32      /* immutable: entry offset in parent */
 }
 
 func (r *Source) isLocked() bool {
@@ -67,39 +67,39 @@ func (fs *Fs) allocSource(b *Block, p *Source, offset uint32, mode int, issnapsh
 	var e Entry
 	if err := entryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
 		pname := p.name()
-		logf("%s: %s %v: allocSource: entryUnpack failed\n", fs.name, pname, b.score)
+		logf("%s: %s %v: allocSource: entryUnpack failed\n", fs.name, pname, &b.score)
 		return nil, EBadEntry
 	}
 
 	if e.flags&venti.EntryActive == 0 {
 		pname := p.name()
 		if false {
-			logf("%s: %s %v: allocSource: not active\n", fs.name, pname, e.score)
+			logf("%s: %s %v: allocSource: not active\n", fs.name, pname, &e.score)
 		}
 		return nil, EBadEntry
 	}
 
 	if e.psize < 256 || e.dsize < 256 {
 		pname := p.name()
-		logf("%s: %s %v: allocSource: psize %d or dsize %d < 256\n", fs.name, pname, e.score, e.psize, e.dsize)
+		logf("%s: %s %v: allocSource: psize %d or dsize %d < 256\n", fs.name, pname, &e.score, e.psize, e.dsize)
 		return nil, EBadEntry
 	}
 
 	if int(e.depth) < sizeToDepth(e.size, int(e.psize), int(e.dsize)) {
 		pname := p.name()
-		logf("%s: %s %v: allocSource: depth %d size %d psize %d dsize %d\n", fs.name, pname, e.score, e.depth, e.size, e.psize, e.dsize)
+		logf("%s: %s %v: allocSource: depth %d size %d psize %d dsize %d\n", fs.name, pname, &e.score, e.depth, e.size, e.psize, e.dsize)
 		return nil, EBadEntry
 	}
 
 	if (e.flags&venti.EntryLocal != 0) && e.tag == 0 {
 		pname := p.name()
-		logf("%s: %s %v: allocSource: flags %#x tag %#x\n", fs.name, pname, e.score, e.flags, e.tag)
+		logf("%s: %s %v: allocSource: flags %#x tag %#x\n", fs.name, pname, &e.score, e.flags, e.tag)
 		return nil, EBadEntry
 	}
 
 	if int(e.dsize) > fs.blockSize || int(e.psize) > fs.blockSize {
 		pname := p.name()
-		logf("%s: %s %v: allocSource: psize %d or dsize %d > blocksize %d\n", fs.name, pname, e.score, e.psize, e.dsize, fs.blockSize)
+		logf("%s: %s %v: allocSource: psize %d or dsize %d > blocksize %d\n", fs.name, pname, &e.score, e.psize, e.dsize, fs.blockSize)
 		return nil, EBadEntry
 	}
 
@@ -129,7 +129,12 @@ func (fs *Fs) allocSource(b *Block, p *Source, offset uint32, mode int, issnapsh
 		lk:         new(sync.Mutex),
 		ref:        1,
 		parent:     p,
-		score:      new(venti.Score),
+		score:      b.score,
+		epoch:      epoch,
+		scoreEpoch: b.l.epoch,
+		offset:     offset,
+		epb:        epb,
+		tag:        b.l.tag,
 	}
 	if p != nil {
 		p.lk.Lock()
@@ -137,19 +142,6 @@ func (fs *Fs) allocSource(b *Block, p *Source, offset uint32, mode int, issnapsh
 		p.ref++
 		p.lk.Unlock()
 	}
-
-	r.epoch = epoch
-
-	//dprintf("allocSource: have %v be.%d fse.%d %s\n", b.score,
-	//		b.l.epoch, r.fs.ehi, mode == OReadWrite? "rw": "ro");
-	copy(r.score[:], b.score[:venti.ScoreSize])
-
-	r.scoreEpoch = b.l.epoch
-	r.offset = offset
-	r.epb = epb
-	r.tag = b.l.tag
-
-	//dprintf("%s: allocSource: %p -> %v %d\n", r, r.score, r.offset);
 
 	return r, nil
 }
@@ -235,7 +227,7 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 
 				e.depth = 0
 				e.size = 0
-				copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
+				e.score = venti.ZeroScore()
 				e.tag = 0
 				e.snap = 0
 				e.archive = false
@@ -285,7 +277,7 @@ func (r *Source) kill(doremove bool) error {
 	}
 
 	/* remember info on link we are removing */
-	addr := venti.GlobalToLocal(e.score)
+	addr := venti.GlobalToLocal(&e.score)
 
 	typ := EntryType(&e)
 	tag := e.tag
@@ -304,7 +296,7 @@ func (r *Source) kill(doremove bool) error {
 	e.depth = 0
 	e.size = 0
 	e.tag = 0
-	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
+	e.score = venti.ZeroScore()
 	entryPack(&e, b.data, int(r.offset%uint32(r.epb)))
 	b.dirty()
 	if addr != NilBlock {
@@ -344,7 +336,7 @@ func (r *Source) getSize() uint64 {
 
 func (r *Source) shrinkSize(e *Entry, size uint64) error {
 	typ := EntryType(e)
-	b, err := r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
+	b, err := r.fs.cache.global(&e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -373,7 +365,8 @@ func (r *Source) shrinkSize(e *Entry, size uint64) error {
 			var score venti.Score
 			copy(score[:], b.data[i*venti.ScoreSize:])
 			addr = venti.GlobalToLocal(&score)
-			copy(b.data[i*venti.ScoreSize:], venti.ZeroScore[:venti.ScoreSize])
+			zscore := venti.ZeroScore()
+			copy(b.data[i*venti.ScoreSize:], zscore[:])
 			b.dirty()
 			if addr != NilBlock {
 				b.removeLink(addr, typ-1, e.tag, true)
@@ -523,15 +516,15 @@ func (p *Block) walk(index, mode int, fs *Fs, e *Entry) (*Block, error) {
 	if p.l.typ&BtLevelMask == 0 {
 		assert(p.l.typ == BtDir)
 		typ = EntryType(e)
-		b, err = c.global(e.score, typ, e.tag, mode)
+		b, err = c.global(&e.score, typ, e.tag, mode)
 		if err != nil {
-			return nil, fmt.Errorf("fetch global block %v: %v", e.score, err)
+			return nil, fmt.Errorf("fetch global block %v: %v", &e.score, err)
 		}
 	} else {
 		typ = p.l.typ - 1
-		score := new(venti.Score)
+		var score venti.Score
 		copy(score[:], p.data[index*venti.ScoreSize:])
-		b, err = c.global(score, typ, e.tag, mode)
+		b, err = c.global(&score, typ, e.tag, mode)
 		if err != nil {
 			return nil, fmt.Errorf("fetch global block %v: %v", score, err)
 		}
@@ -569,12 +562,12 @@ func (p *Block) walk(index, mode int, fs *Fs, e *Entry) (*Block, error) {
 
 	b.dirty()
 	if p.l.typ == BtDir {
-		copy(e.score[:], b.score[:])
+		e.score = b.score
 		entryPack(e, p.data, index)
 		p.dependency(b, index, nil, &oe)
 	} else {
 		var oscore venti.Score
-		copy(oscore[:], p.data[index*venti.ScoreSize:][:venti.ScoreSize])
+		copy(oscore[:], p.data[index*venti.ScoreSize:])
 		copy(p.data[index*venti.ScoreSize:], b.score[:])
 		p.dependency(b, index, &oscore, nil)
 	}
@@ -597,7 +590,7 @@ func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
 	assert(depth <= venti.PointerDepth)
 
 	typ := EntryType(e)
-	b, err := r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
+	b, err := r.fs.cache.global(&e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -620,15 +613,16 @@ func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
 			break
 		}
 
-		//dprintf("alloc %x grow %v\n", bb.addr, b.score);
-		copy(bb.data, b.score[:venti.ScoreSize])
+		//dprintf("alloc %x grow %v\n", bb.addr, &b.score);
+		copy(bb.data, b.score[:])
 
-		copy(e.score[:], bb.score[:venti.ScoreSize])
+		e.score = bb.score
 		e.depth++
 		typ++
 		e.tag = tag
 		e.flags |= venti.EntryLocal
-		bb.dependency(b, 0, venti.ZeroScore, nil)
+		zscore := venti.ZeroScore()
+		bb.dependency(b, 0, &zscore, nil)
 		b.put()
 		b = bb
 		b.dirty()
@@ -650,7 +644,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 	assert(depth <= venti.PointerDepth)
 
 	typ := EntryType(e)
-	rb, err := r.fs.cache.global(e.score, typ, e.tag, OReadWrite)
+	rb, err := r.fs.cache.global(&e.score, typ, e.tag, OReadWrite)
 	if err != nil {
 		return err
 	}
@@ -707,18 +701,19 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 	e.depth = uint8(d)
 
 	/* might have been local and now global; reverse cannot happen */
-	if venti.GlobalToLocal(b.score) == NilBlock {
+	if venti.GlobalToLocal(&b.score) == NilBlock {
 		e.flags &^= venti.EntryLocal
 	}
-	copy(e.score[:], b.score[:venti.ScoreSize])
+	e.score = b.score
 	entryPack(e, p.data, int(r.offset%uint32(r.epb)))
 	p.dependency(b, int(r.offset%uint32(r.epb)), nil, &oe)
 	p.dirty()
 
 	/* (ii) */
-	copy(ob.data, venti.ZeroScore[:venti.ScoreSize])
+	zscore := venti.ZeroScore()
+	copy(ob.data, zscore[:])
 
-	ob.dependency(p, 0, b.score, nil)
+	ob.dependency(p, 0, &b.score, nil)
 	ob.dirty()
 
 	/* (iii) */
@@ -865,7 +860,7 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 		 */
 		//assert(r.epoch >= r.fs.elo);
 		if r.epoch == r.fs.ehi {
-			b, err := r.fs.cache.global(r.score, BtDir, r.tag, OReadWrite)
+			b, err := r.fs.cache.global(&r.score, BtDir, r.tag, OReadWrite)
 			if err != nil {
 				return nil, err
 			}
@@ -885,7 +880,7 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 		assert(b.l.epoch == r.fs.ehi)
 
 		//	fprint(2, "sourceLoadBlock %p %v => %v\n", r, r->score, b->score);
-		copy(r.score[:], b.score[:venti.ScoreSize])
+		r.score = b.score
 
 		r.scoreEpoch = b.l.epoch
 		r.tag = b.l.tag
@@ -893,9 +888,9 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 		return b, nil
 
 	case OReadOnly:
-		addr := venti.GlobalToLocal(r.score)
+		addr := venti.GlobalToLocal(&r.score)
 		if addr == NilBlock {
-			return r.fs.cache.global(r.score, BtDir, r.tag, mode)
+			return r.fs.cache.global(&r.score, BtDir, r.tag, mode)
 		}
 
 		b, err := r.fs.cache.localData(addr, BtDir, r.tag, mode, r.scoreEpoch)
@@ -920,8 +915,8 @@ func (r *Source) loadBlock(mode int) (*Block, error) {
 			b, err = r.parent.block(r.offset/uint32(r.epb), OReadOnly)
 			r.parent.unlock()
 			if err == nil {
-				logf("allocSource: lost %v found %v\n", r.score, b.score)
-				copy(r.score[:], b.score[:venti.ScoreSize])
+				logf("loadBlock: lost %v found %v\n", &r.score, &b.score)
+				r.score = b.score
 				r.scoreEpoch = b.l.epoch
 				return b, nil
 			}
@@ -974,7 +969,7 @@ func (r *Source) lock2(rr *Source, mode int) error {
 			return err
 		}
 		if r.score != rr.score {
-			copy(rr.score[:], b.score[:venti.ScoreSize])
+			rr.score = b.score
 			rr.scoreEpoch = b.l.epoch
 			rr.tag = b.l.tag
 			rr.epoch = rr.fs.ehi

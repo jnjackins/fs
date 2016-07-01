@@ -62,14 +62,14 @@ func ventiSend(a *Arch, b *Block, data []byte) error {
 	dprintf("sending block %#x (type %s / %s) to venti\n", b.addr, b.l.typ, vtType[b.l.typ])
 
 	data = venti.ZeroTruncate(vtType[b.l.typ], data)
-	dprintf("block length zero-truncated from %d to %d\n", a.blockSize, len(data))
+	dprintf("block zero-truncated from %d to %d bytes\n", a.blockSize, len(data))
 
 	score, err := a.z.Write(vtType[b.l.typ], data)
 	if err != nil {
 		return fmt.Errorf("venti write block %#x: %v\n", b.addr, err)
 	}
 
-	if err := venti.Sha1Check(score, data); err != nil {
+	if !score.Check(data) {
 		return fmt.Errorf("venti write block %#x: sha1 check failed: received %v, expected %v\n",
 			b.addr, score, venti.Sha1(data))
 	}
@@ -102,7 +102,7 @@ type Param struct {
 	dsize     uint
 	psize     uint
 	l         Label
-	score     *venti.Score
+	score     venti.Score
 }
 
 // TODO(jnj): take block only?
@@ -152,11 +152,12 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 		logf("archive(%d, %#x): cannot find block: %v\n", p.snapEpoch, addr, err)
 		if err == ELabelMismatch {
 			/* might as well plod on so we write _something_ to Venti */
-			copy(p.score[:], venti.ZeroScore[:venti.ScoreSize])
+			p.score = venti.ZeroScore()
 			return ArchFaked, err
 		}
 		return ArchFailure, err
 	}
+	defer b.put()
 
 	dprintf("%*sarchive(%d, %#x): block label %v\n",
 		p.depth*2, "", p.snapEpoch, b.addr, &b.l)
@@ -168,7 +169,6 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 
 	data := &b.data
 	var w WalkPtr
-	var ret int
 	if b.l.state&BsVenti == 0 {
 		size := p.dsize
 		if b.l.typ != BtDir {
@@ -193,7 +193,7 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 						w.data = tmp
 					}
 
-					copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
+					e.score = venti.ZeroScore()
 					e.depth = 0
 					e.size = 0
 					e.tag = 0
@@ -215,8 +215,7 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 			}
 
 			b.lk.Unlock()
-			var x int
-			x, err = archWalk(p, addr, typ, tag)
+			x, err := archWalk(p, addr, typ, tag)
 			b.lock()
 			if e != nil {
 				p.dsize = uint(dsize)
@@ -229,8 +228,8 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 			switch x {
 			case ArchFailure:
 				logf("archWalk %#x failed; ptr is in %#x offset %d\n", addr, b.addr, i)
-				ret = ArchFailure
-				goto Out
+				p.depth--
+				return ArchFailure, err
 			case ArchFaked:
 				/*
 				 * When we're writing the entry for an archive directory
@@ -244,7 +243,7 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 				if e == nil || !e.archive {
 					if data == &b.data {
 						if false {
-							dprintf("faked %#x, faking %#x (%v)\n", addr, b.addr, p.score)
+							dprintf("faked %#x, faking %#x (%v)\n", addr, b.addr, &p.score)
 						}
 						tmp := copyBlock(b, p.blockSize)
 						data = &tmp
@@ -258,11 +257,11 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 
 			case ArchSuccess:
 				if e != nil {
-					copy(e.score[:], p.score[:venti.ScoreSize])
+					e.score = p.score
 					e.flags &^= venti.EntryLocal
 					entryPack(e, *data, w.n-1)
 				} else {
-					copy((*data)[(w.n-1)*venti.ScoreSize:], p.score[:venti.ScoreSize])
+					copy((*data)[(w.n-1)*venti.ScoreSize:], p.score[:])
 				}
 				if data == &b.data {
 					b.dirty()
@@ -287,10 +286,10 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 			}
 		}
 
-		if err = ventiSend(p.a, b, *data); err != nil {
+		if err := ventiSend(p.a, b, *data); err != nil {
 			p.nfailsend++
-			ret = ArchFailure
-			goto Out
+			p.depth--
+			return ArchFailure, err
 		}
 
 		p.nsend++
@@ -301,27 +300,26 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 			p.nreal++
 			l := b.l
 			l.state |= BsVenti
-			if err = b.setLabel(&l, false); err != nil {
-				ret = ArchFailure
-				goto Out
+			if err := b.setLabel(&l, false); err != nil {
+				p.depth--
+				return ArchFailure, err
 			}
 		}
 	}
 
-	p.score = shaBlock(b, *data)
+	sp := shaBlock(b, *data)
+	p.score = *sp
 	if false {
-		dprintf("ventisend %v %p %p %p\n", p.score, *data, b.data, w.data)
+		dprintf("ventisend %v %p %p %p\n", &p.score, *data, b.data, w.data)
 	}
-	ret = ArchFaked
+	ret := ArchFaked
 	if data == &b.data {
 		ret = ArchSuccess
 	}
 	p.l = b.l
 
-Out:
 	p.depth--
-	b.put()
-	return ret, err
+	return ret, nil
 }
 
 func (a *Arch) thread() {
@@ -390,7 +388,7 @@ func (a *Arch) thread() {
 		if false {
 			dprintf("archiveSnapshot %#x: maxdepth %d nfixed %d send %d nfailsend %d nvisit %d nreclaim %d nfake %d nreal %d\n",
 				addr, p.maxdepth, p.nfixed, p.nsend, p.nfailsend, p.nvisit, p.nreclaim, p.nfake, p.nreal)
-			dprintf("archiveBlock %v (%d)\n", p.score, p.blockSize)
+			dprintf("archiveBlock %v (%d)\n", &p.score, p.blockSize)
 		}
 
 		/* tie up vac root */
@@ -398,46 +396,45 @@ func (a *Arch) thread() {
 			Version:   venti.RootVersion,
 			Type:      "vac",
 			Name:      "fossil",
-			Score:     new(venti.Score),
+			Score:     p.score,
 			BlockSize: uint16(a.blockSize),
-			Prev:      new(venti.Score),
+			Prev:      super.last,
 		}
-		*(root.Score) = *(p.score)
-		*(root.Prev) = *(super.last)
 
 		var rbuf [venti.RootSize]uint8
 		venti.RootPack(&root, rbuf[:])
 
-		p.score, err = a.z.Write(venti.RootType, rbuf[:venti.RootSize])
+		score, err := a.z.Write(venti.RootType, rbuf[:venti.RootSize])
 		if err != nil {
-			logf("venti.Write %#x: %v\n", addr, err)
+			logf("write block %#x to venti failed: %v\n", addr, err)
 			time.Sleep(1 * time.Minute)
 			continue
 		}
-		if err := venti.Sha1Check(p.score, rbuf[:venti.RootSize]); err != nil {
-			logf("venti.Sha1Check %#x: %v\n", addr, err)
+		if !score.Check(rbuf[:]) {
+			logf("score check for block %#x failed\n", addr)
 			time.Sleep(1 * time.Minute)
 			continue
 		}
+		p.score = *score
 
 		/* record success */
 		a.fs.elk.Lock()
 		b, err = superGet(a.c, &super)
 		if err != nil {
 			a.fs.elk.Unlock()
-			logf("archThread: superGet: %v\n", err)
+			logf("failed to get super block: %v\n", err)
 			time.Sleep(1 * time.Minute)
 			continue
 		}
 
 		super.current = NilBlock
-		copy(super.last[:], p.score[:venti.ScoreSize])
+		super.last = p.score
 		superPack(&super, b.data)
 		b.dirty()
 		b.put()
 		a.fs.elk.Unlock()
 
-		logf("archive vac:%v\n", p.score)
+		logf("archive vac:%v\n", &p.score)
 	}
 
 	a.ref--

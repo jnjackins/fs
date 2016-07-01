@@ -16,8 +16,8 @@ func TestSha1Check(t *testing.T) {
 			t.Errorf("failed to parse score %s: %v", test.score, err)
 			continue
 		}
-		if err := Sha1Check(parsed, test.data); err != nil {
-			t.Errorf("Sha1Check %v %q: %v", test.score, test.data, err)
+		if !parsed.Check(test.data) {
+			t.Errorf("score check failed: %q -> %v, wanted %v", test.data, Sha1(test.data), parsed)
 		}
 	}
 }

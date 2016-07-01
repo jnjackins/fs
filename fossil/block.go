@@ -168,7 +168,7 @@ type Block struct {
 
 	part  int
 	addr  uint32
-	score *venti.Score
+	score venti.Score
 	l     Label
 
 	dmap []byte

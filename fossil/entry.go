@@ -18,7 +18,7 @@ type Entry struct {
 	depth   uint8  /* unpacked from flags */
 	flags   uint8
 	size    uint64
-	score   *venti.Score
+	score   venti.Score
 	tag     uint32 /* tag for local blocks: zero if stored on Venti */
 	snap    uint32 /* non-zero -> entering snapshot of given epoch */
 	archive bool   /* archive this snapshot: only valid for snap != 0 */
@@ -38,7 +38,7 @@ func entryPack(e *Entry, p []byte, index int) {
 	pack.U48PUT(p[14:], e.size)
 
 	if flags&venti.EntryLocal != 0 {
-		if venti.GlobalToLocal(e.score) == NilBlock {
+		if venti.GlobalToLocal(&e.score) == NilBlock {
 			panic("abort")
 		}
 		for i := 0; i < 7; i++ {
@@ -49,7 +49,7 @@ func entryPack(e *Entry, p []byte, index int) {
 		pack.U32PUT(p[32:], e.tag)
 		copy(p[36:], e.score[16:][:4])
 	} else {
-		copy(p[20:], e.score[:venti.ScoreSize])
+		copy(p[20:], e.score[:])
 	}
 }
 
@@ -63,15 +63,14 @@ func entryUnpack(e *Entry, p []byte, index int) error {
 	e.depth = (e.flags & venti.EntryDepthMask) >> venti.EntryDepthShift
 	e.flags &^= venti.EntryDepthMask
 	e.size = pack.U48GET(p[14:])
-	e.score = new(venti.Score)
 
 	if e.flags&venti.EntryLocal != 0 {
 		e.archive = p[27] != 0
 		e.snap = pack.U32GET(p[28:])
 		e.tag = pack.U32GET(p[32:])
-		copy(e.score[16:], p[36:][:4])
+		copy(e.score[16:], p[36:])
 	} else {
-		copy(e.score[:], p[20:][:venti.ScoreSize])
+		copy(e.score[:], p[20:])
 	}
 
 	return nil

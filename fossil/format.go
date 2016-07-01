@@ -113,7 +113,8 @@ func format(argv []string) {
 	}
 
 	dprintf("format: initializing superblock\n")
-	disk.superInit(label, root, venti.ZeroScore, buf)
+	zscore := venti.ZeroScore()
+	disk.superInit(label, root, &zscore, buf)
 
 	dprintf("format: freeing disk structure\n")
 	disk.free()
@@ -187,10 +188,9 @@ func (d *Disk) entryInit() *Entry {
 		dsize: uint16(bsize),
 		psize: uint16(bsize / venti.EntrySize * venti.EntrySize),
 		flags: venti.EntryActive,
-		score: new(venti.Score),
+		score: venti.ZeroScore(),
 		tag:   formatTagGen(),
 	}
-	copy(e.score[:], venti.ZeroScore[:venti.ScoreSize])
 	return e
 }
 
@@ -232,7 +232,7 @@ func (d *Disk) rootMetaInit(buf []byte) *Entry {
 	e.flags |= venti.EntryLocal
 	e.size = uint64(d.blockSize())
 	e.tag = tag
-	venti.LocalToGlobal(addr, e.score)
+	venti.LocalToGlobal(addr, &e.score)
 
 	return e
 }
@@ -259,7 +259,7 @@ func (d *Disk) rootInit(e *Entry, buf []byte) uint32 {
 	e.flags |= venti.EntryLocal | venti.EntryDir
 	e.size = venti.EntrySize * 3
 	e.tag = tag
-	venti.LocalToGlobal(addr, e.score)
+	venti.LocalToGlobal(addr, &e.score)
 
 	addr = d.blockAlloc(BtDir, RootTag, buf)
 	memset(buf, 0)
@@ -306,10 +306,9 @@ func (d *Disk) superInit(label string, root uint32, score *venti.Score, buf []by
 		active:    root,
 		next:      NilBlock,
 		current:   NilBlock,
-		last:      new(venti.Score),
+		last:      *score,
 	}
 	copy(s.name[:], []byte(label))
-	*s.last = *score
 
 	memset(buf, 0)
 	superPack(&s, buf)
@@ -381,7 +380,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	if err != nil {
 		fatalf("corrupted root: vtRootUnpack: %v", err)
 	}
-	n := d.ventiRead(z, root.Score, venti.DirType, buf)
+	n := d.ventiRead(z, &root.Score, venti.DirType, buf)
 
 	/*
 	 * Fossil's vac archives start with an extra layer of source,
@@ -392,7 +391,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 		if err := entryUnpack(e, buf, 0); err != nil {
 			fatalf("bad root: top entry: %v", err)
 		}
-		n = d.ventiRead(z, e.score, venti.DirType, buf)
+		n = d.ventiRead(z, &e.score, venti.DirType, buf)
 	}
 
 	/*
@@ -403,7 +402,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 		if err != nil || e.flags&venti.EntryActive == 0 || e.psize < 256 || e.dsize < 256 {
 			fatalf("bad root: entry %d", i)
 		}
-		fmt.Fprintf(os.Stderr, "%v\n", e.score)
+		fmt.Fprintf(os.Stderr, "%v\n", &e.score)
 	}
 
 	if n > 3*venti.EntrySize {
@@ -415,7 +414,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	/*
 	 * Maximum qid is recorded in root's msource, entry #2 (conveniently in e).
 	 */
-	d.ventiRead(z, e.score, venti.DataType, buf)
+	d.ventiRead(z, &e.score, venti.DataType, buf)
 
 	mb, err := unpackMetaBlock(buf, d.blockSize())
 	if err != nil {
@@ -440,7 +439,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	e.flags |= venti.EntryLocal | venti.EntryDir
 	e.size = venti.EntrySize * 3
 	e.tag = tag
-	venti.LocalToGlobal(addr, e.score)
+	venti.LocalToGlobal(addr, &e.score)
 
 	addr = d.blockAlloc(BtDir, RootTag, buf)
 	memset(buf, 0)

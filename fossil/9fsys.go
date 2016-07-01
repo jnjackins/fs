@@ -967,7 +967,8 @@ func fsysClrep(cons *Cons, fsys *Fsys, argv []string, ch rune) error {
 		if b.l.typ == BtDir || b.l.typ == BtData {
 			return fmt.Errorf("wrong block type")
 		}
-		copy(zero[:], venti.ZeroScore[:venti.ScoreSize])
+		score := venti.ZeroScore()
+		copy(zero[:], score[:])
 	}
 	max := fs.blockSize / sz
 	for i := 1; i < argc; i++ {
@@ -1398,7 +1399,7 @@ func fsckClre(fsck *Fsck, b *Block, offset int) error {
 		return errors.New("bad clre")
 	}
 
-	e := Entry{score: new(venti.Score)}
+	var e Entry
 	entryPack(&e, b.data, offset)
 	b.dirty()
 
@@ -1413,7 +1414,8 @@ func fsckClrp(fsck *Fsck, b *Block, offset int) error {
 		return errors.New("bad clre")
 	}
 
-	copy(b.data[offset*venti.ScoreSize:], venti.ZeroScore[:venti.ScoreSize])
+	score := venti.ZeroScore()
+	copy(b.data[offset*venti.ScoreSize:], score[:])
 	b.dirty()
 
 	return nil

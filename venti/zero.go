@@ -22,7 +22,7 @@ func ZeroExtend(typ BlockType, buf []byte, size, newsize int) error {
 		end := (newsize / ScoreSize) * ScoreSize
 		i := start
 		for ; i < end; i += ScoreSize {
-			copy(buf[i:], ZeroScore[:ScoreSize])
+			copy(buf[i:], zeroScore[:])
 		}
 		for ; i < newsize; i++ {
 			buf[i] = 0
@@ -59,7 +59,7 @@ func ZeroTruncate(typ BlockType, buf []byte) []byte {
 		/* ignore slop at end of block */
 		i := (len(buf) / ScoreSize) * ScoreSize
 		for i >= 0 {
-			if bytes.Compare(buf[i:], ZeroScore[:]) != 0 {
+			if bytes.Compare(buf[i:], zeroScore[:]) != 0 {
 				break
 			}
 			i -= ScoreSize

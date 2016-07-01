@@ -86,7 +86,7 @@ type BList struct {
 	// for roll back
 	index int // -1 indicates not valid
 	old   struct {
-		score *venti.Score
+		score venti.Score
 		entry [venti.EntrySize]uint8
 	}
 	next *BList
@@ -154,11 +154,10 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 
 	for i := uint32(0); i < uint32(nblocks); i++ {
 		b := &Block{
-			lk:    new(sync.Mutex),
-			c:     c,
-			data:  make([]byte, c.size),
-			heap:  i,
-			score: new(venti.Score),
+			lk:   new(sync.Mutex),
+			c:    c,
+			data: make([]byte, c.size),
+			heap: i,
 		}
 		b.ioready = sync.NewCond(b.lk)
 		c.blocks[i] = b
@@ -306,7 +305,7 @@ func (c *Cache) check() {
 		b = c.blocks[i]
 		if b.ref != 0 {
 			if true {
-				logf("p=%d a=%d %v ref=%d %v\n", b.part, b.addr, b.score, b.ref, b.l)
+				logf("p=%d a=%d %v ref=%d %v\n", b.part, b.addr, &b.score, b.ref, b.l)
 			}
 			refed++
 		}
@@ -365,7 +364,7 @@ func (c *Cache) bumpBlock() *Block {
 	}
 
 	if false {
-		dprintf("dropping %d:%x:%v\n", b.part, b.addr, b.score)
+		dprintf("dropping %d:%x:%v\n", b.part, b.addr, &b.score)
 	}
 
 	/* set block to a reasonable state */
@@ -477,7 +476,7 @@ func (c *Cache) _local(part int, addr uint32, mode int, epoch uint32) (*Block, e
 
 		b.part = part
 		b.addr = addr
-		venti.LocalToGlobal(addr, b.score)
+		venti.LocalToGlobal(addr, &b.score)
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
@@ -588,7 +587,7 @@ func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) 
 
 	var b *Block
 	for b = c.heads[h]; b != nil; b = b.next {
-		if b.part != PartVenti || *b.score != *score || b.l.typ != typ {
+		if b.part != PartVenti || b.score != *score || b.l.typ != typ {
 			continue
 		}
 		heapDel(b)
@@ -597,16 +596,14 @@ func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) 
 	}
 
 	if b == nil {
-		if false {
-			dprintf("(*Cache).global: %v %d\n", score, typ)
-		}
+		dprintf("%v (%v) is not cached; fetching from venti\n", score, typ)
 
 		b = c.bumpBlock()
 
 		b.part = PartVenti
 		b.addr = NilBlock
 		b.l.typ = typ
-		copy(b.score[:], score[:venti.ScoreSize])
+		b.score = *score
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
@@ -635,7 +632,7 @@ func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) 
 			return nil, fmt.Errorf("venti error reading block %v: %v", score, err)
 		}
 		assert(n <= c.size)
-		if err := venti.Sha1Check(score, b.data[:n]); err != nil {
+		if !score.Check(b.data[:n]) {
 			b.setIOState(BioVentiError)
 			b.put()
 			return nil, fmt.Errorf("venti error: wrong score: %v: %v", score, err)
@@ -651,7 +648,7 @@ func (c *Cache) global(score *venti.Score, typ BlockType, tag uint32, mode int) 
 		return nil, fmt.Errorf("venti i/o error or wrong score, block %v", score)
 	case BioReadError:
 		b.put()
-		return nil, fmt.Errorf("error reading block %v", b.score)
+		return nil, fmt.Errorf("error reading block %v", &b.score)
 	}
 	/* NOT REACHED */
 }
@@ -983,7 +980,6 @@ func (b *Block) dependency(bb *Block, index int, score *venti.Score, e *Entry) {
 	p.typ = bb.l.typ
 	p.vers = bb.vers
 	p.index = index
-	p.old.score = new(venti.Score)
 	if p.index >= 0 {
 		/*
 		 * This test would just be b.l.typ == BtDir except
@@ -992,7 +988,7 @@ func (b *Block) dependency(bb *Block, index int, score *venti.Score, e *Entry) {
 		if b.l.typ == BtDir && b.part == PartData {
 			entryPack(e, p.old.entry[:], 0)
 		} else {
-			copy(p.old.score[:], score[:])
+			p.old.score = *score
 		}
 	}
 
@@ -1053,9 +1049,9 @@ func (b *Block) rollback(buf []byte) (p []byte, dirty bool) {
 			assert(p.index == 0)
 			var super Super
 			superUnpack(&super, buf)
-			addr := venti.GlobalToLocal(p.old.score)
+			addr := venti.GlobalToLocal(&p.old.score)
 			if addr == NilBlock {
-				logf("rolling back super block: bad replacement addr %v\n", p.old.score)
+				logf("rolling back super block: bad replacement addr %v\n", &p.old.score)
 				panic("abort")
 			}
 			super.active = addr
@@ -1063,9 +1059,9 @@ func (b *Block) rollback(buf []byte) (p []byte, dirty bool) {
 			continue
 		}
 		if b.l.typ == BtDir {
-			copy(buf[p.index*venti.EntrySize:], p.old.entry[:venti.EntrySize])
+			copy(buf[p.index*venti.EntrySize:], p.old.entry[:])
 		} else {
-			copy(buf[p.index*venti.ScoreSize:], p.old.score[:venti.ScoreSize])
+			copy(buf[p.index*venti.ScoreSize:], p.old.score[:])
 		}
 	}
 

@@ -22,13 +22,11 @@ func initWalk(w *WalkPtr, b *Block, size uint) {
 	switch b.l.typ {
 	case BtData:
 		return
-
 	case BtDir:
 		w.data = b.data
 		w.m = int(size / venti.EntrySize)
 		w.isEntry = 1
 		return
-
 	default:
 		w.data = b.data
 		w.m = int(size / venti.ScoreSize)
@@ -42,20 +40,18 @@ func nextWalk(w *WalkPtr, score *venti.Score, typ *BlockType, tag *uint32, e **E
 	if w.n >= w.m {
 		return false
 	}
-
 	if w.isEntry != 0 {
 		*e = &w.e
 		entryUnpack(&w.e, w.data, w.n)
-		copy(score[:], w.e.score[:venti.ScoreSize])
+		*score = w.e.score
 		*typ = etype(&w.e)
 		*tag = w.e.tag
 	} else {
 		*e = nil
-		copy(score[:], w.data[w.n*venti.ScoreSize:][:venti.ScoreSize])
+		copy(score[:], w.data[w.n*venti.ScoreSize:])
 		*typ = w.typ - 1
 		*tag = w.tag
 	}
-
 	w.n++
 	return true
 }

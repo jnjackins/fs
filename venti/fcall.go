@@ -75,13 +75,13 @@ func (f *fcall) String() string {
 	case rGoodbye:
 		return fmt.Sprintf("Rgoodbye tag %d", f.tag)
 	case tAuth0:
-		return fmt.Sprintf("Tauth0 tag %d auth %v", f.tag, f.nauth, f.auth)
+		return fmt.Sprintf("Tauth0 tag %d auth %d:%v", f.tag, f.nauth, f.auth)
 	case rAuth0:
-		return fmt.Sprintf("Rauth0 tag %d auth %v", f.tag, f.nauth, f.auth)
+		return fmt.Sprintf("Rauth0 tag %d auth %d:%v", f.tag, f.nauth, f.auth)
 	case tAuth1:
-		return fmt.Sprintf("Tauth1 tag %d auth %v", f.tag, f.nauth, f.auth, 0)
+		return fmt.Sprintf("Tauth1 tag %d auth %d:%v", f.tag, f.nauth, f.auth)
 	case rAuth1:
-		return fmt.Sprintf("Rauth1 tag %d auth %v", f.tag, f.nauth, f.auth, 0)
+		return fmt.Sprintf("Rauth1 tag %d auth %d:%v", f.tag, f.nauth, f.auth)
 	case tRead:
 		return fmt.Sprintf("Tread tag %d score %v blocktype %d count %d", f.tag, f.score, f.typ, f.count)
 	case rRead:
@@ -119,16 +119,14 @@ func marshalFcall(f *fcall) ([]byte, error) {
 	case tRead:
 		buf = append(buf, f.score[:]...)
 		buf = append(buf, uint8(f.typ))
-		var pad uint8 // TODO(jnj)
-		buf = append(buf, pad)
+		buf = append(buf, 0) // pad
 		buf = append(buf, uint8(f.count>>8))
 		buf = append(buf, uint8(f.count))
 	case tWrite:
 		buf = append(buf, uint8(f.typ))
-		var pad uint32 // TODO(jnj)
-		buf = append(buf, uint8(pad>>16))
-		buf = append(buf, uint8(pad>>8))
-		buf = append(buf, uint8(pad))
+		buf = append(buf, 0) // pad
+		buf = append(buf, 0) // pad
+		buf = append(buf, 0) // pad
 		buf = append(buf, f.data...)
 	case tSync:
 	default:

@@ -59,7 +59,7 @@ func (z *Session) Ping() error {
 // TODO(jnj): avoid copy (why are we even
 func (z *Session) Read(score *Score, typ BlockType, buf []byte) (int, error) {
 	// TODO(jnj): hack: fossil relies on this working even when z == nil
-	if *score == *ZeroScore {
+	if score.IsZero() {
 		return 0, nil
 	}
 	tx := &fcall{

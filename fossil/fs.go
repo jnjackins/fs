@@ -448,18 +448,17 @@ func (fs *Fs) bumpEpoch(doarchive bool) error {
 	 */
 	r := fs.source
 
-	b, err := fs.cache.global(r.score, BtDir, RootTag, OReadOnly)
+	b, err := fs.cache.global(&r.score, BtDir, RootTag, OReadOnly)
 	if err != nil {
 		return err
 	}
 
 	e := Entry{
 		flags: venti.EntryActive | venti.EntryLocal | venti.EntryDir,
-		score: new(venti.Score),
+		score: b.score,
 		tag:   RootTag,
 		snap:  b.l.epoch,
 	}
-	copy(e.score[:], b.score[:venti.ScoreSize])
 
 	b, err = b.copy(RootTag, fs.ehi+1, fs.elo)
 	if err != nil {
@@ -484,7 +483,7 @@ func (fs *Fs) bumpEpoch(doarchive bool) error {
 	}
 
 	fs.ehi++
-	copy(r.score[:], b.score[:venti.ScoreSize])
+	r.score = b.score
 	r.epoch = fs.ehi
 
 	super.epochHigh = fs.ehi
@@ -694,8 +693,8 @@ func vtWriteBlock(z *venti.Session, buf []byte, typ venti.BlockType) (*venti.Sco
 	if err != nil {
 		return nil, err
 	}
-	if err := venti.Sha1Check(score, buf); err != nil {
-		return nil, fmt.Errorf("check score: %v", err)
+	if !score.Check(buf) {
+		return nil, fmt.Errorf("score check failed")
 	}
 	return score, nil
 }
@@ -705,7 +704,7 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	ee := *pee
 	de := *pde
 
-	if venti.GlobalToLocal(e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && venti.GlobalToLocal(ee.score) != NilBlock) {
+	if venti.GlobalToLocal(&e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && venti.GlobalToLocal(&ee.score) != NilBlock) {
 		return nil, fmt.Errorf("can only vac paths already stored on venti")
 	}
 
@@ -735,10 +734,11 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 
 	var eee Entry
 	eee.size = uint64(n) + MetaHeaderSize + MetaIndexSize
-	eee.score, err = vtWriteBlock(z, buf[:eee.size], venti.DataType)
+	score, err := vtWriteBlock(z, buf[:eee.size], venti.DataType)
 	if err != nil {
 		return nil, fmt.Errorf("error writing root metadata block to venti: %v", err)
 	}
+	eee.score = *score
 	eee.psize = 8192
 	eee.dsize = 8192
 	eee.depth = 0
@@ -751,10 +751,11 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 
 	n = venti.EntrySize * 3
 	var root venti.Root
-	root.Score, err = vtWriteBlock(z, buf[:n], venti.DirType)
+	score, err = vtWriteBlock(z, buf[:n], venti.DirType)
 	if err != nil {
 		return nil, fmt.Errorf("error writing root dir block to venti: %v", err)
 	}
+	root.Score = *score
 
 	// Save root.
 	root.Version = venti.RootVersion
@@ -762,9 +763,8 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	root.Type = "vac"
 	root.Name = de.elem
 	root.BlockSize = uint16(blockSize)
-	root.Prev = new(venti.Score) // TODO(jnj): bleh
 	venti.RootPack(&root, buf)
-	score, err := vtWriteBlock(z, buf[:venti.RootSize], venti.RootType)
+	score, err = vtWriteBlock(z, buf[:venti.RootSize], venti.RootType)
 	if err != nil {
 		return nil, fmt.Errorf("error writing root data block to venti: %v", err)
 	}

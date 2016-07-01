@@ -424,7 +424,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 
 	dir.size = 0
 	if err = f.fs.nextQid(&dir.qid); err != nil {
-		err = fmt.Errorf("next qid: %v")
+		err = fmt.Errorf("next qid: %v", err)
 		goto Err
 	}
 	dir.uid = uid
@@ -594,13 +594,13 @@ func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
 		return err
 	}
 	if b.l.typ == BtDir {
-		copy(e.score[:], score[:venti.ScoreSize])
+		e.score = *score
 		assert(e.tag == tag || e.tag == 0)
 		e.tag = tag
 		e.flags |= venti.EntryLocal
 		entryPack(e, b.data, int(f.source.offset%uint32(f.source.epb)))
 	} else {
-		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:venti.ScoreSize])
+		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:])
 	}
 	b.dirty()
 	return nil
@@ -1613,11 +1613,11 @@ func (f *File) wAccess(mid string) {
 
 func getEntry(r *Source, e *Entry, checkepoch bool) error {
 	if r == nil {
-		*e = Entry{score: new(venti.Score)}
+		*e = Entry{}
 		return nil
 	}
 
-	b, err := r.fs.cache.global(r.score, BtDir, r.tag, OReadOnly)
+	b, err := r.fs.cache.global(&r.score, BtDir, r.tag, OReadOnly)
 	if err != nil {
 		return err
 	}
@@ -1632,10 +1632,10 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 	if checkepoch {
 		var b *Block
 		var err error
-		b, err = r.fs.cache.global(e.score, EntryType(e), e.tag, OReadOnly)
+		b, err = r.fs.cache.global(&e.score, EntryType(e), e.tag, OReadOnly)
 		if err == nil {
 			if b.l.epoch >= epoch {
-				logf("warning: entry %p epoch not older %#.8x/%d %v/%d in getEntry\n", r, b.addr, b.l.epoch, r.score, epoch)
+				logf("warning: entry %p epoch not older %#.8x/%d %v/%d in getEntry\n", r, b.addr, b.l.epoch, &r.score, epoch)
 			}
 			b.put()
 		}
@@ -1645,9 +1645,9 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 }
 
 func setEntry(r *Source, e *Entry) error {
-	b, err := r.fs.cache.global(r.score, BtDir, r.tag, OReadWrite)
+	b, err := r.fs.cache.global(&r.score, BtDir, r.tag, OReadWrite)
 	if false {
-		dprintf("setEntry: b %#x %d score=%v\n", b.addr, r.offset%uint32(r.epb), e.score)
+		dprintf("setEntry: b %#x %d score=%v\n", b.addr, r.offset%uint32(r.epb), &e.score)
 	}
 	if err != nil {
 		return err

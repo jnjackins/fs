@@ -17,12 +17,12 @@ type Super struct {
 	version   uint16
 	epochLow  uint32
 	epochHigh uint32
-	qid       uint64       /* next qid */
-	active    uint32       /* root of active file system */
-	next      uint32       /* root of next snapshot to archive */
-	current   uint32       /* root of snapshot currently archiving */
-	last      *venti.Score /* last snapshot successfully archived */
-	name      [128]byte    /* label */
+	qid       uint64      /* next qid */
+	active    uint32      /* root of active file system */
+	next      uint32      /* root of next snapshot to archive */
+	current   uint32      /* root of snapshot currently archiving */
+	last      venti.Score /* last snapshot successfully archived */
+	name      [128]byte   /* label */
 }
 
 func superPack(s *Super, p []byte) {
@@ -38,7 +38,7 @@ func superPack(s *Super, p []byte) {
 	pack.U32PUT(p[22:], s.active)
 	pack.U32PUT(p[26:], s.next)
 	pack.U32PUT(p[30:], s.current)
-	copy(p[34:], s.last[:venti.ScoreSize])
+	copy(p[34:], s.last[:])
 	copy(p[54:], s.name[:])
 }
 
@@ -63,8 +63,7 @@ func superUnpack(s *Super, p []byte) error {
 	s.active = pack.U32GET(p[22:])
 	s.next = pack.U32GET(p[26:])
 	s.current = pack.U32GET(p[30:])
-	s.last = new(venti.Score)
-	copy(s.last[:], p[34:][:venti.ScoreSize])
+	copy(s.last[:], p[34:])
 	copy(s.name[:], p[54:])
 	return nil
 }

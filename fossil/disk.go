@@ -204,7 +204,7 @@ func (d *Disk) thread() {
 		case BioReading:
 			if err := d.readRaw(b.part, b.addr, b.data); err != nil {
 				logf("(*Disk).readRaw failed: fd=%d score=%v: part=%s block=%d: %v\n",
-					d.fd, b.score, partname[b.part], b.addr, err)
+					d.fd, &b.score, partname[b.part], b.addr, err)
 				b.setIOState(BioReadError)
 			} else {
 				b.setIOState(BioClean)
@@ -214,7 +214,7 @@ func (d *Disk) thread() {
 			p, dirty := b.rollback(buf)
 			if err := d.writeRaw(b.part, b.addr, p); err != nil {
 				logf("(*Disk).writeRaw failed: fd=%d score=%v: date=%s part=%s block=%d: %v\n",
-					d.fd, b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
+					d.fd, &b.score, time.Now().Format(time.ANSIC), partname[b.part], b.addr, err)
 				break
 			}
 			if dirty {

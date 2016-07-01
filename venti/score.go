@@ -2,7 +2,6 @@ package venti
 
 import (
 	"crypto/sha1"
-	"errors"
 	"fmt"
 
 	"sigint.ca/fs/internal/pack"
@@ -15,23 +14,33 @@ const (
 
 type Score [ScoreSize]uint8
 
-// TODO: this should not be mutable
-var ZeroScore = &Score{
+var zeroScore = Score{
 	0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55,
 	0xbf, 0xef, 0x95, 0x60, 0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09,
 }
 
-func Sha1(data []byte) *Score {
-	s := Score(sha1.Sum(data))
-	return &s
+// ZeroScore returns a copy of the zero score.
+func ZeroScore() Score {
+	return zeroScore
 }
 
-func Sha1Check(score *Score, data []byte) error {
+// IsZero reports whether sc is equal to the zero score.
+func (sc *Score) IsZero() bool {
+	return *sc == zeroScore
+}
+
+func Sha1(data []byte) *Score {
+	sc := Score(sha1.Sum(data))
+	return &sc
+}
+
+// CheckScore reports whether sc is the correct score for data
+func (sc *Score) Check(data []byte) bool {
 	digest := sha1.Sum(data)
-	if *score != digest {
-		return errors.New("Sha1Check failed")
+	if *sc != digest {
+		return false
 	}
-	return nil
+	return true
 }
 
 func ParseScore(s string) (*Score, error) {
