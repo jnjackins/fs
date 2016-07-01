@@ -26,26 +26,7 @@ type Entry struct {
 	score Score
 }
 
-func EntryPack(e *Entry, p []byte, index int) {
-	p = p[index*EntrySize:]
-
-	pack.U32PUT(p, e.gen)
-	p = p[4:]
-	pack.U16PUT(p, e.psize)
-	p = p[2:]
-	pack.U16PUT(p, e.dsize)
-	p = p[2:]
-	flags := e.flags | (e.depth<<EntryDepthShift)&EntryDepthMask
-	pack.U8PUT(p, flags)
-	p = p[1:]
-	memset(p[:5], 0)
-	p = p[5:]
-	pack.U48PUT(p, e.size)
-	p = p[6:]
-	p = p[copy(p, e.score[:]):]
-}
-
-func EntryUnpack(p []byte, index int) (*Entry, error) {
+func UnpackEntry(p []byte, index int) (*Entry, error) {
 	var e Entry
 
 	p = p[index*EntrySize:]
@@ -76,4 +57,23 @@ func EntryUnpack(p []byte, index int) (*Entry, error) {
 	}
 
 	return &e, nil
+}
+
+func (e *Entry) Pack(p []byte, index int) {
+	p = p[index*EntrySize:]
+
+	pack.U32PUT(p, e.gen)
+	p = p[4:]
+	pack.U16PUT(p, e.psize)
+	p = p[2:]
+	pack.U16PUT(p, e.dsize)
+	p = p[2:]
+	flags := e.flags | (e.depth<<EntryDepthShift)&EntryDepthMask
+	pack.U8PUT(p, flags)
+	p = p[1:]
+	memset(p[:5], 0)
+	p = p[5:]
+	pack.U48PUT(p, e.size)
+	p = p[6:]
+	p = p[copy(p, e.score[:]):]
 }

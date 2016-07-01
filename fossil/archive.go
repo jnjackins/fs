@@ -402,7 +402,7 @@ func (a *Arch) thread() {
 		}
 
 		var rbuf [venti.RootSize]uint8
-		venti.RootPack(&root, rbuf[:])
+		(&root).Pack(rbuf[:])
 
 		score, err := a.z.Write(venti.RootType, rbuf[:venti.RootSize])
 		if err != nil {

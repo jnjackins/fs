@@ -376,7 +376,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	addr := d.blockAlloc(BtDir, tag, buf)
 
 	d.ventiRead(z, score, venti.RootType, buf)
-	root, err := venti.RootUnpack(buf)
+	root, err := venti.UnpackRoot(buf)
 	if err != nil {
 		fatalf("corrupted root: vtRootUnpack: %v", err)
 	}

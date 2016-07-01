@@ -20,18 +20,7 @@ type Root struct {
 	Prev      Score
 }
 
-func RootPack(r *Root, buf []byte) {
-	pack.U16PUT(buf, r.Version)
-	buf = buf[2:]
-	buf = buf[copy(buf, r.Name):]
-	buf = buf[copy(buf, r.Type):]
-	buf = buf[copy(buf, r.Score[:]):]
-	pack.U16PUT(buf, r.BlockSize)
-	buf = buf[2:]
-	buf = buf[copy(buf, r.Prev[:]):]
-}
-
-func RootUnpack(buf []byte) (*Root, error) {
+func UnpackRoot(buf []byte) (*Root, error) {
 	var r Root
 
 	r.Version = pack.U16GET(buf)
@@ -52,4 +41,15 @@ func RootUnpack(buf []byte) (*Root, error) {
 	buf = buf[copy(r.Prev[:], buf):]
 
 	return &r, nil
+}
+
+func (r *Root) Pack(buf []byte) {
+	pack.U16PUT(buf, r.Version)
+	buf = buf[2:]
+	buf = buf[copy(buf, r.Name):]
+	buf = buf[copy(buf, r.Type):]
+	buf = buf[copy(buf, r.Score[:]):]
+	pack.U16PUT(buf, r.BlockSize)
+	buf = buf[2:]
+	buf = buf[copy(buf, r.Prev[:]):]
 }

@@ -763,7 +763,7 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	root.Type = "vac"
 	root.Name = de.elem
 	root.BlockSize = uint16(blockSize)
-	venti.RootPack(&root, buf)
+	(&root).Pack(buf)
 	score, err = vtWriteBlock(z, buf[:venti.RootSize], venti.RootType)
 	if err != nil {
 		return nil, fmt.Errorf("error writing root data block to venti: %v", err)
