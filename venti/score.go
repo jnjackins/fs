@@ -14,19 +14,18 @@ const (
 
 type Score [ScoreSize]uint8
 
-var zeroScore = Score{
-	0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55,
-	0xbf, 0xef, 0x95, 0x60, 0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09,
-}
-
-// ZeroScore returns a copy of the zero score.
-func ZeroScore() Score {
-	return zeroScore
-}
-
-// IsZero reports whether sc is equal to the zero score.
-func (sc *Score) IsZero() bool {
-	return *sc == zeroScore
+func (sc *Score) String() string {
+	if sc == nil {
+		return "*"
+	}
+	if addr := GlobalToLocal(sc); addr != NilBlock {
+		return fmt.Sprintf("%.8x", addr)
+	}
+	var s string
+	for i := 0; i < ScoreSize; i++ {
+		s += fmt.Sprintf("%2.2x", sc[i])
+	}
+	return s
 }
 
 func Sha1(data []byte) *Score {
@@ -84,18 +83,4 @@ func LocalToGlobal(addr uint32, score *Score) {
 		score[i] = 0
 	}
 	pack.U32PUT(score[ScoreSize-4:], addr)
-}
-
-func (sc *Score) String() string {
-	if sc == nil {
-		return "*"
-	}
-	if addr := GlobalToLocal(sc); addr != NilBlock {
-		return fmt.Sprintf("%.8x", addr)
-	}
-	var s string
-	for i := 0; i < ScoreSize; i++ {
-		s += fmt.Sprintf("%2.2x", sc[i])
-	}
-	return s
 }
