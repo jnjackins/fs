@@ -77,7 +77,7 @@ func testRead(t *testing.T, z *Session) {
 			t.Errorf("read: bad length: %d", n)
 			continue
 		}
-		if bytes.Compare(buf[:n], test.data) != 0 {
+		if !bytes.Equal(buf[:n], test.data) {
 			t.Errorf("read %v: got %q, want %q", test.score, buf[:n], test.data)
 		}
 	}

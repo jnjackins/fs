@@ -2,6 +2,24 @@ package venti
 
 import "testing"
 
+func ParseScoreTest(t *testing.T) {
+	score, err := ParseScore("da39a3ee5e6b4b0d3255bfef95601890afd80709")
+	if err != nil {
+		t.Fatalf("error parsing score: %v", err)
+	}
+	if *score != zeroScore {
+		t.Errorf("failed to parse zero score correctly")
+	}
+
+	if _, err := ParseScore(""); err == nil {
+		t.Errorf("expected error parsing empty string")
+	}
+
+	if _, err := ParseScore("abcd"); err == nil {
+		t.Errorf("expected error parsing bad score")
+	}
+}
+
 func TestSha1Check(t *testing.T) {
 	for _, test := range []struct {
 		data  []byte

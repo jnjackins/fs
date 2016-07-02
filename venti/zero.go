@@ -20,29 +20,35 @@ func (sc *Score) IsZero() bool {
 	return *sc == zeroScore
 }
 
+// ZeroExtend pads buf with zeros or zero scores, according to
+// the given type, reslicing it from size to newsize bytes.
+// The capacity of buf must be at least newsize.
 func ZeroExtend(typ BlockType, buf []byte, size, newsize int) error {
 	if newsize > cap(buf) {
 		return fmt.Errorf("newsize is too large for buffer")
 	}
+	buf = buf[:newsize]
 
 	switch typ {
 	default:
-		memset(buf[size:newsize], 0)
+		memset(buf[size:], 0)
 
 	case PointerType0, PointerType1, PointerType2, PointerType3, PointerType4,
 		PointerType5, PointerType6, PointerType7, PointerType8, PointerType9:
 
 		start := (size / ScoreSize) * ScoreSize
 		end := (newsize / ScoreSize) * ScoreSize
-		i := start
-		for ; i < end; i += ScoreSize {
+		var i int
+		for i = start; i < end; i += ScoreSize {
 			copy(buf[i:], zeroScore[:])
 		}
-		memset(buf[i:newsize], 0)
+		memset(buf[i:], 0)
 	}
 	return nil
 }
 
+// ZeroTruncate returns a new slice of buf which excludes
+// trailing zeros or zero scores, according to the given type.
 func ZeroTruncate(typ BlockType, buf []byte) []byte {
 	switch typ {
 	default:
@@ -64,8 +70,8 @@ func ZeroTruncate(typ BlockType, buf []byte) []byte {
 		PointerType5, PointerType6, PointerType7, PointerType8, PointerType9:
 		// ignore slop at end of block
 		i := (len(buf) / ScoreSize) * ScoreSize
-		for i > 0 {
-			if len(buf[i:]) > 0 && bytes.Compare(buf[i:], zeroScore[:]) != 0 {
+		for i >= ScoreSize {
+			if !bytes.Equal(buf[i-ScoreSize:i], zeroScore[:]) {
 				break
 			}
 			i -= ScoreSize

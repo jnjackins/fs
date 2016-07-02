@@ -58,42 +58,42 @@ func (f *fcall) String() string {
 
 	switch f.msgtype {
 	default:
-		return fmt.Sprintf("%c%d tag %d", "TR"[f.msgtype&1], f.msgtype>>1, f.tag)
+		return fmt.Sprintf("%c%d tag=%d", "TR"[f.msgtype&1], f.msgtype>>1, f.tag)
 	case rError:
-		return fmt.Sprintf("Rerror tag %d error %v", f.tag, f.err)
+		return fmt.Sprintf("Rerror tag=%d error=%v", f.tag, f.err)
 	case tPing:
-		return fmt.Sprintf("Tping tag %d", f.tag)
+		return fmt.Sprintf("Tping tag=%d", f.tag)
 	case rPing:
-		return fmt.Sprintf("Rping tag %d", f.tag)
+		return fmt.Sprintf("Rping tag=%d", f.tag)
 	case tHello:
-		return fmt.Sprintf("Thello tag %d vers %s uid %s strength %d crypto %d:%#0.*x codec %d:%#0.*x",
+		return fmt.Sprintf("Thello tag=%d vers=%s uid=%s strength=%d crypto=%d:%#0.*x codec=%d:%#0.*x",
 			f.tag, f.version, f.uid, f.strength, f.ncrypto, f.ncrypto, f.crypto, f.ncodec, f.ncodec, f.codec)
 	case rHello:
-		return fmt.Sprintf("Rhello tag %d sid %s rcrypto %d rcodec %d", f.tag, f.sid, f.rcrypto, f.rcodec)
+		return fmt.Sprintf("Rhello tag=%d sid=%s rcrypto=%d rcodec=%d", f.tag, f.sid, f.rcrypto, f.rcodec)
 	case tGoodbye:
-		return fmt.Sprintf("Tgoodbye tag %d", f.tag)
+		return fmt.Sprintf("Tgoodbye tag=%d", f.tag)
 	case rGoodbye:
-		return fmt.Sprintf("Rgoodbye tag %d", f.tag)
+		return fmt.Sprintf("Rgoodbye tag=%d", f.tag)
 	case tAuth0:
-		return fmt.Sprintf("Tauth0 tag %d auth %d:%v", f.tag, f.nauth, f.auth)
+		return fmt.Sprintf("Tauth0 tag=%d auth=%d:%v", f.tag, f.nauth, f.auth)
 	case rAuth0:
-		return fmt.Sprintf("Rauth0 tag %d auth %d:%v", f.tag, f.nauth, f.auth)
+		return fmt.Sprintf("Rauth0 tag=%d auth=%d:%v", f.tag, f.nauth, f.auth)
 	case tAuth1:
-		return fmt.Sprintf("Tauth1 tag %d auth %d:%v", f.tag, f.nauth, f.auth)
+		return fmt.Sprintf("Tauth1 tag=%d auth=%d:%v", f.tag, f.nauth, f.auth)
 	case rAuth1:
-		return fmt.Sprintf("Rauth1 tag %d auth %d:%v", f.tag, f.nauth, f.auth)
+		return fmt.Sprintf("Rauth1 tag=%d auth=%d:%v", f.tag, f.nauth, f.auth)
 	case tRead:
-		return fmt.Sprintf("Tread tag %d score %v blocktype %d count %d", f.tag, f.score, f.typ, f.count)
+		return fmt.Sprintf("Tread tag=%d score=%v blocktype=%v count=%d", f.tag, f.score, f.typ, f.count)
 	case rRead:
-		return fmt.Sprintf("Rread tag %d count %d", f.tag, len(f.data))
+		return fmt.Sprintf("Rread tag=%d count=%d", f.tag, len(f.data))
 	case tWrite:
-		return fmt.Sprintf("Twrite tag %d blocktype %d count %d", f.tag, f.typ, len(f.data))
+		return fmt.Sprintf("Twrite tag=%d blocktype=%v count=%d", f.tag, f.typ, len(f.data))
 	case rWrite:
-		return fmt.Sprintf("Rwrite tag %d score %v", f.tag, f.score)
+		return fmt.Sprintf("Rwrite tag=%d score=%v", f.tag, f.score)
 	case tSync:
-		return fmt.Sprintf("Tsync tag %d", f.tag)
+		return fmt.Sprintf("Tsync tag=%d", f.tag)
 	case rSync:
-		return fmt.Sprintf("Rsync tag %d", f.tag)
+		return fmt.Sprintf("Rsync tag=%d", f.tag)
 	}
 }
 

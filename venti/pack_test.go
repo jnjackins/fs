@@ -8,7 +8,7 @@ func TestPackEntry(t *testing.T) {
 		Psize: MaxBlockSize,
 		Dsize: MaxBlockSize,
 		Depth: 3,
-		Flags: EntryLocal,
+		Flags: EntryActive,
 		Size:  MaxBlockSize,
 		Score: zeroScore,
 	}
