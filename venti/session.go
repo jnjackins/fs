@@ -16,6 +16,7 @@ var supportedVersions = []string{
 	"02",
 }
 
+// TODO(jnj): implement net.Conn
 type Session struct {
 	c       net.Conn
 	version string

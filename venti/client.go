@@ -50,13 +50,11 @@ func (z *Session) Ping() error {
 		msgtype: tPing,
 	}
 	rx := new(fcall)
-	if err := z.rpc(tx, rx); err != nil {
-		return fmt.Errorf("rpc: %v", err)
-	}
+
+	z.rpc(tx, rx)
 	return nil
 }
 
-// TODO(jnj): avoid copy (why are we even
 func (z *Session) Read(score *Score, typ BlockType, buf []byte) (int, error) {
 	// TODO(jnj): hack: fossil relies on this working even when z == nil
 	if score.IsZero() {

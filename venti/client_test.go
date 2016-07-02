@@ -20,9 +20,8 @@ func TestClient(t *testing.T) {
 }
 
 func testPing(t *testing.T, z *Session) {
-	t.Skip("server returns error on ping")
 	if err := z.Ping(); err != nil {
-		t.Fatalf("ping: %v", err)
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
