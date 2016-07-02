@@ -22,10 +22,8 @@ type Header struct {
 	end       uint32 /* end of data blocks */
 }
 
-func headerPack(h *Header, p []byte) {
-	for i := 0; i < HeaderSize; i++ {
-		p[i] = 0
-	}
+func (h *Header) pack(p []byte) {
+	memset(p[:HeaderSize], 0)
 	pack.U32PUT(p, HeaderMagic)
 	pack.U16PUT(p[4:], HeaderVersion)
 	pack.U16PUT(p[6:], h.blockSize)
@@ -35,19 +33,22 @@ func headerPack(h *Header, p []byte) {
 	pack.U32PUT(p[20:], h.end)
 }
 
-func headerUnpack(h *Header, p []byte) error {
+func unpackHeader(p []byte) (*Header, error) {
+	h := new(Header)
+
 	if pack.U32GET(p) != HeaderMagic {
-		return fmt.Errorf("vac header bad magic")
+		return nil, fmt.Errorf("vac header bad magic")
 	}
 
 	h.version = pack.U16GET(p[4:])
 	if h.version != HeaderVersion {
-		return fmt.Errorf("vac header bad version")
+		return nil, fmt.Errorf("vac header bad version")
 	}
 	h.blockSize = pack.U16GET(p[6:])
 	h.super = pack.U32GET(p[8:])
 	h.label = pack.U32GET(p[12:])
 	h.data = pack.U32GET(p[16:])
 	h.end = pack.U32GET(p[20:])
-	return nil
+
+	return h, nil
 }

@@ -24,7 +24,7 @@ type Entry struct {
 	archive bool   // archive this snapshot: only valid for snap != 0
 }
 
-func entryPack(e *Entry, p []byte, index int) {
+func (e *Entry) pack(p []byte, index int) {
 	p = p[index*venti.EntrySize:]
 
 	pack.U32PUT(p, e.gen)
@@ -41,9 +41,7 @@ func entryPack(e *Entry, p []byte, index int) {
 		if venti.GlobalToLocal(&e.score) == NilBlock {
 			panic("bad score")
 		}
-		for i := 0; i < 7; i++ {
-			p[20:][i] = 0
-		}
+		memset(p[20:27], 0)
 		pack.U8PUT(p[27:], uint8(bool2int(e.archive)))
 		pack.U32PUT(p[28:], e.snap)
 		pack.U32PUT(p[32:], e.tag)
@@ -53,9 +51,10 @@ func entryPack(e *Entry, p []byte, index int) {
 	}
 }
 
-func entryUnpack(e *Entry, p []byte, index int) error {
+func unpackEntry(p []byte, index int) (*Entry, error) {
 	p = p[index*venti.EntrySize:]
 
+	var e Entry
 	e.gen = pack.U32GET(p)
 	e.psize = pack.U16GET(p[4:])
 	e.dsize = pack.U16GET(p[6:])
@@ -73,7 +72,7 @@ func entryUnpack(e *Entry, p []byte, index int) error {
 		copy(e.score[:], p[20:])
 	}
 
-	return nil
+	return &e, nil
 }
 
 func EntryType(e *Entry) BlockType {

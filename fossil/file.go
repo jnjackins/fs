@@ -54,7 +54,6 @@ func allocFile(fs *Fs) *File {
 func (f *File) free() {
 	f.source.close()
 	f.msource.close()
-	deCleanup(&f.dir)
 }
 
 /*
@@ -84,11 +83,13 @@ func dirLookup(f *File, elem string) (*File, error) {
 		var me MetaEntry
 		if err = mb.search(elem, &i, &me); err == nil {
 			ff := allocFile(f.fs)
-			if err = mb.deUnpack(&ff.dir, &me); err != nil {
+			de, err := mb.unpackDirEntry(&me)
+			if err != nil {
 				ff.free()
 				b.put()
 				return nil, err
 			}
+			ff.dir = *de
 
 			b.put()
 			ff.boff = bo
@@ -106,6 +107,7 @@ func rootFile(r *Source) (*File, error) {
 	var root, mr *File
 	var mb *MetaBlock
 	var me MetaEntry
+	var de *DirEntry
 	var b *Block
 	var err error
 
@@ -157,10 +159,12 @@ func rootFile(r *Source) (*File, error) {
 		goto Err
 	}
 
-	mb.meUnpack(&me, 0)
-	if err = mb.deUnpack(&root.dir, &me); err != nil {
+	mb.unpackMetaEntry(&me, 0)
+	de, err = mb.unpackDirEntry(&me)
+	if err != nil {
 		goto Err
 	}
+	root.dir = *de
 	b.put()
 	root.rAccess()
 
@@ -598,7 +602,7 @@ func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
 		assert(e.tag == tag || e.tag == 0)
 		e.tag = tag
 		e.flags |= venti.EntryLocal
-		entryPack(e, b.data, int(f.source.offset%uint32(f.source.epb)))
+		e.pack(b.data, int(f.source.offset%uint32(f.source.epb)))
 	} else {
 		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:])
 	}
@@ -698,25 +702,25 @@ func (f *File) write(buf []byte, cnt int, offset int64, uid string) (int, error)
 	return ntotal, nil
 }
 
-func (f *File) getDir(dir *DirEntry) error {
+func (f *File) getDir() (*DirEntry, error) {
 	if err := f.rLock(); err != nil {
-		return err
+		return nil, err
 	}
 	f.metaLock()
-	deCopy(dir, &f.dir)
+	dir := f.dir
 	f.metaUnlock()
 
 	if !f.isDir() {
 		if err := f.source.lock(OReadOnly); err != nil {
 			f.rUnlock()
-			return err
+			return nil, err
 		}
 		dir.size = f.source.getSize()
 		f.source.unlock()
 	}
 	f.rUnlock()
 
-	return nil
+	return &dir, nil
 }
 
 func (f *File) truncate(uid string) error {
@@ -999,7 +1003,7 @@ func (f *File) metaFlush2(oelem string) int {
 		return -1
 	}
 
-	n := deSize(&f.dir)
+	n := f.dir.getSize()
 	if false {
 		dprintf("old size %d new size %d\n", me.size, n)
 	}
@@ -1012,7 +1016,7 @@ func (f *File) metaFlush2(oelem string) int {
 			var me2 MetaEntry
 			mb.search(f.dir.elem, &i, &me2)
 		}
-		mb.dePack(&f.dir, &me)
+		mb.packDirEntry(&f.dir, &me)
 		mb.insert(i, &me)
 		mb.pack()
 		b.dirty()
@@ -1299,8 +1303,8 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 	}
 	defer b.put()
 
-	var e Entry
-	if err = entryUnpack(&e, b.data, int(elem)); err != nil {
+	e, err := unpackEntry(b.data, int(elem))
+	if err != nil {
 		return err
 	}
 
@@ -1316,7 +1320,7 @@ func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
 func (dee *DirEntryEnum) fill() error {
 	/* clean up first */
 	for i := dee.i; i < dee.n; i++ {
-		deCleanup(&dee.buf[i])
+		dee.buf[i] = DirEntry{}
 	}
 	dee.buf = nil
 	dee.i = 0
@@ -1343,14 +1347,15 @@ func (dee *DirEntryEnum) fill() error {
 
 	var me MetaEntry
 	for i := 0; i < n; i++ {
-		de := &dee.buf[i]
-		mb.meUnpack(&me, i)
-		if err = mb.deUnpack(de, &me); err != nil {
+		mb.unpackMetaEntry(&me, i)
+		de, err := mb.unpackDirEntry(&me)
+		if err != nil {
 			return err
 		}
+		dee.buf[i] = *de
 		dee.n++
 		if de.mode&ModeDir == 0 {
-			if err = dirEntrySize(source, de.entry, de.gen, &de.size); err != nil {
+			if err := dirEntrySize(source, de.entry, de.gen, &de.size); err != nil {
 				return err
 			}
 		}
@@ -1411,7 +1416,7 @@ func (dee *DirEntryEnum) close() {
 		return
 	}
 	for i := dee.i; i < dee.n; i++ {
-		deCleanup(&dee.buf[i])
+		dee.buf[i] = DirEntry{}
 	}
 	dee.file.decRef()
 }
@@ -1422,17 +1427,15 @@ func (dee *DirEntryEnum) close() {
  * referenced by dir.
  */
 func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
-	var nb, bo uint32
+	var bo uint32
 	var b, bb *Block
-	var i, n, nn, o int
-	var s, ms *Source
+	var i, nn, o int
 
-	s = f.source
-	ms = f.msource
+	s := f.source
+	ms := f.msource
 
-	n = deSize(dir)
-	nb = uint32((ms.getSize() + uint64(ms.dsize) - 1) / uint64(ms.dsize))
-	b = nil
+	n := dir.getSize()
+	nb := uint32((ms.getSize() + uint64(ms.dsize) - 1) / uint64(ms.dsize))
 	if start > nb {
 		start = nb
 	}
@@ -1482,7 +1485,7 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 	assert(me.offset == 0)
 	me.offset = o
 	me.size = uint16(n)
-	mb.dePack(dir, &me)
+	mb.packDirEntry(dir, &me)
 	mb.insert(i, &me)
 	mb.pack()
 
@@ -1611,28 +1614,26 @@ func (f *File) wAccess(mid string) {
 	//	fileWAccess(f->up, mid);
 }
 
-func getEntry(r *Source, e *Entry, checkepoch bool) error {
+func getEntry(r *Source, checkepoch bool) (*Entry, error) {
 	if r == nil {
-		*e = Entry{}
-		return nil
+		return new(Entry), nil
 	}
 
 	b, err := r.fs.cache.global(&r.score, BtDir, r.tag, OReadOnly)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	e, err := unpackEntry(b.data, int(r.offset%uint32(r.epb)))
+	if err != nil {
 		b.put()
-		return err
+		return nil, err
 	}
 
 	epoch := b.l.epoch
 	b.put()
 
 	if checkepoch {
-		var b *Block
-		var err error
-		b, err = r.fs.cache.global(&e.score, EntryType(e), e.tag, OReadOnly)
+		b, err := r.fs.cache.global(&e.score, EntryType(e), e.tag, OReadOnly)
 		if err == nil {
 			if b.l.epoch >= epoch {
 				logf("warning: entry %p epoch not older %#.8x/%d %v/%d in getEntry\n", r, b.addr, b.l.epoch, &r.score, epoch)
@@ -1641,7 +1642,7 @@ func getEntry(r *Source, e *Entry, checkepoch bool) error {
 		}
 	}
 
-	return nil
+	return e, nil
 }
 
 func setEntry(r *Source, e *Entry) error {
@@ -1652,14 +1653,14 @@ func setEntry(r *Source, e *Entry) error {
 	if err != nil {
 		return err
 	}
-	var oe Entry
-	if err := entryUnpack(&oe, b.data, int(r.offset%uint32(r.epb))); err != nil {
+	oe, err := unpackEntry(b.data, int(r.offset%uint32(r.epb)))
+	if err != nil {
 		b.put()
 		return err
 	}
 
 	e.gen = oe.gen
-	entryPack(e, b.data, int(r.offset%uint32(r.epb)))
+	e.pack(b.data, int(r.offset%uint32(r.epb)))
 
 	/* BUG b should depend on the entry pointer */
 	b.dirty()
@@ -1670,14 +1671,13 @@ func setEntry(r *Source, e *Entry) error {
 
 /* assumes hold elk */
 func (dst *File) snapshot(src *File, epoch uint32, doarchive bool) error {
-	var e Entry
-
 	/* add link to snapshot */
-	if err := getEntry(src.source, &e, true); err != nil {
+	e, err := getEntry(src.source, true)
+	if err != nil {
 		return err
 	}
-	var ee Entry
-	if err := getEntry(src.msource, &ee, true); err != nil {
+	ee, err := getEntry(src.msource, true)
+	if err != nil {
 		return err
 	}
 
@@ -1686,20 +1686,26 @@ func (dst *File) snapshot(src *File, epoch uint32, doarchive bool) error {
 	ee.snap = epoch
 	ee.archive = doarchive
 
-	if err := setEntry(dst.source, &e); err != nil {
+	if err := setEntry(dst.source, e); err != nil {
 		return err
 	}
-	if err := setEntry(dst.msource, &ee); err != nil {
+	if err := setEntry(dst.msource, ee); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (f *File) getSources(e *Entry, ee *Entry) error {
-	if err := getEntry(f.source, e, false); err != nil {
-		return err
+// getSources return the files source and meta source, respectively.
+func (f *File) getSources() (*Entry, *Entry, error) {
+	e, err := getEntry(f.source, false)
+	if err != nil {
+		return nil, nil, err
 	}
-	return getEntry(f.msource, ee, false)
+	ee, err := getEntry(f.msource, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	return e, ee, nil
 }
 
 /*

@@ -83,23 +83,6 @@ var fsyscmd = []struct {
 	{"", nil, nil},
 }
 
-func ventihost(host string) string {
-	if host != "" {
-		return host
-	}
-	host = os.Getenv("venti")
-	if host == "" {
-		host = "$venti"
-	}
-	return host
-}
-
-func dialVenti(host string) (*venti.Session, error) {
-	host = ventihost(host)
-	logf("dialing venti at %v\n", host)
-	return venti.Dial(host)
-}
-
 func cmdPrintConfig(cons *Cons, argv []string) error {
 	var usage string = "Usage: printconfig"
 
@@ -961,8 +944,8 @@ func fsysClrep(cons *Cons, fsys *Fsys, argv []string, ch rune) error {
 		if b.l.typ != BtDir {
 			return fmt.Errorf("wrong block type")
 		}
-		var e Entry
-		entryPack(&e, zero[:], 0)
+		e := new(Entry)
+		e.pack(zero[:], 0)
 	case 'p':
 		if b.l.typ == BtDir || b.l.typ == BtData {
 			return fmt.Errorf("wrong block type")
@@ -1004,7 +987,6 @@ func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
 
 	n := 0
 	var de DirEntry
-	var e, ee Entry
 	for {
 		r, err := dee.read(&de)
 		if r < 0 {
@@ -1019,7 +1001,8 @@ func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
 			if err != nil {
 				cons.printf("\tcannot walk %s/%s: %v\n", s, de.elem, err)
 			} else {
-				if err := ff.getSources(&e, &ee); err != nil {
+				e, _, err := ff.getSources()
+				if err != nil {
 					cons.printf("\tcannot get sources for %s/%s: %v\n", s, de.elem, err)
 				} else if e.snap != 0 && e.snap < elo {
 					cons.printf("\t%d\tclri %s/%s\n", e.snap, s, de.elem)
@@ -1038,8 +1021,6 @@ func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
 				ff.decRef()
 			}
 		}
-
-		deCleanup(&de)
 		if r < 0 {
 			break
 		}
@@ -1057,18 +1038,14 @@ func fsysEsearch(cons *Cons, fs *Fs, path string, elo uint32) int {
 		return 0
 	}
 	defer f.decRef()
-	var de DirEntry
-	if err := f.getDir(&de); err != nil {
+	de, err := f.getDir()
+	if err != nil {
 		cons.printf("\tfileGetDir %s failed: %v\n", path, err)
 		return 0
 	}
-
 	if de.mode&ModeDir == 0 {
-		deCleanup(&de)
 		return 0
 	}
-
-	deCleanup(&de)
 	return fsysEsearch1(cons, f, path, elo)
 }
 
@@ -1206,15 +1183,14 @@ func fsysCreate(cons *Cons, fsys *Fsys, argv []string) error {
 	}
 	defer file.decRef()
 
-	var de DirEntry
-	if err := file.getDir(&de); err != nil {
+	de, err := file.getDir()
+	if err != nil {
 		return fmt.Errorf("stat failed after create: %v", err)
 	}
 
-	defer deCleanup(&de)
 	if de.gid != argv[2] {
 		de.gid = argv[2]
-		if err := file.setDir(&de, argv[1]); err != nil {
+		if err := file.setDir(de, argv[1]); err != nil {
 			return fmt.Errorf("wstat failed after create: %v", err)
 		}
 	}
@@ -1250,14 +1226,13 @@ func fsysStat(cons *Cons, fsys *Fsys, argv []string) error {
 			continue
 		}
 
-		var de DirEntry
-		if err := f.getDir(&de); err != nil {
+		de, err := f.getDir()
+		if err != nil {
 			cons.printf("%s: %v\n", argv[i], err)
 			f.decRef()
 			continue
 		}
-		fsysPrintStat(cons, "\t", argv[i], &de)
-		deCleanup(&de)
+		fsysPrintStat(cons, "\t", argv[i], de)
 		f.decRef()
 	}
 	fsys.fs.elk.RUnlock()
@@ -1289,13 +1264,12 @@ func fsysWstat(cons *Cons, fsys *Fsys, argv []string) error {
 	}
 	defer f.decRef()
 
-	var de DirEntry
-	if err := f.getDir(&de); err != nil {
+	de, err := f.getDir()
+	if err != nil {
 		return fmt.Errorf("console wstat - stat - %v", err)
 	}
-	defer deCleanup(&de)
 
-	fsysPrintStat(cons, "\told: w", argv[0], &de)
+	fsysPrintStat(cons, "\told: w", argv[0], de)
 
 	if argv[1] != "-" {
 		if err = checkValidFileName(argv[1]); err != nil {
@@ -1335,16 +1309,16 @@ func fsysWstat(cons *Cons, fsys *Fsys, argv []string) error {
 		}
 	}
 
-	if err := f.setDir(&de, uidadm); err != nil {
+	if err := f.setDir(de, uidadm); err != nil {
 		return fmt.Errorf("console wstat - %v", err)
 	}
 
-	deCleanup(&de)
-	if err := f.getDir(&de); err != nil {
+	de, err = f.getDir()
+	if err != nil {
 		return fmt.Errorf("console wstat - stat2 - %v", err)
 	}
 
-	fsysPrintStat(cons, "\tnew: w", argv[0], &de)
+	fsysPrintStat(cons, "\tnew: w", argv[0], de)
 
 	return nil
 }
@@ -1399,8 +1373,8 @@ func fsckClre(fsck *Fsck, b *Block, offset int) error {
 		return errors.New("bad clre")
 	}
 
-	var e Entry
-	entryPack(&e, b.data, offset)
+	e := new(Entry)
+	e.pack(b.data, offset)
 	b.dirty()
 
 	return nil
@@ -1471,8 +1445,7 @@ func fsysCheck(cons *Cons, fsys *Fsys, argv []string) error {
 		fsys.fs.halt()
 	}
 	if fsys.fs.arch != nil {
-		var super Super
-		b, err := superGet(fsys.fs.cache, &super)
+		b, super, err := getSuper(fsys.fs.cache)
 		if err != nil {
 			cons.printf("could not load super block: %v\n", err)
 			goto Out
@@ -1536,13 +1509,15 @@ func fsysVenti(cons *Cons, name string, argv []string) error {
 		}
 	}
 
+	cons.printf("dialing venti at %v\n", host)
+
 	/* already open; redial */
 	if fsys.fs != nil {
 		if fsys.session == nil {
 			return errors.New("file system was opened with -V")
 		}
 		fsys.session.Close()
-		fsys.session, err = dialVenti(host)
+		fsys.session, err = venti.Dial(host)
 		return err
 	}
 
@@ -1550,7 +1525,7 @@ func fsysVenti(cons *Cons, name string, argv []string) error {
 	if fsys.session != nil {
 		fsys.session.Close()
 	}
-	fsys.session, err = dialVenti(host)
+	fsys.session, err = venti.Dial(host)
 	return err
 }
 
@@ -1664,7 +1639,8 @@ func fsysOpen(cons *Cons, name string, argv []string) error {
 		} else {
 			host = ""
 		}
-		fsys.session, err = dialVenti(host)
+		cons.printf("dialing venti at %v\n", host)
+		fsys.session, err = venti.Dial(host)
 		if err != nil {
 			cons.printf("error connecting to venti: %v\n", err)
 		}

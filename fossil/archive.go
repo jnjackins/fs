@@ -196,7 +196,7 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 					e.size = 0
 					e.tag = 0
 					e.flags &^= venti.EntryLocal
-					entryPack(e, *data, w.n-1)
+					e.pack(*data, w.n-1)
 					continue
 				}
 			}
@@ -257,7 +257,7 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 				if e != nil {
 					e.score = p.score
 					e.flags &^= venti.EntryLocal
-					entryPack(e, *data, w.n-1)
+					e.pack(*data, w.n-1)
 				} else {
 					copy((*data)[(w.n-1)*venti.ScoreSize:], p.score[:])
 				}
@@ -327,15 +327,14 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 // 5. record the vac score to the super block
 // 6. log the vac score
 func (a *Arch) thread() {
-	var super Super
 	rbuf := make([]byte, venti.RootSize)
 	for {
 		// look for work
 		a.fs.elk.Lock()
-		b, err := superGet(a.c, &super)
+		b, super, err := getSuper(a.c)
 		if err != nil {
 			a.fs.elk.Unlock()
-			logf("(*Arch).thread: superGet: %v\n", err)
+			logf("(*Arch).thread: getSuper: %v\n", err)
 			time.Sleep(1 * time.Minute)
 			continue
 		}
@@ -343,7 +342,7 @@ func (a *Arch) thread() {
 		if addr != NilBlock && super.current == NilBlock {
 			super.current = addr
 			super.next = NilBlock
-			superPack(&super, b.data)
+			super.pack(b.data)
 			b.dirty()
 		} else {
 			addr = super.current
@@ -410,7 +409,7 @@ func (a *Arch) thread() {
 
 		// record success
 		a.fs.elk.Lock()
-		b, err = superGet(a.c, &super)
+		b, super, err = getSuper(a.c)
 		if err != nil {
 			a.fs.elk.Unlock()
 			logf("failed to get super block: %v\n", err)
@@ -420,7 +419,7 @@ func (a *Arch) thread() {
 
 		super.current = NilBlock
 		super.last = p.score
-		superPack(&super, b.data)
+		super.pack(b.data)
 		b.dirty()
 		b.put()
 		a.fs.elk.Unlock()

@@ -78,12 +78,8 @@ func (chk *Fsck) init(fs *Fs) {
 func (chk *Fsck) check(fs *Fs) {
 	dprintf("check: starting\n")
 
-	var b *Block
-	var super Super
-	var err error
-
 	chk.init(fs)
-	b, err = superGet(chk.cache, &super)
+	b, super, err := getSuper(chk.cache)
 	if err != nil {
 		chk.printf("could not load super block: %v", err)
 		return
@@ -125,12 +121,12 @@ func checkEpochs(chk *Fsck) {
 
 func checkEpoch(chk *Fsck, epoch uint32) {
 	var a uint32
-	var l Label
 
 	chk.printf("checking epoch %d...\n", epoch)
 
 	for a = 0; a < uint32(chk.nblocks); a++ {
-		if err := chk.cache.readLabel(&l, (a+chk.hint)%uint32(chk.nblocks)); err != nil {
+		l, err := chk.cache.readLabel((a + chk.hint) % uint32(chk.nblocks))
+		if err != nil {
 			chk.errorf("could not read label for addr %#0.8x", a)
 			continue
 		}
@@ -163,14 +159,15 @@ func checkEpoch(chk *Fsck, epoch uint32) {
 	 * Second entry is link to previous epoch root,
 	 * just a convenience to help the search.
 	 */
-	var e Entry
-	if err := entryUnpack(&e, b.data, 0); err != nil {
+	e, err := unpackEntry(b.data, 0)
+	if err != nil {
 		chk.errorf("could not unpack root block %#.8x: %v", a, err)
 		return
 	}
 
 	walkEpoch(chk, b, &e.score, BtDir, e.tag, epoch)
-	if err := entryUnpack(&e, b.data, 1); err == nil {
+	e, err = unpackEntry(b.data, 1)
+	if err == nil {
 		chk.hint = venti.GlobalToLocal(&e.score)
 	}
 }
@@ -300,10 +297,10 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ BlockType, tag, epoc
 		break
 
 	case BtDir:
-		var e Entry
 		var ep uint32
 		for i := int(0); i < chk.bsize/venti.EntrySize; i++ {
-			if err := entryUnpack(&e, bb.data, i); err != nil {
+			e, err := unpackEntry(bb.data, i)
+			if err != nil {
 				//chk.errorf("walk: could not unpack entry: %ux[%d]: %v", addr, i, err);
 				setBit(chk.errmap, bb.addr)
 
@@ -363,7 +360,7 @@ func walkEpoch(chk *Fsck, b *Block, score *venti.Score, typ BlockType, tag, epoc
 				continue
 			}
 
-			if !walkEpoch(chk, bb, &e.score, EntryType(&e), e.tag, ep) {
+			if !walkEpoch(chk, bb, &e.score, EntryType(e), e.tag, ep) {
 				setBit(chk.errmap, bb.addr)
 				if err := chk.clre(chk, bb, i); err != nil {
 					chk.errorf("%v", err)
@@ -386,11 +383,11 @@ Exit:
  * aren't marked available but that we didn't visit.  They are lost.
  */
 func checkLeak(chk *Fsck) {
-	var l Label
 	var nfree, nlost int64
 
 	for a := uint32(0); a < uint32(chk.nblocks); a++ {
-		if err := chk.cache.readLabel(&l, a); err != nil {
+		l, err := chk.cache.readLabel(a)
+		if err != nil {
 			chk.errorf("could not read label: addr %#x %d %d: %v", a, l.typ, l.state, err)
 			continue
 		}
@@ -607,7 +604,6 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 	setBit(chk.smap, a1)
 	setBit(chk.smap, a2)
 
-	var de DirEntry
 	var me MetaEntry
 	bm := make([]uint8, int(source.getDirSize()/8+1))
 	nb := uint32((meta.getSize() + uint64(meta.dsize) - 1) / uint64(meta.dsize))
@@ -637,8 +633,9 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 
 		var s string
 		for i := mb.nindex - 1; i >= 0; i-- {
-			mb.meUnpack(&me, i)
-			if err = mb.deUnpack(&de, &me); err != nil {
+			mb.unpackMetaEntry(&me, i)
+			de, err := mb.unpackDirEntry(&me)
+			if err != nil {
 				chk.errorf("could not unpack dir entry: %s[%d][%d]: %v", name, o, i, err)
 				continue
 			}
@@ -665,20 +662,17 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 					}
 					r.close()
 				}
-				deCleanup(&de)
 				continue
 			}
 
 			r, err := openSource(chk, source, nn, bm, de.entry, de.gen, true, mb, i, b)
 			if err != nil {
-				deCleanup(&de)
 				continue
 			}
 
 			mr, err := openSource(chk, source, nn, bm, de.mentry, de.mgen, false, mb, i, b)
 			if err != nil {
 				r.close()
-				deCleanup(&de)
 				continue
 			}
 
@@ -688,8 +682,6 @@ func chkDir(chk *Fsck, name string, source, meta *Source) {
 
 			mr.close()
 			r.close()
-			deCleanup(&de)
-			deCleanup(&de)
 		}
 		b.put()
 	}

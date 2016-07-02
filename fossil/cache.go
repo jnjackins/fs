@@ -502,10 +502,12 @@ func (c *Cache) _local(part int, addr uint32, mode int, epoch uint32) (*Block, e
 	atomic.StoreInt32(&b.nlock, 1)
 
 	if part == PartData && b.iostate == BioEmpty {
-		if err := c.readLabel(&b.l, addr); err != nil {
+		l, err := c.readLabel(addr)
+		if err != nil {
 			b.put()
 			return nil, err
 		}
+		b.l = *l
 		b.setIOState(BioLabel)
 	}
 
@@ -670,7 +672,7 @@ func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, 
 	}
 
 	nwrap := 0
-	var lab Label
+	var lab *Label
 	for {
 		addr++
 		if addr >= fl.end {
@@ -702,7 +704,8 @@ func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, 
 			}
 		}
 
-		if err := labelUnpack(&lab, b.data, int(addr%n)); err != nil {
+		lab, err = unpackLabel(b.data, int(addr%n))
+		if err != nil {
 			continue
 		}
 		if lab.state == BsFree {
@@ -729,7 +732,7 @@ func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, 
 	lab.state = BsAlloc
 	lab.epoch = epoch
 	lab.epochClose = ^uint32(0)
-	if err := b.setLabel(&lab, true); err != nil {
+	if err := b.setLabel(lab, true); err != nil {
 		logf("(*Cache).allocBlock: xxx4 %v\n", err)
 		b.put()
 		return nil, err
@@ -782,8 +785,8 @@ func (c *Cache) countUsed(epochLow uint32, used, total, bsize *uint32) {
 			}
 		}
 
-		var lab Label
-		if err := labelUnpack(&lab, b.data, int(addr%n)); err != nil {
+		lab, err := unpackLabel(b.data, int(addr%n))
+		if err != nil {
 			continue
 		}
 		if lab.state == BsFree {
@@ -899,7 +902,7 @@ func (b *Block) _setLabel(l *Label) (*Block, error) {
 	}
 
 	b.l = *l
-	labelPack(l, bb.data, int(b.addr%lpb))
+	l.pack(bb.data, int(b.addr%lpb))
 	bb.dirty()
 	return bb, nil
 }
@@ -986,7 +989,7 @@ func (b *Block) dependency(bb *Block, index int, score *venti.Score, e *Entry) {
 		 * we need to exclude the super block.
 		 */
 		if b.l.typ == BtDir && b.part == PartData {
-			entryPack(e, p.old.entry[:], 0)
+			e.pack(p.old.entry[:], 0)
 		} else {
 			p.old.score = *score
 		}
@@ -1047,15 +1050,18 @@ func (b *Block) rollback(buf []byte) (p []byte, dirty bool) {
 		assert(b.part == PartSuper || (b.part == PartData && b.l.typ != BtData))
 		if b.part == PartSuper {
 			assert(p.index == 0)
-			var super Super
-			superUnpack(&super, buf)
+			super, err := unpackSuper(buf)
+			if err != nil {
+				logf("failed to unpack super: %v", err)
+				panic("abort")
+			}
 			addr := venti.GlobalToLocal(&p.old.score)
 			if addr == NilBlock {
 				logf("rolling back super block: bad replacement addr %v\n", &p.old.score)
 				panic("abort")
 			}
 			super.active = addr
-			superPack(&super, buf)
+			super.pack(buf)
 			continue
 		}
 		if b.l.typ == BtDir {
@@ -1442,7 +1448,6 @@ func doRemoveLink(c *Cache, p *BList) {
 		return
 	}
 
-	var l Label
 	if recurse {
 		n := c.size / venti.ScoreSize
 		var bl BList
@@ -1450,7 +1455,11 @@ func doRemoveLink(c *Cache, p *BList) {
 			var score venti.Score
 			copy(score[:], b.data[i*venti.ScoreSize:])
 			a := venti.GlobalToLocal(&score)
-			if a == NilBlock || c.readLabel(&l, a) != nil {
+			if a == NilBlock {
+				continue
+			}
+			l, err := c.readLabel(a)
+			if err != nil {
 				continue
 			}
 			if l.state&BsClosed != 0 {
@@ -1478,7 +1487,7 @@ func doRemoveLink(c *Cache, p *BList) {
 		}
 	}
 
-	l = b.l
+	l := b.l
 	l.state |= BsClosed
 	l.epochClose = p.epoch
 	if l.epochClose == l.epoch {
@@ -1638,21 +1647,22 @@ func heapIns(b *Block) {
 /*
  * Get just the label for a block.
  */
-func (c *Cache) readLabel(l *Label, addr uint32) error {
+func (c *Cache) readLabel(addr uint32) (*Label, error) {
 	lpb := c.size / LabelSize
 	a := addr / uint32(lpb)
 	b, err := c.local(PartLabel, a, OReadOnly)
 	defer b.put()
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := labelUnpack(l, b.data, int(addr%uint32(lpb))); err != nil {
-		return err
+	l, err := unpackLabel(b.data, int(addr%uint32(lpb)))
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	return l, nil
 }
 
 /*

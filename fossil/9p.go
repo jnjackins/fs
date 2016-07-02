@@ -40,9 +40,8 @@ var rFcall = [plan9.Tmax]func(*Msg) error{
 }
 
 func permFile(file *File, fid *Fid, perm int) error {
-	var de DirEntry
-
-	if err := file.getDir(&de); err != nil {
+	de, err := file.getDir()
+	if err != nil {
 		return err
 	}
 
@@ -59,36 +58,30 @@ func permFile(file *File, fid *Fid, perm int) error {
 		u := unameByUid(de.uid)
 		if u != "" {
 			if fid.uname == u && (uint32(perm<<6)&de.mode != 0) {
-				deCleanup(&de)
 				return nil
 			}
 
 		}
 
 		if groupMember(de.gid, fid.uname) && (uint32(perm<<3)&de.mode != 0) {
-			deCleanup(&de)
 			return nil
 		}
 	}
 
 	if uint32(perm)&de.mode != 0 {
 		if perm == PermX && (de.mode&ModeDir != 0) {
-			deCleanup(&de)
 			return nil
 		}
 
 		if !groupMember(uidnoworld, fid.uname) {
-			deCleanup(&de)
 			return nil
 		}
 	}
 
 	if fid.fsys.noPermCheck() || (fid.con.flags&ConNoPermCheck != 0) {
-		deCleanup(&de)
 		return nil
 	}
 
-	deCleanup(&de)
 	return EPermission
 }
 
@@ -121,11 +114,10 @@ func rTwstat(m *Msg) error {
 		return fmt.Errorf("read-only filesystem")
 	}
 
-	var de DirEntry
-	if err := fid.file.getDir(&de); err != nil {
+	de, err := fid.file.getDir()
+	if err != nil {
 		return err
 	}
-	defer deCleanup(&de)
 
 	dir, err := plan9.UnmarshalDir(m.t.Stat)
 	if err != nil {
@@ -144,22 +136,20 @@ func rTwstat(m *Msg) error {
 	 * 'Op' flags there are changed fields, i.e. it's not a no-op.
 	 * 'Tsync' flags all fields are defaulted.
 	 */
-	tsync := 1
+	tsync := true
 
 	if dir.Qid.Path != ^uint64(0) {
 		if dir.Qid.Path != de.qid {
 			return fmt.Errorf("wstat -- attempt to change qid.path")
 		}
-
-		tsync = 0
+		tsync = false
 	}
 
 	if dir.Qid.Vers != ^uint32(0) {
 		if dir.Qid.Vers != de.mcount {
 			return fmt.Errorf("wstat -- attempt to change qid.vers")
 		}
-
-		tsync = 0
+		tsync = false
 	}
 
 	if dir.Muid != "" {
@@ -167,13 +157,11 @@ func rTwstat(m *Msg) error {
 		if uid == "" {
 			return fmt.Errorf("wstat -- unknown muid")
 		}
-
 		if uid != de.mid {
 			return fmt.Errorf("wstat -- attempt to change muid")
 		}
-
 		uid = ""
-		tsync = 0
+		tsync = false
 	}
 
 	/*
@@ -225,8 +213,7 @@ func rTwstat(m *Msg) error {
 			de.mode |= mode
 			op = 1
 		}
-
-		tsync = 0
+		tsync = false
 	}
 
 	if dir.Mtime != ^uint32(0) {
@@ -234,8 +221,7 @@ func rTwstat(m *Msg) error {
 			de.mtime = dir.Mtime
 			op = 1
 		}
-
-		tsync = 0
+		tsync = false
 	}
 
 	if dir.Length != ^uint64(0) {
@@ -255,8 +241,7 @@ func rTwstat(m *Msg) error {
 			de.size = dir.Length
 			op = 1
 		}
-
-		tsync = 0
+		tsync = false
 	}
 
 	/*
@@ -269,7 +254,7 @@ func rTwstat(m *Msg) error {
 		if gid == "" {
 			return fmt.Errorf("wstat -- unknown gid")
 		}
-		tsync = 0
+		tsync = false
 	} else {
 		gid = de.gid
 	}
@@ -299,7 +284,7 @@ func rTwstat(m *Msg) error {
 		}
 		de.gid = gid
 		op = 1
-		tsync = 0
+		tsync = false
 	}
 
 	/*
@@ -318,8 +303,7 @@ func rTwstat(m *Msg) error {
 			de.elem = dir.Name
 			op = 1
 		}
-
-		tsync = 0
+		tsync = false
 	}
 
 	/*
@@ -340,15 +324,14 @@ func rTwstat(m *Msg) error {
 			de.uid = uid
 			op = 1
 		}
-
-		tsync = 0
+		tsync = false
 	}
 
 	if op != 0 {
-		err = fid.file.setDir(&de, fid.uid)
+		err = fid.file.setDir(de, fid.uid)
 	}
 
-	if tsync != 0 {
+	if tsync {
 		/*
 		 * All values were defaulted,
 		 * make the state of the file exactly what it
@@ -387,17 +370,16 @@ func rTstat(m *Msg) error {
 		return nil
 	}
 
-	var de DirEntry
-	if err = fid.file.getDir(&de); err != nil {
+	de, err := fid.file.getDir()
+	if err != nil {
 		fid.put()
 		return err
 	}
 
 	fid.put()
 
-	buf, err := dirDe2M(&de)
+	buf, err := dirDe2M(de)
 	m.r.Stat = buf
-	deCleanup(&de)
 
 	return err
 }

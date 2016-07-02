@@ -64,10 +64,10 @@ func (fs *Fs) allocSource(b *Block, p *Source, offset uint32, mode int, issnapsh
 	 * can legitimately happen here. all the others
 	 * get prints.
 	 */
-	var e Entry
-	if err := entryUnpack(&e, b.data, int(offset%uint32(epb))); err != nil {
+	e, err := unpackEntry(b.data, int(offset%uint32(epb)))
+	if err != nil {
 		pname := p.name()
-		logf("%s: %s %v: allocSource: entryUnpack failed\n", fs.name, pname, &b.score)
+		logf("%s: %s %v: allocSource: unpackEntry failed\n", fs.name, pname, &b.score)
 		return nil, EBadEntry
 	}
 
@@ -206,8 +206,8 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 			return nil, fmt.Errorf("get block: %v", err)
 		}
 		for i := int(offset % uint32(r.epb)); i < epb; i++ {
-			var e Entry
-			if err := entryUnpack(&e, b.data, i); err != nil {
+			e, err := unpackEntry(b.data, i)
+			if err != nil {
 				return nil, fmt.Errorf("unpack entry: %v", err)
 			}
 
@@ -232,7 +232,7 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 				e.snap = 0
 				e.archive = false
 
-				entryPack(&e, b.data, i)
+				e.pack(b.data, i)
 				b.dirty()
 
 				offset = bn*uint32(epb) + uint32(i)
@@ -262,8 +262,7 @@ func (r *Source) create(dsize int, dir bool, offset uint32) (*Source, error) {
 func (r *Source) kill(doremove bool) error {
 	assert(r.b != nil)
 
-	var e Entry
-	b, err := r.load(&e)
+	b, e, err := r.load()
 	if err != nil {
 		return err
 	}
@@ -279,7 +278,7 @@ func (r *Source) kill(doremove bool) error {
 	/* remember info on link we are removing */
 	addr := venti.GlobalToLocal(&e.score)
 
-	typ := EntryType(&e)
+	typ := EntryType(e)
 	tag := e.tag
 
 	if doremove {
@@ -297,7 +296,7 @@ func (r *Source) kill(doremove bool) error {
 	e.size = 0
 	e.tag = 0
 	e.score = venti.ZeroScore()
-	entryPack(&e, b.data, int(r.offset%uint32(r.epb)))
+	e.pack(b.data, int(r.offset%uint32(r.epb)))
 	b.dirty()
 	if addr != NilBlock {
 		b.removeLink(addr, typ, tag, true)
@@ -324,8 +323,7 @@ func (r *Source) truncate() error {
 func (r *Source) getSize() uint64 {
 	assert(r.b != nil)
 
-	var e Entry
-	b, err := r.load(&e)
+	b, e, err := r.load()
 	if err != nil {
 		return 0
 	}
@@ -420,8 +418,7 @@ func (r *Source) setSize(size uint64) error {
 		return ETooBig
 	}
 
-	var e Entry
-	b, err := r.load(&e)
+	b, e, err := r.load()
 	if err != nil {
 		return err
 	}
@@ -435,23 +432,23 @@ func (r *Source) setSize(size uint64) error {
 	depth := sizeToDepth(size, int(e.psize), int(e.dsize))
 
 	if depth < int(e.depth) {
-		if err := r.shrinkDepth(b, &e, depth); err != nil {
+		if err := r.shrinkDepth(b, e, depth); err != nil {
 			b.put()
 			return err
 		}
 	} else if depth > int(e.depth) {
-		if err := r.growDepth(b, &e, depth); err != nil {
+		if err := r.growDepth(b, e, depth); err != nil {
 			b.put()
 			return err
 		}
 	}
 
 	if size < e.size {
-		r.shrinkSize(&e, size)
+		r.shrinkSize(e, size)
 	}
 
 	e.size = size
-	entryPack(&e, b.data, int(r.offset%uint32(r.epb)))
+	e.pack(b.data, int(r.offset%uint32(r.epb)))
 	b.dirty()
 	b.put()
 
@@ -480,14 +477,13 @@ func (r *Source) getDirSize() uint32 {
 func (r *Source) getEntry() (*Entry, error) {
 	assert(r.b != nil)
 
-	var e Entry
-	b, err := r.load(&e)
+	b, e, err := r.load()
 	if err != nil {
 		return nil, err
 	}
 	b.put()
 
-	return &e, nil
+	return e, nil
 }
 
 /*
@@ -496,12 +492,11 @@ func (r *Source) getEntry() (*Entry, error) {
  */
 func (r *Source) setEntry(e *Entry) error {
 	assert(r.b != nil)
-	var oe Entry
-	b, err := r.load(&oe)
+	b, _, err := r.load()
 	if err != nil {
 		return err
 	}
-	entryPack(e, b.data, int(r.offset%uint32(r.epb)))
+	e.pack(b.data, int(r.offset%uint32(r.epb)))
 	b.dirty()
 	b.put()
 
@@ -563,7 +558,7 @@ func (p *Block) walk(index, mode int, fs *Fs, e *Entry) (*Block, error) {
 	b.dirty()
 	if p.l.typ == BtDir {
 		e.score = b.score
-		entryPack(e, p.data, index)
+		e.pack(p.data, index)
 		p.dependency(b, index, nil, &oe)
 	} else {
 		var oscore venti.Score
@@ -628,7 +623,7 @@ func (r *Source) growDepth(p *Block, e *Entry, depth int) error {
 		b.dirty()
 	}
 
-	entryPack(e, p.data, int(r.offset%uint32(r.epb)))
+	e.pack(p.data, int(r.offset%uint32(r.epb)))
 	p.dependency(b, int(r.offset%uint32(r.epb)), nil, &oe)
 	b.put()
 	p.dirty()
@@ -705,7 +700,7 @@ func (r *Source) shrinkDepth(p *Block, e *Entry, depth int) error {
 		e.flags &^= venti.EntryLocal
 	}
 	e.score = b.score
-	entryPack(e, p.data, int(r.offset%uint32(r.epb)))
+	e.pack(p.data, int(r.offset%uint32(r.epb)))
 	p.dependency(b, int(r.offset%uint32(r.epb)), nil, &oe)
 	p.dirty()
 
@@ -749,8 +744,7 @@ func (r *Source) _block(bn uint32, mode, early int, tag uint32) (*Block, error) 
 		m = OReadWrite
 	}
 
-	var e Entry
-	b, err := r.load(&e)
+	b, e, err := r.load()
 	if err != nil {
 		return nil, fmt.Errorf("load entry: %v", err)
 	}
@@ -788,7 +782,7 @@ func (r *Source) _block(bn uint32, mode, early int, tag uint32) (*Block, error) 
 			return nil, EBadAddr
 		}
 
-		if err := r.growDepth(b, &e, i); err != nil {
+		if err := r.growDepth(b, e, i); err != nil {
 			b.put()
 			return nil, fmt.Errorf("grow depth: %v", err)
 		}
@@ -797,7 +791,7 @@ func (r *Source) _block(bn uint32, mode, early int, tag uint32) (*Block, error) 
 	index[e.depth] = int(r.offset % uint32(r.epb))
 
 	for i := int(e.depth); i >= early; i-- {
-		bb, err := b.walk(index[i], m, r.fs, &e)
+		bb, err := b.walk(index[i], m, r.fs, e)
 		b.put()
 		if err != nil {
 			return nil, fmt.Errorf("walk: %v", err)
@@ -1017,18 +1011,19 @@ func (r *Source) unlock() {
 	b.put()
 }
 
-func (r *Source) load(e *Entry) (*Block, error) {
+func (r *Source) load() (*Block, *Entry, error) {
 	assert(r.b != nil)
 	b := r.b
-	if err := entryUnpack(e, b.data, int(r.offset%uint32(r.epb))); err != nil {
-		return nil, err
+	e, err := unpackEntry(b.data, int(r.offset%uint32(r.epb)))
+	if err != nil {
+		return nil, nil, err
 	}
 	if e.gen != r.gen {
-		return nil, ERemoved
+		return nil, nil, ERemoved
 	}
 
 	b.dupLock()
-	return b, nil
+	return b, e, nil
 }
 
 func sizeToDepth(s uint64, psize, dsize int) int {

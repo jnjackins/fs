@@ -82,7 +82,6 @@ type DirEntry struct {
 }
 
 type MetaEntry struct {
-	// TODO(jnj): type?
 	offset int // position in MetaBlock.buf
 	size   uint16
 }
@@ -103,28 +102,28 @@ type MetaChunk struct {
 	index  uint16
 }
 
-func stringUnpack(s *string, p *[]byte, n *int) bool {
-	if *n < 2 {
-		return false
+// TODO(jnj): these are duplicated in venti
+func unpackString(p *[]byte) (string, bool) {
+	buf := *p
+
+	if len(buf) < 2 {
+		return "", false
+	}
+	n := int(pack.U16GET(buf))
+	buf = buf[2:]
+	if len(buf) < n {
+		return "", false
 	}
 
-	nn := int(pack.U16GET(*p))
-	*p = (*p)[2:]
-	*n -= 2
-	if nn > *n {
-		return false
-	}
-	*s = string((*p)[:nn])
-	*p = (*p)[nn:]
-	*n -= nn
-	return true
+	*p = buf[n:]
+	return string(buf[:n]), true
 }
 
-func stringPack(s string, p []byte) int {
-	n := uint16(len(s))
-	pack.U16PUT(p, n)
-	copy(p[2:], s[:n])
-	return int(n + 2)
+func packString(s string, p []byte) int {
+	n := len(s)
+	pack.U16PUT(p, uint16(n))
+	copy(p[2:], s)
+	return n + 2
 }
 
 func (mb *MetaBlock) search(elem string, ri *int, me *MetaEntry) error {
@@ -137,7 +136,7 @@ func (mb *MetaBlock) search(elem string, ri *int, me *MetaEntry) error {
 	t := mb.nindex
 	for b < t {
 		i := (b + t) >> 1
-		mb.meUnpack(me, i)
+		mb.unpackMetaEntry(me, i)
 
 		if mb.botch {
 			x = mb.meCmpOld(me, elem)
@@ -179,14 +178,12 @@ func initMetaBlock(p []byte, maxSize int, nEntries int) *MetaBlock {
 
 func unpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 	mb := new(MetaBlock)
+	if n == 0 {
+		return mb, nil
+	}
 
 	mb.maxsize = n
 	mb.buf = p
-
-	if n == 0 {
-		return &MetaBlock{}, nil
-	}
-
 	magic := pack.U32GET(p)
 	if magic != MetaMagic && magic != MetaMagic-1 {
 		return nil, EBadMeta
@@ -207,8 +204,8 @@ func unpackMetaBlock(p []byte, n int) (*MetaBlock, error) {
 
 	p = p[MetaHeaderSize:]
 
-	/* check the index table - ensures that meUnpack and meCmp never fail */
-	for i := int(0); i < mb.nindex; i++ {
+	/* check the index table - ensures that unpackMetaEntry and meCmp never fail */
+	for i := 0; i < mb.nindex; i++ {
 		eo := int(pack.U16GET(p))
 		en := int(pack.U16GET(p[2:]))
 		if eo < omin || eo+en > mb.size || en < 8 {
@@ -240,7 +237,7 @@ func (mb *MetaBlock) delete(i int) {
 	var me MetaEntry
 
 	assert(i < mb.nindex)
-	mb.meUnpack(&me, i)
+	mb.unpackMetaEntry(&me, i)
 	for i := 0; i < int(me.size); i++ {
 		mb.buf[me.offset+i] = 0
 	}
@@ -309,7 +306,7 @@ func (mb *MetaBlock) resize(me *MetaEntry, n int) bool {
 	return false
 }
 
-func (mb *MetaBlock) meUnpack(me *MetaEntry, i int) {
+func (mb *MetaBlock) unpackMetaEntry(me *MetaEntry, i int) {
 	assert(i >= 0 && i < mb.nindex)
 
 	p := mb.buf[MetaHeaderSize+i*MetaIndexSize:]
@@ -359,9 +356,9 @@ func (mb *MetaBlock) meCmp(me *MetaEntry, s string) int {
 
 /*
  * This is the old and broken meCmp.
- * This cmp routine reverse the sense of the comparison
+ * This cmp routine reverses the sense of the comparison
  * when one string is a prefix of the other.
- * In other words, it put "ab" after "abc" rather
+ * In other words, it puts "ab" after "abc" rather
  * than before.  This behaviour is ok; binary search
  * and sort still work.  However, it is goes against
  * the usual convention.
@@ -444,14 +441,10 @@ Err:
 }
 
 func (mb *MetaBlock) compact(mc []MetaChunk) {
-	var o int
-	var n int
-
 	oo := MetaHeaderSize + mb.maxindex*MetaIndexSize
-
 	for i := int(0); i < mb.nindex; i++ {
-		o = int(mc[i].offset)
-		n = int(mc[i].size)
+		o := int(mc[i].offset)
+		n := int(mc[i].size)
 		if o != oo {
 			copy(mb.buf[oo:], mb.buf[o:][:n])
 			pack.U16PUT(mb.buf[MetaHeaderSize+mc[i].index*MetaIndexSize:], uint16(oo))
@@ -466,12 +459,12 @@ func (mb *MetaBlock) compact(mc []MetaChunk) {
 
 // Alloc returns an offset into mb.buf.
 func (mb *MetaBlock) alloc(n int) (int, error) {
-	/* off the end */
+	// off the end
 	if mb.maxsize-mb.size >= n {
 		return mb.size, nil
 	}
 
-	/* check if possible */
+	// check if possible
 	if mb.maxsize-mb.size+mb.free < n {
 		return -1, errors.New("XXX")
 	}
@@ -482,7 +475,7 @@ func (mb *MetaBlock) alloc(n int) (int, error) {
 		return -1, err
 	}
 
-	/* look for hole */
+	// look for hole
 	o := MetaHeaderSize + mb.maxindex*MetaIndexSize
 
 	for i := 0; i < mb.nindex; i++ {
@@ -496,7 +489,7 @@ func (mb *MetaBlock) alloc(n int) (int, error) {
 		return o, nil
 	}
 
-	/* compact and return off the end */
+	// compact and return off the end
 	mb.compact(mc)
 
 	if mb.maxsize-mb.size < n {
@@ -506,47 +499,46 @@ func (mb *MetaBlock) alloc(n int) (int, error) {
 	return mb.size, nil
 }
 
-func deSize(dir *DirEntry) int {
-	/* constant part */
+func (dir *DirEntry) getSize() int {
+	// constant part
+	n := 4 + // magic
+		2 + // version
+		4 + // entry
+		4 + // guid
+		4 + // mentry
+		4 + // mgen
+		8 + // qid
+		4 + // mtime
+		4 + // mcount
+		4 + // ctime
+		4 + // atime
+		4 + // mode
+		0
 
-	n := int(4 + /* magic */
-		2 + /* version */
-		4 + /* entry */
-		4 + /* guid */
-		4 + /* mentry */
-		4 + /* mgen */
-		8 + /* qid */
-		4 + /* mtime */
-		4 + /* mcount */
-		4 + /* ctime */
-		4 + /* atime */
-		4 + /* mode */
-		0)
-
-	/* strings */
+	// strings
 	n += 2 + len(dir.elem)
 	n += 2 + len(dir.uid)
 	n += 2 + len(dir.gid)
 	n += 2 + len(dir.mid)
 
-	/* optional sections */
+	// optional sections
 	if dir.qidSpace != 0 {
-		n += 3 + /* option header */
-			8 + /* qidOffset */
-			8 /* qid Max */
+		n += 3 + // option header
+			8 + // qidOffset
+			8 // qid Max
 	}
 
 	return n
 }
 
-func (mb *MetaBlock) dePack(dir *DirEntry, me *MetaEntry) {
+func (mb *MetaBlock) packDirEntry(dir *DirEntry, me *MetaEntry) {
 	p := mb.buf[me.offset:]
 
 	pack.U32PUT(p, DirMagic)
 	pack.U16PUT(p[4:], 9) /* version */
 	p = p[6:]
 
-	p = p[stringPack(dir.elem, p):]
+	p = p[packString(dir.elem, p):]
 
 	pack.U32PUT(p, dir.entry)
 	pack.U32PUT(p[4:], dir.gen)
@@ -555,9 +547,9 @@ func (mb *MetaBlock) dePack(dir *DirEntry, me *MetaEntry) {
 	pack.U64PUT(p[16:], dir.qid)
 	p = p[24:]
 
-	p = p[stringPack(dir.uid, p):]
-	p = p[stringPack(dir.gid, p):]
-	p = p[stringPack(dir.mid, p):]
+	p = p[packString(dir.uid, p):]
+	p = p[packString(dir.gid, p):]
+	p = p[packString(dir.mid, p):]
 
 	pack.U32PUT(p, dir.mtime)
 	pack.U32PUT(p[4:], dir.mcount)
@@ -578,112 +570,96 @@ func (mb *MetaBlock) dePack(dir *DirEntry, me *MetaEntry) {
 	assert(len(mb.buf)-len(p) == me.offset+int(me.size))
 }
 
-func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
-	var t int
-	var nn int
-	var version int
+func (mb *MetaBlock) unpackDirEntry(me *MetaEntry) (*DirEntry, error) {
+	dir := new(DirEntry)
 
-	p := mb.buf[me.offset:]
-	n := int(me.size)
-
-	*dir = DirEntry{}
+	p := mb.buf[me.offset:][:me.size]
 
 	/* magic */
-	if n < 4 || pack.U32GET(p) != DirMagic {
-		goto Err
+	if len(p) < 4 || pack.U32GET(p) != DirMagic {
+		return nil, EBadMeta
 	}
 	p = p[4:]
-	n -= 4
-
-	//fmt.Printf("deUnpack: got magic\n")
 
 	/* version */
-	if n < 2 {
-		goto Err
+	if len(p) < 2 {
+		return nil, EBadMeta
 	}
-	version = int(pack.U16GET(p))
+	version := int(pack.U16GET(p))
 	if version < 7 || version > 9 {
-		goto Err
+		return nil, EBadMeta
 	}
 	p = p[2:]
-	n -= 2
-
-	//fmt.Printf("deUnpack: got version\n")
 
 	/* elem */
-	if !stringUnpack(&dir.elem, &p, &n) {
-		goto Err
+	if s, ok := unpackString(&p); ok {
+		dir.elem = s
+	} else {
+		return nil, EBadMeta
 	}
 
-	//fmt.Printf("deUnpack: got elem\n")
-
 	/* entry  */
-	if n < 4 {
-		goto Err
+	if len(p) < 4 {
+		return nil, EBadMeta
 	}
 	dir.entry = pack.U32GET(p)
 	p = p[4:]
-	n -= 4
-
-	//fmt.Printf("deUnpack: got entry\n")
 
 	if version < 9 {
 		dir.gen = 0
 		dir.mentry = dir.entry + 1
 		dir.mgen = 0
 	} else {
-		if n < 3*4 {
-			goto Err
+		if len(p) < 3*4 {
+			return nil, EBadMeta
 		}
 		dir.gen = pack.U32GET(p)
 		dir.mentry = pack.U32GET(p[4:])
 		dir.mgen = pack.U32GET(p[8:])
 		p = p[3*4:]
-		n -= 3 * 4
 	}
-
-	//fmt.Printf("deUnpack: got gen etc\n")
 
 	/* size is gotten from venti.Entry */
 	dir.size = 0
 
 	/* qid */
-	if n < 8 {
-		goto Err
+	if len(p) < 8 {
+		return nil, EBadMeta
 	}
 	dir.qid = pack.U64GET(p)
 	p = p[8:]
-	n -= 8
-
-	//fmt.Printf("deUnpack: got qid\n")
 
 	/* skip replacement */
 	if version == 7 {
-		if n < venti.ScoreSize {
-			goto Err
+		if len(p) < venti.ScoreSize {
+			return nil, EBadMeta
 		}
 		p = p[venti.ScoreSize:]
-		n -= venti.ScoreSize
 	}
 
 	/* uid */
-	if !stringUnpack(&dir.uid, &p, &n) {
-		goto Err
+	if s, ok := unpackString(&p); ok {
+		dir.uid = s
+	} else {
+		return nil, EBadMeta
 	}
 
 	/* gid */
-	if !stringUnpack(&dir.gid, &p, &n) {
-		goto Err
+	if s, ok := unpackString(&p); ok {
+		dir.gid = s
+	} else {
+		return nil, EBadMeta
 	}
 
 	/* mid */
-	if !stringUnpack(&dir.mid, &p, &n) {
-		goto Err
+	if s, ok := unpackString(&p); ok {
+		dir.mid = s
+	} else {
+		return nil, EBadMeta
 	}
 
-	//fmt.Printf("deUnpack: got ids\n")
-	if n < 5*4 {
-		goto Err
+	if len(p) < 5*4 {
+		return nil, EBadMeta
 	}
 	dir.mtime = pack.U32GET(p)
 	dir.mcount = pack.U32GET(p[4:])
@@ -691,21 +667,17 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 	dir.atime = pack.U32GET(p[12:])
 	dir.mode = pack.U32GET(p[16:])
 	p = p[5*4:]
-	n -= 5 * 4
-
-	//fmt.Printf("deUnpack: got times\n")
 
 	/* optional meta data */
-	for n > 0 {
-		if n < 3 {
-			goto Err
+	for len(p) > 0 {
+		if len(p) < 3 {
+			return nil, EBadMeta
 		}
-		t = int(p[0])
-		nn = int(pack.U16GET(p[1:]))
+		t := int(p[0])
+		n := int(pack.U16GET(p[1:]))
 		p = p[3:]
-		n -= 3
-		if n < nn {
-			goto Err
+		if len(p) < n {
+			return nil, EBadMeta
 		}
 		switch t {
 		/* not valid in version >= 9 */
@@ -713,8 +685,8 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 			if version >= 9 {
 				break
 			}
-			if dir.plan9 || nn != 12 {
-				goto Err
+			if dir.plan9 || n != 12 {
+				return nil, EBadMeta
 			}
 			dir.plan9 = true
 			dir.p9path = pack.U64GET(p)
@@ -730,45 +702,20 @@ func (mb *MetaBlock) deUnpack(dir *DirEntry, me *MetaEntry) error {
 			}
 
 		case DeQidSpace:
-			if dir.qidSpace != 0 || nn != 16 {
-				goto Err
+			if dir.qidSpace != 0 || n != 16 {
+				return nil, EBadMeta
 			}
 			dir.qidSpace = 1
 			dir.qidOffset = pack.U64GET(p)
 			dir.qidMax = pack.U64GET(p[8:])
 		}
 
-		p = p[nn:]
-		n -= nn
+		p = p[n:]
 	}
 
-	//fmt.Printf("deUnpack: got options\n")
-
-	if len(p) != len(mb.buf[me.offset+int(me.size):]) {
-		goto Err
+	if len(p) != 0 {
+		return nil, EBadMeta
 	}
 
-	//fmt.Printf("deUnpack: correct size\n")
-	return nil
-
-Err:
-	dprintf("deUnpack: XXXXXXXXXXXX EBadMeta\n")
-	deCleanup(dir)
-	return EBadMeta
-}
-
-// TODO(jnj): necessary?
-func deCleanup(dir *DirEntry) {
-	dir.elem = ""
-	dir.uid = ""
-	dir.gid = ""
-	dir.mid = ""
-}
-
-func deCopy(dst *DirEntry, src *DirEntry) {
-	*dst = *src
-	dst.elem = src.elem
-	dst.uid = src.uid
-	dst.gid = src.gid
-	dst.mid = src.mid
+	return dir, nil
 }

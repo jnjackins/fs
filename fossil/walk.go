@@ -42,7 +42,8 @@ func nextWalk(w *WalkPtr, score *venti.Score, typ *BlockType, tag *uint32, e **E
 	}
 	if w.isEntry != 0 {
 		*e = &w.e
-		entryUnpack(&w.e, w.data, w.n)
+		ee, _ := unpackEntry(w.data, w.n)
+		w.e = *ee
 		*score = w.e.score
 		*typ = etype(&w.e)
 		*tag = w.e.tag

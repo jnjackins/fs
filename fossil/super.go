@@ -25,7 +25,7 @@ type Super struct {
 	name      [128]byte   /* label */
 }
 
-func superPack(s *Super, p []byte) {
+func (s *Super) pack(p []byte) {
 	for i := 0; i < SuperSize; i++ {
 		p[i] = 0
 	}
@@ -42,28 +42,30 @@ func superPack(s *Super, p []byte) {
 	copy(p[54:], s.name[:])
 }
 
-func superUnpack(s *Super, p []byte) error {
-	*s = Super{}
+func unpackSuper(p []byte) (*Super, error) {
+	s := new(Super)
+
 	if pack.U32GET(p) != SuperMagic {
-		return errors.New("bad magic")
+		return nil, errors.New("bad magic")
 	}
 	s.version = pack.U16GET(p[4:])
 	if s.version != SuperVersion {
-		return errors.New("bad version")
+		return nil, errors.New("bad version")
 	}
 	s.epochLow = pack.U32GET(p[6:])
 	s.epochHigh = pack.U32GET(p[10:])
 	s.qid = pack.U64GET(p[14:])
 	if s.epochLow == 0 || s.epochLow > s.epochHigh {
-		return errors.New("bad epoch")
+		return nil, errors.New("bad epoch")
 	}
 	if s.qid == 0 {
-		return errors.New("bad qid")
+		return nil, errors.New("bad qid")
 	}
 	s.active = pack.U32GET(p[22:])
 	s.next = pack.U32GET(p[26:])
 	s.current = pack.U32GET(p[30:])
 	copy(s.last[:], p[34:])
 	copy(s.name[:], p[54:])
-	return nil
+
+	return s, nil
 }

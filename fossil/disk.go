@@ -41,14 +41,14 @@ func allocDisk(fd int) (*Disk, error) {
 		return nil, fmt.Errorf("short read: %v", err)
 	}
 
-	var h Header
-	if err := headerUnpack(&h, buf[:]); err != nil {
+	h, err := unpackHeader(buf[:])
+	if err != nil {
 		return nil, fmt.Errorf("bad disk header")
 	}
 
 	disk := &Disk{
 		fd:        fd,
-		h:         h,
+		h:         *h,
 		queue:     make(chan *Block, QueueSize),
 		flushcond: sync.NewCond(new(sync.Mutex)),
 	}

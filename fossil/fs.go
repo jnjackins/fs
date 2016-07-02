@@ -96,14 +96,13 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		fs.arch = initArch(fs.cache, disk, fs, z)
 	}
 
-	var b *Block
-	b, err = fs.cache.local(PartSuper, 0, mode)
+	b, err := fs.cache.local(PartSuper, 0, mode)
 	if err != nil {
 		fs.close()
 		return nil, err
 	}
-	var super Super
-	if err = superUnpack(&super, b.data); err != nil {
+	super, err := unpackSuper(b.data)
+	if err != nil {
 		b.put()
 		fs.close()
 		return nil, fmt.Errorf("bad super block: %v", err)
@@ -153,7 +152,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 			return nil, fmt.Errorf("(*Cache).local: %v", err)
 		}
 
-		superPack(&super, bs.data)
+		super.pack(bs.data)
 		bs.dependency(b, 0, &oscore, nil)
 		b.put()
 		bs.dirty()
@@ -241,24 +240,25 @@ func (fs *Fs) getBlockSize() int {
 	return fs.blockSize
 }
 
-func superGet(c *Cache, super *Super) (*Block, error) {
+func getSuper(c *Cache) (*Block, *Super, error) {
 	b, err := c.local(PartSuper, 0, OReadWrite)
 	if err != nil {
-		logf("superGet: (*Cache).local failed: %v\n", err)
-		return nil, err
+		logf("getSuper: (*Cache).local failed: %v\n", err)
+		return nil, nil, err
 	}
 
-	if err := superUnpack(super, b.data); err != nil {
-		logf("superGet: superUnpack failed: %v\n", err)
+	super, err := unpackSuper(b.data)
+	if err != nil {
+		logf("getSuper: unpackSuper failed: %v\n", err)
 		b.put()
-		return nil, err
+		return nil, nil, err
 	}
 
-	return b, nil
+	return b, super, nil
 }
 
 func superWrite(b *Block, super *Super, forceWrite bool) {
-	superPack(super, b.data)
+	super.pack(b.data)
 	b.dirty()
 	if forceWrite {
 		for !b.write(Waitlock) {
@@ -429,15 +429,14 @@ func (fs *Fs) epochLow(low uint32) error {
 		return fmt.Errorf("bad low epoch (must be <= %d)", fs.ehi)
 	}
 
-	var super Super
-	bs, err := superGet(fs.cache, &super)
+	bs, super, err := getSuper(fs.cache)
 	if err != nil {
 		return err
 	}
 
 	super.epochLow = low
 	fs.elo = low
-	superWrite(bs, &super, true)
+	superWrite(bs, super, true)
 	bs.put()
 
 	return nil
@@ -458,7 +457,7 @@ func (fs *Fs) bumpEpoch(doarchive bool) error {
 		return err
 	}
 
-	e := Entry{
+	e := &Entry{
 		flags: venti.EntryActive | venti.EntryLocal | venti.EntryDir,
 		score: b.score,
 		tag:   RootTag,
@@ -475,14 +474,13 @@ func (fs *Fs) bumpEpoch(doarchive bool) error {
 		var oldaddr uint32
 		logf("snapshot root from %d to %d\n", oldaddr, b.addr)
 	}
-	entryPack(&e, b.data, 1)
+	e.pack(b.data, 1)
 	b.dirty()
 
 	/*
 	 * Update the superblock with the new root and epoch.
 	 */
-	var super Super
-	bs, err := superGet(fs.cache, &super)
+	bs, super, err := getSuper(fs.cache)
 	if err != nil {
 		return err
 	}
@@ -519,7 +517,7 @@ func (fs *Fs) bumpEpoch(doarchive bool) error {
 	 * super.active to disk.  It will be the address of the most recent root that has
 	 * gone to disk.
 	 */
-	superWrite(bs, &super, true)
+	superWrite(bs, super, true)
 
 	bs.removeLink(venti.GlobalToLocal(&oscore), BtDir, RootTag, false)
 	bs.put()
@@ -528,8 +526,7 @@ func (fs *Fs) bumpEpoch(doarchive bool) error {
 }
 
 func (fs *Fs) saveQid() error {
-	var super Super
-	b, err := superGet(fs.cache, &super)
+	b, super, err := getSuper(fs.cache)
 	if err != nil {
 		return err
 	}
@@ -673,19 +670,19 @@ func (fs *Fs) vac(name string) (*venti.Score, error) {
 		return nil, fmt.Errorf("open %q: %v", name, err)
 	}
 
-	var e, ee Entry
-	if err := f.getSources(&e, &ee); err != nil {
+	e, ee, err := f.getSources()
+	if err != nil {
 		f.decRef()
 		return nil, fmt.Errorf("get sources for %q: %v", name, err)
 	}
-	var de DirEntry
-	if err := f.getDir(&de); err != nil {
+	de, err := f.getDir()
+	if err != nil {
 		f.decRef()
 		return nil, fmt.Errorf("get dir entry for %q: %v", name, err)
 	}
 	f.decRef()
 
-	score, err := mkVac(fs.z, uint(fs.blockSize), &e, &ee, &de)
+	score, err := mkVac(fs.z, uint(fs.blockSize), e, ee, de)
 	if err != nil {
 		return nil, fmt.Errorf("make vac for %q: %v", name, err)
 	}
@@ -708,12 +705,13 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	ee := *pee
 	de := *pde
 
-	if venti.GlobalToLocal(&e.score) != NilBlock || (ee.flags&venti.EntryActive != 0 && venti.GlobalToLocal(&ee.score) != NilBlock) {
+	if venti.GlobalToLocal(&e.score) != venti.NilBlock ||
+		(ee.flags&venti.EntryActive != 0 && venti.GlobalToLocal(&ee.score) != venti.NilBlock) {
 		return nil, fmt.Errorf("can only vac paths already stored on venti")
 	}
 
 	// Build metadata source for root.
-	n := deSize(&de)
+	n := de.getSize()
 	ntotal := n + MetaHeaderSize + MetaIndexSize
 
 	buf := make([]byte, 8192)
@@ -732,7 +730,7 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	assert(me.offset == 0)
 	me.offset = offset
 	me.size = uint16(n)
-	mb.dePack(&de, &me)
+	mb.packDirEntry(&de, &me)
 	mb.insert(i, &me)
 	mb.pack()
 
@@ -741,7 +739,7 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	if err != nil {
 		return nil, fmt.Errorf("error writing root metadata block to venti: %v", err)
 	}
-	eee := Entry{
+	eee := &Entry{
 		size:  size,
 		score: *score,
 		psize: 8192,
@@ -751,9 +749,9 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	}
 
 	// Build root source with three entries in it.
-	entryPack(&e, buf, 0)
-	entryPack(&ee, buf, 1)
-	entryPack(&eee, buf, 2)
+	e.pack(buf, 0)
+	ee.pack(buf, 1)
+	eee.pack(buf, 2)
 
 	size = venti.EntrySize * 3
 	score, err = vtWriteBlock(z, buf[:size], venti.DirType)
@@ -815,8 +813,7 @@ func (fs *Fs) unhalt() error {
 }
 
 func (fs *Fs) nextQid(qid *uint64) error {
-	var super Super
-	b, err := superGet(fs.cache, &super)
+	b, super, err := getSuper(fs.cache)
 	if err != nil {
 		return err
 	}
@@ -829,7 +826,7 @@ func (fs *Fs) nextQid(qid *uint64) error {
 	 * since fileMetaAlloc will record a dependency between the
 	 * block holding this qid and the super block.  See file.c:/^fileMetaAlloc.
 	 */
-	superWrite(b, &super, false)
+	superWrite(b, super, false)
 
 	b.put()
 	return nil
@@ -864,8 +861,8 @@ func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
 		if de.mode&ModeSnapshot != 0 {
 			ff, err := f.walk(de.elem)
 			if err == nil {
-				var e, ee Entry
-				if err := ff.getSources(&e, &ee); err == nil {
+				e, _, err := ff.getSources()
+				if err == nil {
 					if de.mtime >= uint32(savetime.Unix()) && e.snap != 0 {
 						if e.snap < *plo {
 							*plo = e.snap
@@ -882,8 +879,6 @@ func fsEsearch1(f *File, path string, savetime time.Time, plo *uint32) int {
 				ff.decRef()
 			}
 		}
-
-		deCleanup(&de)
 		if r < 0 {
 			dprintf("fsEsearch1: deeRead: %v\n", deeReadErr)
 			break
@@ -900,19 +895,15 @@ func (fs *Fs) esearch(path string, savetime time.Time, plo *uint32) int {
 	if err != nil {
 		return 0
 	}
-	var de DirEntry
-	if err := f.getDir(&de); err != nil {
+	de, err := f.getDir()
+	if err != nil {
 		f.decRef()
 		return 0
 	}
-
 	if de.mode&ModeDir == 0 {
 		f.decRef()
-		deCleanup(&de)
 		return 0
 	}
-
-	deCleanup(&de)
 	n := fsEsearch1(f, path, savetime, plo)
 	f.decRef()
 	return n
@@ -974,8 +965,6 @@ func fsRsearch1(f *File, s string) int {
 				ff.decRef()
 			}
 		}
-
-		deCleanup(&de)
 		if r < 0 {
 			dprintf("fsRsearch1: deeRead: %v\n", deeReadErr)
 			break
@@ -992,19 +981,15 @@ func (fs *Fs) rsearch(path_ string) int {
 	if err != nil {
 		return 0
 	}
-	var de DirEntry
-	if err := f.getDir(&de); err != nil {
+	de, err := f.getDir()
+	if err != nil {
 		f.decRef()
 		return 0
 	}
-
 	if de.mode&ModeDir == 0 {
 		f.decRef()
-		deCleanup(&de)
 		return 0
 	}
-
-	deCleanup(&de)
 	fsRsearch1(f, path_)
 	f.decRef()
 	return 1

@@ -9,7 +9,7 @@ import (
 /* one entry buffer for reading directories */
 type DirBuf struct {
 	dee   *DirEntryEnum
-	valid int
+	valid bool
 	de    DirEntry
 }
 
@@ -31,9 +31,6 @@ func dirBufFree(db *DirBuf) {
 		return
 	}
 
-	if db.valid != 0 {
-		deCleanup(&db.de)
-	}
 	db.dee.close()
 }
 
@@ -113,7 +110,7 @@ func dirRead(fid *Fid, count int, offset int64) ([]byte, error) {
 	var err error
 	data := make([]byte, 0, count) // TODO(jnj): avoid allocation
 	for nb = 0; nb < count; nb += n {
-		if db.valid == 0 {
+		if !db.valid {
 			n, err = db.dee.read(&db.de)
 			if err != nil {
 				return nil, err
@@ -121,7 +118,7 @@ func dirRead(fid *Fid, count int, offset int64) ([]byte, error) {
 			if n == 0 {
 				break
 			}
-			db.valid = 1
+			db.valid = true
 		}
 
 		buf, err := dirDe2M(&db.de)
@@ -130,8 +127,7 @@ func dirRead(fid *Fid, count int, offset int64) ([]byte, error) {
 			break
 		}
 
-		db.valid = 0
-		deCleanup(&db.de)
+		db.valid = false
 	}
 
 	return data, nil
