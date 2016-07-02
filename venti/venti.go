@@ -13,7 +13,7 @@ const (
 	MaxFileSize   = (1 << 48) - 1
 )
 
-func checkSize(n int) error {
+func checkBlockSize(n int) error {
 	if n < 256 || n > MaxBlockSize {
 		return fmt.Errorf("bad block size %d", n)
 	}

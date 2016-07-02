@@ -1,6 +1,8 @@
 package venti
 
 import (
+	"fmt"
+
 	"sigint.ca/fs/internal/pack"
 )
 
@@ -17,42 +19,47 @@ const EntrySize = 40
 
 // TODO(jnj): update to libventi version
 type Entry struct {
-	gen   uint32
-	psize uint16
-	dsize uint16
-	depth uint8
-	flags uint8
-	size  uint64
-	score Score
+	Gen   uint32
+	Psize uint16
+	Dsize uint16
+	Depth uint8
+	Flags uint8
+	Size  uint64
+	Score Score
+}
+
+func (e *Entry) String() string {
+	return fmt.Sprintf("Entry(gen=%d psize=%d dsize=%d depth=%d flags=%#x size=%d score=%v)",
+		e.Gen, e.Psize, e.Dsize, e.Depth, e.Flags, e.Size, &e.Score)
 }
 
 func UnpackEntry(p []byte, index int) (*Entry, error) {
 	var e Entry
 
 	p = p[index*EntrySize:]
-	e.gen = pack.U32GET(p)
+	e.Gen = pack.U32GET(p)
 	p = p[4:]
-	e.psize = pack.U16GET(p)
+	e.Psize = pack.U16GET(p)
 	p = p[2:]
-	e.dsize = pack.U16GET(p)
+	e.Dsize = pack.U16GET(p)
 	p = p[2:]
-	e.flags = pack.U8GET(p)
+	e.Flags = pack.U8GET(p)
 	p = p[1:]
-	e.depth = (e.flags & EntryDepthMask) >> EntryDepthShift
-	e.flags &^= EntryDepthMask
+	e.Depth = (e.Flags & EntryDepthMask) >> EntryDepthShift
+	e.Flags &^= EntryDepthMask
 	p = p[5:]
-	e.size = pack.U48GET(p)
+	e.Size = pack.U48GET(p)
 	p = p[6:]
-	p = p[copy(e.score[:], p):]
+	p = p[copy(e.Score[:], p):]
 
-	if e.flags&EntryActive == 0 {
+	if e.Flags&EntryActive == 0 {
 		return &e, nil
 	}
 
-	if err := checkSize(int(e.psize)); err != nil {
+	if err := checkBlockSize(int(e.Psize)); err != nil {
 		return nil, err
 	}
-	if err := checkSize(int(e.dsize)); err != nil {
+	if err := checkBlockSize(int(e.Dsize)); err != nil {
 		return nil, err
 	}
 
@@ -62,18 +69,18 @@ func UnpackEntry(p []byte, index int) (*Entry, error) {
 func (e *Entry) Pack(p []byte, index int) {
 	p = p[index*EntrySize:]
 
-	pack.U32PUT(p, e.gen)
+	pack.U32PUT(p, e.Gen)
 	p = p[4:]
-	pack.U16PUT(p, e.psize)
+	pack.U16PUT(p, e.Psize)
 	p = p[2:]
-	pack.U16PUT(p, e.dsize)
+	pack.U16PUT(p, e.Dsize)
 	p = p[2:]
-	flags := e.flags | (e.depth<<EntryDepthShift)&EntryDepthMask
+	flags := e.Flags | (e.Depth<<EntryDepthShift)&EntryDepthMask
 	pack.U8PUT(p, flags)
 	p = p[1:]
 	memset(p[:5], 0)
 	p = p[5:]
-	pack.U48PUT(p, e.size)
+	pack.U48PUT(p, e.Size)
 	p = p[6:]
-	p = p[copy(p, e.score[:]):]
+	p = p[copy(p, e.Score[:]):]
 }
