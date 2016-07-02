@@ -967,8 +967,8 @@ func fsysClrep(cons *Cons, fsys *Fsys, argv []string, ch rune) error {
 		if b.l.typ == BtDir || b.l.typ == BtData {
 			return fmt.Errorf("wrong block type")
 		}
-		score := venti.ZeroScore()
-		copy(zero[:], score[:])
+		zscore := venti.ZeroScore()
+		copy(zero[:], zscore[:])
 	}
 	max := fs.blockSize / sz
 	for i := 1; i < argc; i++ {
@@ -1665,8 +1665,8 @@ func fsysOpen(cons *Cons, name string, argv []string) error {
 			host = ""
 		}
 		fsys.session, err = dialVenti(host)
-		if err != nil && !noventi {
-			cons.printf("warning: connecting to venti: %v\n", err)
+		if err != nil {
+			cons.printf("error connecting to venti: %v\n", err)
 		}
 	}
 
@@ -1674,7 +1674,7 @@ func fsysOpen(cons *Cons, name string, argv []string) error {
 	if err != nil {
 		fsys.lock.Unlock()
 		fsys.put()
-		return fmt.Errorf("fsOpen: %v", err)
+		return fmt.Errorf("open fs %q: %v", fsys.name, err)
 	}
 
 	fsys.fs.name = fsys.name /* for better error messages */

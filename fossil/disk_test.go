@@ -47,7 +47,7 @@ func testDiskReadWriteRaw(t *testing.T, disk *Disk) {
 		t.Fatalf("disk.readRaw: %v", err)
 	}
 
-	if bytes.Compare(buf, want) != 0 {
+	if !bytes.Equal(buf, want) {
 		t.Errorf("comparison failed: got=%v, want=%v", buf, want)
 	}
 }

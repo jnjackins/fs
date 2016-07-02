@@ -1,18 +1,18 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestFs(t *testing.T) {
 	fsys, err := testAllocFsys()
 	if err != nil {
 		t.Fatalf("testAllocFsys: %v", err)
 	}
-	fs := fsys.fs
+	defer testCleanupFsys(fsys)
 
-	// first test with a clean fs
-	t.Run("fs.sync", func(t *testing.T) { testFsSync(t, fs) })
-	t.Run("fs.halt", func(t *testing.T) { testFsHalt(t, fs) })
-	t.Run("fs.snapshot", func(t *testing.T) { testFsSnapshot(t, fs) })
+	fs := fsys.fs
 
 	// create some dirty blocks
 	for _, c := range []struct{ cmd, match string }{
@@ -25,18 +25,22 @@ func TestFs(t *testing.T) {
 		{cmd: "9p Tclunk 0"},
 	} {
 		if err := cliExec(nil, c.cmd); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 	}
+
+	time.Sleep(100 * time.Millisecond) // time to settle
 
 	// test again with a dirty fs
 	t.Run("fs.sync", func(t *testing.T) { testFsSync(t, fs) })
 	t.Run("fs.halt", func(t *testing.T) { testFsHalt(t, fs) })
 	t.Run("fs.snapshot", func(t *testing.T) { testFsSnapshot(t, fs) })
 
-	if err := testCleanupFsys(fsys); err != nil {
-		t.Fatalf("testCleanupFsys: %v", err)
-	}
+	// wait for archival snapshot to complete
+	time.Sleep(15 * time.Second)
+
+	t.Run("fs.vac", func(t *testing.T) { testFsVac(t, fs) })
 }
 
 func testFsSync(t *testing.T, fs *Fs) {
@@ -50,19 +54,19 @@ func testFsHalt(t *testing.T, fs *Fs) {
 		t.Errorf("fs.halted=true, wanted false")
 	}
 	if err := fs.unhalt(); err == nil {
-		t.Errorf("sync: unhalt succeeded, expected failure")
+		t.Errorf("unhalt succeeded, expected failure")
 	}
 	if err := fs.halt(); err != nil {
-		t.Errorf("sync: %v", err)
+		t.Errorf("halt: %v", err)
 	}
 	if !fs.halted {
 		t.Errorf("fsys.fs.halted=false, wanted true")
 	}
 	if err := fs.halt(); err == nil {
-		t.Errorf("sync: halt succeeded, expected failure")
+		t.Errorf("halt succeeded, expected failure")
 	}
 	if err := fs.unhalt(); err != nil {
-		t.Errorf("sync: %v", err)
+		t.Errorf("unhalt: %v", err)
 	}
 	if fs.halted {
 		t.Errorf("fsys.fs.halted=true, wanted false")
@@ -77,4 +81,12 @@ func testFsSnapshot(t *testing.T, fs *Fs) {
 		t.Errorf("snapshot(doarchive=true): %v", err)
 	}
 	fs.snapshotCleanup(0)
+}
+
+func testFsVac(t *testing.T, fs *Fs) {
+	score, err := fs.vac("/active/test")
+	if err != nil {
+		t.Fatalf("error creating vac archive: %v", err)
+	}
+	t.Logf("got score %v for test vac", score)
 }

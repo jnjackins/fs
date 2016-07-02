@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -43,7 +44,8 @@ func testAllocFsys() (*Fsys, error) {
 		return nil, fmt.Errorf("fsysConfig: %v", err)
 	}
 
-	if err := fsysOpen(nil, "testfs", []string{"open", "-AWPV"}); err != nil {
+	os.Setenv("venti", "localhost")
+	if err := fsysOpen(nil, "testfs", []string{"open", "-AWP"}); err != nil {
 		return nil, fmt.Errorf("fsysOpen: %v", err)
 	}
 

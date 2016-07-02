@@ -12,16 +12,16 @@ const BytesPerEntry = 100
 // variant on venti.Entry
 // there are extra fields when stored locally
 type Entry struct {
-	gen     uint32 /* generation number */
-	psize   uint16 /* pointer block size */
-	dsize   uint16 /* data block size */
-	depth   uint8  /* unpacked from flags */
+	gen     uint32 // generation number
+	psize   uint16 // pointer block size
+	dsize   uint16 // data block size
+	depth   uint8  // unpacked from flags
 	flags   uint8
 	size    uint64
 	score   venti.Score
-	tag     uint32 /* tag for local blocks: zero if stored on Venti */
-	snap    uint32 /* non-zero -> entering snapshot of given epoch */
-	archive bool   /* archive this snapshot: only valid for snap != 0 */
+	tag     uint32 // tag for local blocks: zero if stored on Venti
+	snap    uint32 // non-zero -> entering snapshot of given epoch
+	archive bool   // archive this snapshot: only valid for snap != 0
 }
 
 func entryPack(e *Entry, p []byte, index int) {
@@ -39,7 +39,7 @@ func entryPack(e *Entry, p []byte, index int) {
 
 	if flags&venti.EntryLocal != 0 {
 		if venti.GlobalToLocal(&e.score) == NilBlock {
-			panic("abort")
+			panic("bad score")
 		}
 		for i := 0; i < 7; i++ {
 			p[20:][i] = 0

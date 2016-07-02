@@ -19,9 +19,9 @@ const EntrySize = 40
 
 // TODO(jnj): update to libventi version
 type Entry struct {
-	Gen   uint32
-	Psize uint16
-	Dsize uint16
+	Gen   uint32 // generation number
+	Psize uint16 // pointer block size
+	Dsize uint16 // data block size
 	Depth uint8
 	Flags uint8
 	Size  uint64

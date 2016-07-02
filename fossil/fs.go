@@ -144,8 +144,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 			return nil, err
 		}
 
-		var oscore venti.Score
-		venti.LocalToGlobal(super.active, &oscore)
+		oscore := venti.LocalToGlobal(super.active)
 		super.active = b.addr
 		bs, err := fs.cache.local(PartSuper, 0, OReadWrite)
 		if err != nil {
@@ -200,7 +199,6 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 func (fs *Fs) close() {
 	fs.elk.RLock()
-	defer fs.elk.RUnlock()
 
 	if fs.metaFlushTicker != nil {
 		fs.metaFlushTicker.Stop()
@@ -216,8 +214,15 @@ func (fs *Fs) close() {
 	fs.file = nil
 	fs.source.close()
 	fs.cache.free()
+
 	if fs.arch != nil {
 		fs.arch.free()
+	}
+
+	fs.elk.RUnlock() // TODO(jnj): can this be unlocked earlier?
+
+	if fs.z != nil {
+		fs.z.Close()
 	}
 }
 
@@ -497,8 +502,7 @@ func (fs *Fs) bumpEpoch(doarchive bool) error {
 	 * Record that the new super.active can't get written out until
 	 * the new b gets written out.  Until then, use the old value.
 	 */
-	var oscore venti.Score
-	venti.LocalToGlobal(oldaddr, &oscore)
+	oscore := venti.LocalToGlobal(oldaddr)
 
 	bs.dependency(b, 0, &oscore, nil)
 	b.put()
@@ -718,7 +722,7 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	}
 
 	mb := initMetaBlock(buf, ntotal, 1)
-	o, err := mb.alloc(int(n))
+	offset, err := mb.alloc(int(n))
 	if err != nil {
 		return nil, fmt.Errorf("alloc metablock: %v", err)
 	}
@@ -726,44 +730,47 @@ func mkVac(z *venti.Session, blockSize uint, pe, pee *Entry, pde *DirEntry) (*ve
 	var me MetaEntry
 	mb.search(de.elem, &i, &me)
 	assert(me.offset == 0)
-	me.offset = o
+	me.offset = offset
 	me.size = uint16(n)
 	mb.dePack(&de, &me)
 	mb.insert(i, &me)
 	mb.pack()
 
-	var eee Entry
-	eee.size = uint64(n) + MetaHeaderSize + MetaIndexSize
-	score, err := vtWriteBlock(z, buf[:eee.size], venti.DataType)
+	size := uint64(n) + MetaHeaderSize + MetaIndexSize
+	score, err := vtWriteBlock(z, buf[:size], venti.DataType)
 	if err != nil {
 		return nil, fmt.Errorf("error writing root metadata block to venti: %v", err)
 	}
-	eee.score = *score
-	eee.psize = 8192
-	eee.dsize = 8192
-	eee.depth = 0
-	eee.flags = venti.EntryActive
+	eee := Entry{
+		size:  size,
+		score: *score,
+		psize: 8192,
+		dsize: 8192,
+		depth: 0,
+		flags: venti.EntryActive,
+	}
 
 	// Build root source with three entries in it.
 	entryPack(&e, buf, 0)
 	entryPack(&ee, buf, 1)
 	entryPack(&eee, buf, 2)
 
-	n = venti.EntrySize * 3
-	var root venti.Root
-	score, err = vtWriteBlock(z, buf[:n], venti.DirType)
+	size = venti.EntrySize * 3
+	score, err = vtWriteBlock(z, buf[:size], venti.DirType)
 	if err != nil {
 		return nil, fmt.Errorf("error writing root dir block to venti: %v", err)
 	}
-	root.Score = *score
 
 	// Save root.
-	root.Version = venti.RootVersion
+	root := &venti.Root{
+		Version:   venti.RootVersion,
+		Type:      "vac",
+		Name:      de.elem,
+		Score:     *score,
+		BlockSize: uint16(blockSize),
+	}
+	root.Pack(buf)
 
-	root.Type = "vac"
-	root.Name = de.elem
-	root.BlockSize = uint16(blockSize)
-	(&root).Pack(buf)
 	score, err = vtWriteBlock(z, buf[:venti.RootSize], venti.RootType)
 	if err != nil {
 		return nil, fmt.Errorf("error writing root data block to venti: %v", err)

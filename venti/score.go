@@ -78,9 +78,8 @@ func GlobalToLocal(score *Score) uint32 {
 	return pack.U32GET(score[ScoreSize-4:])
 }
 
-func LocalToGlobal(addr uint32, score *Score) {
-	for i := 0; i < ScoreSize-4; i++ {
-		score[i] = 0
-	}
-	pack.U32PUT(score[ScoreSize-4:], addr)
+func LocalToGlobal(addr uint32) Score {
+	var sc Score
+	pack.U32PUT(sc[ScoreSize-4:], addr)
+	return sc
 }

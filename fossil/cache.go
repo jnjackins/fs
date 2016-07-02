@@ -476,7 +476,7 @@ func (c *Cache) _local(part int, addr uint32, mode int, epoch uint32) (*Block, e
 
 		b.part = part
 		b.addr = addr
-		venti.LocalToGlobal(addr, &b.score)
+		b.score = venti.LocalToGlobal(addr)
 
 		/* chain onto correct hash */
 		b.next = c.heads[h]
@@ -669,7 +669,7 @@ func (c *Cache) allocBlock(typ BlockType, tag, epoch, epochLow uint32) (*Block, 
 		return nil, err
 	}
 
-	nwrap := int(0)
+	nwrap := 0
 	var lab Label
 	for {
 		addr++

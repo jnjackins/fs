@@ -49,6 +49,9 @@ func (a *Arch) free() {
 	a.die = sync.NewCond(a.lk)
 	a.starve.Signal()
 	for a.ref > 1 {
+		// TODO(jnj): DEADLOCK here if arch.thread is trying to acquire a.fs.elk
+		// to record a successful archive to the super block.
+		// the elk
 		a.die.Wait()
 	}
 	a.lk.Unlock()
@@ -64,14 +67,9 @@ func ventiSend(a *Arch, b *Block, data []byte) error {
 	data = venti.ZeroTruncate(vtType[b.l.typ], data)
 	dprintf("block zero-truncated from %d to %d bytes\n", a.blockSize, len(data))
 
-	score, err := a.z.Write(vtType[b.l.typ], data)
+	_, err := vtWriteBlock(a.z, data, vtType[b.l.typ])
 	if err != nil {
 		return fmt.Errorf("venti write block %#x: %v\n", b.addr, err)
-	}
-
-	if !score.Check(data) {
-		return fmt.Errorf("venti write block %#x: sha1 check failed: received %v, expected %v\n",
-			b.addr, score, venti.Sha1(data))
 	}
 
 	if err := a.z.Sync(); err != nil {
@@ -322,20 +320,25 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 	return ret, nil
 }
 
+// 1. get the superblock from the cache
+// 2. check super.next for an address to archive
+// 3. write blocks to venti (archWalk)
+// 4. get a vac score by writing a Root block to venti
+// 5. record the vac score to the super block
+// 6. log the vac score
 func (a *Arch) thread() {
+	var super Super
+	rbuf := make([]byte, venti.RootSize)
 	for {
-		/* look for work */
+		// look for work
 		a.fs.elk.Lock()
-
-		var super Super
 		b, err := superGet(a.c, &super)
 		if err != nil {
 			a.fs.elk.Unlock()
-			logf("archThread: superGet: %v\n", err)
+			logf("(*Arch).thread: superGet: %v\n", err)
 			time.Sleep(1 * time.Minute)
 			continue
 		}
-
 		addr := super.next
 		if addr != NilBlock && super.current == NilBlock {
 			super.current = addr
@@ -349,9 +352,8 @@ func (a *Arch) thread() {
 		a.fs.elk.Unlock()
 
 		if addr == NilBlock {
-			/* wait for work */
+			// wait for work
 			a.lk.Lock()
-
 			a.starve.Wait()
 			if a.die != nil {
 				// exit
@@ -361,38 +363,33 @@ func (a *Arch) thread() {
 			continue
 		}
 
-		/* window of opportunity to provoke races */
-		// TODO(jnj): why?
-		time.Sleep(10 * time.Second)
+		// TODO(jnj): we can do better.
+		time.Sleep(10 * time.Second) // window of opportunity to provoke races
 
-		/* do work */
+		// do work
 		p := Param{
 			blockSize: a.blockSize,
 			dsize:     3 * venti.EntrySize, // root has three Entries
 			c:         a.c,
 			a:         a,
 		}
-
 		ret, err := archWalk(&p, addr, BtDir, RootTag)
 		switch ret {
 		case ArchSuccess, ArchFaked:
 			break
 		case ArchFailure:
 			logf("failed to archive block %#x: %v\n", addr, err)
-			time.Sleep(60 * time.Second)
+			time.Sleep(1 * time.Minute)
 			continue
 		default:
 			panic(fmt.Sprintf("bad result from archWalk: %d", ret))
 		}
 
-		if false {
-			dprintf("archiveSnapshot %#x: maxdepth %d nfixed %d send %d nfailsend %d nvisit %d nreclaim %d nfake %d nreal %d\n",
-				addr, p.maxdepth, p.nfixed, p.nsend, p.nfailsend, p.nvisit, p.nreclaim, p.nfake, p.nreal)
-			dprintf("archiveBlock %v (%d)\n", &p.score, p.blockSize)
-		}
+		dprintf("archive snapshot %#x: maxdepth=%d nfixed=%d send=%d nfailsend=%d nvisit=%d nreclaim=%d nfake=%d nreal=%d\n",
+			addr, p.maxdepth, p.nfixed, p.nsend, p.nfailsend, p.nvisit, p.nreclaim, p.nfake, p.nreal)
 
-		/* tie up vac root */
-		root := venti.Root{
+		// tie up vac root
+		root := &venti.Root{
 			Version:   venti.RootVersion,
 			Type:      "vac",
 			Name:      "fossil",
@@ -400,24 +397,18 @@ func (a *Arch) thread() {
 			BlockSize: uint16(a.blockSize),
 			Prev:      super.last,
 		}
+		root.Pack(rbuf)
 
-		var rbuf [venti.RootSize]uint8
-		(&root).Pack(rbuf[:])
-
-		score, err := a.z.Write(venti.RootType, rbuf[:venti.RootSize])
+		score, err := vtWriteBlock(a.z, rbuf, venti.RootType)
 		if err != nil {
 			logf("write block %#x to venti failed: %v\n", addr, err)
 			time.Sleep(1 * time.Minute)
 			continue
 		}
-		if !score.Check(rbuf[:]) {
-			logf("score check for block %#x failed\n", addr)
-			time.Sleep(1 * time.Minute)
-			continue
-		}
+
 		p.score = *score
 
-		/* record success */
+		// record success
 		a.fs.elk.Lock()
 		b, err = superGet(a.c, &super)
 		if err != nil {

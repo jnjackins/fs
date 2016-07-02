@@ -232,7 +232,7 @@ func (d *Disk) rootMetaInit(buf []byte) *Entry {
 	e.flags |= venti.EntryLocal
 	e.size = uint64(d.blockSize())
 	e.tag = tag
-	venti.LocalToGlobal(addr, &e.score)
+	e.score = venti.LocalToGlobal(addr)
 
 	return e
 }
@@ -259,7 +259,7 @@ func (d *Disk) rootInit(e *Entry, buf []byte) uint32 {
 	e.flags |= venti.EntryLocal | venti.EntryDir
 	e.size = venti.EntrySize * 3
 	e.tag = tag
-	venti.LocalToGlobal(addr, &e.score)
+	e.score = venti.LocalToGlobal(addr)
 
 	addr = d.blockAlloc(BtDir, RootTag, buf)
 	memset(buf, 0)
@@ -378,7 +378,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	d.ventiRead(z, score, venti.RootType, buf)
 	root, err := venti.UnpackRoot(buf)
 	if err != nil {
-		fatalf("corrupted root: vtRootUnpack: %v", err)
+		fatalf("corrupted root: %v", err)
 	}
 	n := d.ventiRead(z, &root.Score, venti.DirType, buf)
 
@@ -439,7 +439,7 @@ func (d *Disk) ventiRoot(host string, s string, buf []byte) (*venti.Session, uin
 	e.flags |= venti.EntryLocal | venti.EntryDir
 	e.size = venti.EntrySize * 3
 	e.tag = tag
-	venti.LocalToGlobal(addr, &e.score)
+	e.score = venti.LocalToGlobal(addr)
 
 	addr = d.blockAlloc(BtDir, RootTag, buf)
 	memset(buf, 0)
