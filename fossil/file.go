@@ -32,7 +32,7 @@ type File struct {
 	next *File /* sibling */
 
 	/* data for file */
-	lk      *sync.RWMutex /* lock for the following */
+	lk      sync.RWMutex /* lock for the following */
 	source  *Source
 	msource *Source /* for directories: meta data for children */
 	down    *File   /* children */
@@ -43,7 +43,6 @@ type File struct {
 
 func allocFile(fs *Fs) *File {
 	return &File{
-		lk:   new(sync.RWMutex),
 		ref:  1,
 		fs:   fs,
 		boff: NilBlock,

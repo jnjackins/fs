@@ -386,7 +386,7 @@ func rTstat(m *Msg) error {
 
 func _rTclunk(fid *Fid, remove bool) error {
 	if fid.excl != nil {
-		exclFree(fid)
+		freeExcl(fid)
 	}
 
 	var err error
@@ -445,7 +445,7 @@ func rTwrite(m *Msg) error {
 	}
 
 	if fid.excl != nil {
-		if err = exclUpdate(fid); err != nil {
+		if err = updateExcl(fid); err != nil {
 			return err
 		}
 	}
@@ -492,7 +492,7 @@ func rTread(m *Msg) error {
 	}
 
 	if fid.excl != nil {
-		if err = exclUpdate(fid); err != nil {
+		if err = updateExcl(fid); err != nil {
 			return err
 		}
 	}
@@ -608,7 +608,7 @@ func rTcreate(m *Msg) error {
 	}
 	if mode&ModeExclusive != 0 {
 		fid.qid.Type |= plan9.QTEXCL
-		assert(exclAlloc(fid) == nil)
+		assert(allocExcl(fid) == nil)
 	}
 
 	if m.t.Mode&plan9.ORCLOSE != 0 {
@@ -702,7 +702,7 @@ func rTopen(m *Msg) error {
 
 	mode = int(fid.file.getMode())
 	if mode&ModeExclusive != 0 {
-		if err = exclAlloc(fid); err != nil {
+		if err = allocExcl(fid); err != nil {
 			goto error
 		}
 	}
@@ -731,7 +731,7 @@ func rTopen(m *Msg) error {
 
 error:
 	if fid.excl != nil {
-		exclFree(fid)
+		freeExcl(fid)
 	}
 	return err
 }

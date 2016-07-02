@@ -21,7 +21,7 @@ type Arch struct {
 	fs        *Fs
 	z         *venti.Session
 
-	lk     *sync.Mutex
+	lk     sync.Mutex
 	starve *sync.Cond
 	die    *sync.Cond
 }
@@ -32,10 +32,9 @@ func initArch(c *Cache, disk *Disk, fs *Fs, z *venti.Session) *Arch {
 		z:         z,
 		fs:        fs,
 		blockSize: uint(disk.blockSize()),
-		lk:        new(sync.Mutex),
 		ref:       2,
 	}
-	a.starve = sync.NewCond(a.lk)
+	a.starve = sync.NewCond(&a.lk)
 
 	go a.thread()
 
@@ -46,7 +45,7 @@ func (a *Arch) free() {
 	/* kill slave */
 	a.lk.Lock()
 
-	a.die = sync.NewCond(a.lk)
+	a.die = sync.NewCond(&a.lk)
 	a.starve.Signal()
 	for a.ref > 1 {
 		// TODO(jnj): DEADLOCK here if arch.thread is trying to acquire a.fs.elk

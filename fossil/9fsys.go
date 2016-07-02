@@ -15,7 +15,7 @@ import (
 )
 
 type Fsys struct {
-	lock *sync.Mutex
+	lock sync.Mutex
 
 	name  string // copy here & Fs to ease error reporting
 	dev   string
@@ -33,7 +33,7 @@ type Fsys struct {
 }
 
 var fsysbox struct {
-	lock       *sync.RWMutex
+	lock       sync.RWMutex
 	head, tail *Fsys
 
 	curfsys string
@@ -277,7 +277,6 @@ func allocFsys(name string, dev string) (*Fsys, error) {
 	}
 
 	fsys := &Fsys{
-		lock: new(sync.Mutex),
 		name: name,
 		dev:  dev,
 		ref:  1,
@@ -1877,8 +1876,6 @@ func cmdFsys(cons *Cons, argv []string) error {
 }
 
 func fsysInit() error {
-	fsysbox.lock = new(sync.RWMutex)
-
 	/* the venti cmd is special: the fs can be either open or closed */
 	for _, err := range []error{
 		cliAddCmd("venti", cmdFsysXXX),

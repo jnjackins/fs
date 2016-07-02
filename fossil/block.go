@@ -164,7 +164,7 @@ type Block struct {
 	// blockPut once per reference.
 	nlock int32
 
-	lk *sync.Mutex
+	lk sync.Mutex
 
 	part  int
 	addr  uint32

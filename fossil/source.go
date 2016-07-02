@@ -22,7 +22,7 @@ type Source struct {
 	dir        bool    /* immutable */
 	parent     *Source /* immutable */
 	file       *File   /* immutable; point back */
-	lk         *sync.Mutex
+	lk         sync.Mutex
 	ref        int
 	// epoch for the source
 	// for ReadWrite sources, epoch is used to lazily notice
@@ -126,7 +126,6 @@ func (fs *Fs) allocSource(b *Block, p *Source, offset uint32, mode int, issnapsh
 		dsize:      int(e.dsize),
 		gen:        e.gen,
 		dir:        e.flags&venti.EntryDir != 0,
-		lk:         new(sync.Mutex),
 		ref:        1,
 		parent:     p,
 		score:      b.score,

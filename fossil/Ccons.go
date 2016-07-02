@@ -11,7 +11,7 @@ import (
 type Cons struct {
 	conn io.ReadWriteCloser
 
-	lk     *sync.Mutex
+	lk     sync.Mutex
 	prompt string
 }
 
@@ -27,7 +27,6 @@ func newTTY() (*Cons, error) {
 func openCons(conn io.ReadWriteCloser) *Cons {
 	cons := &Cons{
 		conn: conn,
-		lk:   new(sync.Mutex),
 	}
 	cons.setPrompt("")
 	cons.printf(cons.getPrompt())

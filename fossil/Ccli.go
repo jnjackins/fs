@@ -11,7 +11,7 @@ type Cmd struct {
 }
 
 var clibox struct {
-	lock *sync.Mutex
+	lock sync.Mutex
 	cmd  []Cmd
 }
 
@@ -56,11 +56,5 @@ func cliAddCmd(argv0 string, cmd func(*Cons, []string) error) error {
 		cmd:   cmd,
 	}
 	clibox.cmd = append(clibox.cmd, c)
-	return nil
-}
-
-func cliInit() error {
-	clibox.lock = new(sync.Mutex)
-
 	return nil
 }

@@ -40,10 +40,10 @@ type Fs struct {
 	 * Deletion and creation of snapshots occurs under a write lock of elk,
 	 * ensuring no file operations are occurring concurrently.
 	 */
-	elk    *sync.RWMutex /* epoch lock */
-	ehi    uint32        /* epoch high */
-	elo    uint32        /* epoch low */
-	halted bool          /* epoch lock is held to halt (console initiated) */
+	elk    sync.RWMutex /* epoch lock */
+	ehi    uint32       /* epoch high */
+	elo    uint32       /* epoch low */
+	halted bool         /* epoch lock is held to halt (console initiated) */
 
 	source *Source /* immutable: root of sources */
 	file   *File   /* immutable: root of files */
@@ -52,7 +52,7 @@ type Fs struct {
 type Snap struct {
 	fs          *Fs
 	tick        *time.Ticker
-	lk          *sync.Mutex
+	lk          sync.Mutex
 	archAfter   time.Duration
 	snapFreq    time.Duration
 	snapLife    time.Duration
@@ -87,7 +87,6 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		mode:      mode,
 		name:      file,
 		blockSize: disk.blockSize(),
-		elk:       new(sync.RWMutex),
 		cache:     allocCache(disk, z, uint(ncache), mode),
 		z:         z,
 	}
@@ -1006,7 +1005,6 @@ func (fs *Fs) initSnap() {
 	s := &Snap{
 		fs:        fs,
 		tick:      time.NewTicker(10 * time.Second),
-		lk:        new(sync.Mutex),
 		archAfter: -1,
 		snapFreq:  -1,
 		snapLife:  -1,

@@ -22,7 +22,7 @@ const BadHeap = ^uint32(0)
  */
 
 type Cache struct {
-	lk   *sync.Mutex
+	lk   sync.Mutex
 	ref  int
 	mode int
 
@@ -99,7 +99,7 @@ type BAddr struct {
 }
 
 type FreeList struct {
-	lk       *sync.Mutex
+	lk       sync.Mutex
 	last     uint32 /* last block allocated */
 	end      uint32 /* end of data partition */
 	nused    uint32 /* number of used blocks */
@@ -133,7 +133,6 @@ var vtType = [BtMax]venti.BlockType{
  */
 func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c := &Cache{
-		lk:       new(sync.Mutex),
 		ref:      1,
 		disk:     disk,
 		z:        z,
@@ -154,12 +153,11 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 
 	for i := uint32(0); i < uint32(nblocks); i++ {
 		b := &Block{
-			lk:   new(sync.Mutex),
 			c:    c,
 			data: make([]byte, c.size),
 			heap: i,
 		}
-		b.ioready = sync.NewCond(b.lk)
+		b.ioready = sync.NewCond(&b.lk)
 		c.blocks[i] = b
 		c.heap[i] = b
 	}
@@ -179,16 +177,16 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 		b.dmap = make([]byte, c.ndmap)
 	}
 
-	c.blrend = sync.NewCond(c.lk)
+	c.blrend = sync.NewCond(&c.lk)
 
 	c.maxdirty = int(float64(nblocks) * DirtyPercentage * 0.01)
 
 	c.fl = flAlloc(disk.size(PartData))
 
-	c.unlink = sync.NewCond(c.lk)
-	c.flushcond = sync.NewCond(c.lk)
-	c.flushwait = sync.NewCond(c.lk)
-	c.heapwait = sync.NewCond(c.lk)
+	c.unlink = sync.NewCond(&c.lk)
+	c.flushcond = sync.NewCond(&c.lk)
+	c.flushwait = sync.NewCond(&c.lk)
+	c.heapwait = sync.NewCond(&c.lk)
 
 	// Kick the flushThread every 30 seconds.
 	// TODO(jnj): leaks goroutine? loop does not terminate when ticker
@@ -223,7 +221,7 @@ func (c *Cache) free() {
 	/* kill off daemon threads */
 	c.lk.Lock()
 
-	c.die = sync.NewCond(c.lk)
+	c.die = sync.NewCond(&c.lk)
 	c.syncTicker.Stop()
 	c.flushcond.Signal()
 	c.unlink.Signal()
@@ -813,7 +811,6 @@ func (c *Cache) countUsed(epochLow uint32, used, total, bsize *uint32) {
 
 func flAlloc(end uint32) *FreeList {
 	return &FreeList{
-		lk:  new(sync.Mutex),
 		end: end,
 	}
 }

@@ -15,7 +15,7 @@ import (
 )
 
 var cmdbox struct {
-	lock *sync.Mutex
+	lock sync.Mutex
 
 	con   *Con
 	conns [2]net.Conn
@@ -407,8 +407,6 @@ func bind(name, old string, flags int) error {
 }
 
 func cmdInit() error {
-	cmdbox.lock = new(sync.Mutex)
-
 	for _, err := range []error{
 		cliAddCmd(".", cmdDot),
 		cliAddCmd("9p", cmd9p),

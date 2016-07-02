@@ -29,7 +29,7 @@ const NFidHash = 503
 // directories being examined, etc. Fidno is chosen
 // by the client.
 type Fid struct {
-	lk    *sync.RWMutex
+	lk    sync.RWMutex
 	con   *Con
 	fidno uint32 // the fid itself
 	ref   int    // inc/dec under Con.fidlock
@@ -46,7 +46,7 @@ type Fid struct {
 	uname  string
 	db     *DirBuf
 	excl   *Excl
-	alk    *sync.Mutex // Tauth/Tattach
+	alk    sync.Mutex // Tauth/Tattach
 	rpc    *AuthRpc
 	cuname string
 	sort   *Fid // sorted by uname in cmdWho
@@ -56,7 +56,7 @@ type Fid struct {
 }
 
 var fbox struct {
-	lock *sync.Mutex
+	lock sync.Mutex
 
 	free  *Fid
 	nfree int
@@ -114,8 +114,6 @@ func allocFid() *Fid {
 		fbox.nfree--
 	} else {
 		fid = new(Fid)
-		fid.lk = new(sync.RWMutex)
-		fid.alk = new(sync.Mutex)
 	}
 
 	fbox.inuse++
@@ -164,7 +162,7 @@ func (fid *Fid) free() {
 	}
 
 	if fid.excl != nil {
-		exclFree(fid)
+		freeExcl(fid)
 	}
 	if fid.rpc != nil {
 		syscall.Close(fid.rpc.afd)
@@ -187,9 +185,6 @@ func (fid *Fid) free() {
 		fid.hash = fbox.free
 		fbox.free = fid
 		fbox.nfree++
-	} else {
-		fid.alk = nil
-		fid.lk = nil
 	}
 	fbox.lock.Unlock()
 }
@@ -347,10 +342,4 @@ func clunkAllFids(con *Con) {
 	}
 
 	con.fidlock.Unlock()
-}
-
-func fidInit() error {
-	fbox.lock = new(sync.Mutex)
-
-	return nil
 }

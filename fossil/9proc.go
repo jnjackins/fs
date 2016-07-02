@@ -46,7 +46,7 @@ type Con struct {
 	isconsole bool      /* immutable */
 	flags     int       /* immutable */
 	remote    [128]byte /* immutable */
-	lock      *sync.Mutex
+	lock      sync.Mutex
 	state     int
 	conn      net.Conn
 	version   *Msg
@@ -56,17 +56,17 @@ type Con struct {
 	cnext     *Con /* in use */
 	cprev     *Con
 
-	alock *sync.RWMutex
+	alock sync.RWMutex
 
 	aok bool /* authentication done */
 
-	mlock *sync.Mutex
+	mlock sync.Mutex
 	mhead *Msg /* all Msgs on this connection */
 	mtail *Msg
 
 	wchan chan *Msg // write queue
 
-	fidlock *sync.Mutex /* */
+	fidlock sync.Mutex /* */
 	fidhash [NFidHash]*Fid
 	fhead   *Fid
 	ftail   *Fid
@@ -74,11 +74,11 @@ type Con struct {
 }
 
 var cbox struct {
-	alock   *sync.Mutex // alloc
+	alock   sync.Mutex // alloc
 	ahead   *Con
 	arendez *sync.Cond
 
-	clock *sync.RWMutex
+	clock sync.RWMutex
 	chead *Con
 	ctail *Con
 
@@ -160,7 +160,7 @@ type Msg struct {
 }
 
 var mbox struct {
-	alock   *sync.Mutex // alloc
+	alock   sync.Mutex // alloc
 	ahead   *Msg
 	arendez *sync.Cond
 
@@ -168,7 +168,7 @@ var mbox struct {
 	nmsg       int
 	nmsgstarve int
 
-	rlock *sync.Mutex
+	rlock sync.Mutex
 	rchan chan *Msg // read queue
 
 	maxproc     int
@@ -509,14 +509,10 @@ func allocCon(conn net.Conn, name string, flags int) *Con {
 		}
 
 		con := &Con{
-			lock:    new(sync.Mutex),
-			msize:   cbox.msize,
-			alock:   new(sync.RWMutex),
-			mlock:   new(sync.Mutex),
-			wchan:   make(chan *Msg, mbox.maxmsg), // TODO(jnj): channel size?
-			fidlock: new(sync.Mutex),
+			msize: cbox.msize,
+			wchan: make(chan *Msg, mbox.maxmsg), // TODO(jnj): channel size?
 		}
-		con.rendez = sync.NewCond(con.lock)
+		con.rendez = sync.NewCond(&con.lock)
 
 		cbox.ncon++
 		cbox.ahead = con
@@ -723,14 +719,12 @@ func cmdWho(cons *Cons, argv []string) error {
 }
 
 func msgInit() error {
-	mbox.alock = new(sync.Mutex)
-	mbox.arendez = sync.NewCond(mbox.alock)
+	mbox.arendez = sync.NewCond(&mbox.alock)
 
 	mbox.maxmsg = NMsgInit
 	mbox.maxproc = NMsgProcInit
 	mbox.msize = NMsizeInit
 
-	mbox.rlock = new(sync.Mutex)
 	mbox.rchan = make(chan *Msg, mbox.maxmsg) // TODO(jnj): channel size?
 
 	return cliAddCmd("msg", cmdMsg)
@@ -771,10 +765,7 @@ func cmdCon(cons *Cons, argv []string) error {
 }
 
 func conInit() error {
-	cbox.alock = new(sync.Mutex)
-	cbox.arendez = sync.NewCond(cbox.alock)
-
-	cbox.clock = new(sync.RWMutex)
+	cbox.arendez = sync.NewCond(&cbox.alock)
 
 	cbox.maxcon = NConInit
 	cbox.msize = NMsizeInit

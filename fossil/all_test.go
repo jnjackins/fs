@@ -11,13 +11,10 @@ var testFossilPath string
 
 func TestMain(m *testing.M) {
 	initFuncs := []func() error{
-		cliInit,
 		msgInit,
 		conInit,
 		cmdInit,
 		fsysInit,
-		exclInit,
-		fidInit,
 		srvInit,
 		lstnInit,
 		usersInit,

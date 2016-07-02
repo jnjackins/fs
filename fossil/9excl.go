@@ -7,7 +7,7 @@ import (
 )
 
 var ebox struct {
-	lock *sync.Mutex
+	lock sync.Mutex
 
 	head *Excl
 	tail *Excl
@@ -26,9 +26,7 @@ const (
 	LifeTime = 5 * 60
 )
 
-func exclAlloc(fid *Fid) error {
-	var err error
-
+func allocExcl(fid *Fid) error {
 	assert(fid.excl == nil)
 
 	t := uint32(time.Now().Unix())
@@ -48,8 +46,7 @@ func exclAlloc(fid *Fid) error {
 		 */
 		if excl.time >= t {
 			ebox.lock.Unlock()
-			err = fmt.Errorf("exclusive lock")
-			return err
+			return fmt.Errorf("exclusive lock")
 		}
 
 		excl.fsys = nil
@@ -59,11 +56,11 @@ func exclAlloc(fid *Fid) error {
 	 * Not found or timed-out.
 	 * Alloc a new one and initialise.
 	 */
-	excl := new(Excl)
-
-	excl.fsys = fid.fsys
-	excl.path = fid.qid.Path
-	excl.time = t + LifeTime
+	excl := &Excl{
+		fsys: fid.fsys,
+		path: fid.qid.Path,
+		time: t + LifeTime,
+	}
 	if ebox.tail != nil {
 		excl.prev = ebox.tail
 		ebox.tail.next = excl
@@ -80,7 +77,7 @@ func exclAlloc(fid *Fid) error {
 	return nil
 }
 
-func exclUpdate(fid *Fid) error {
+func updateExcl(fid *Fid) error {
 	excl := fid.excl
 
 	t := uint32(time.Now().Unix())
@@ -97,7 +94,7 @@ func exclUpdate(fid *Fid) error {
 	return nil
 }
 
-func exclFree(fid *Fid) {
+func freeExcl(fid *Fid) {
 	excl := fid.excl
 	if excl == nil {
 		return
@@ -116,10 +113,4 @@ func exclFree(fid *Fid) {
 		ebox.tail = excl.prev
 	}
 	ebox.lock.Unlock()
-}
-
-func exclInit() error {
-	ebox.lock = new(sync.Mutex)
-
-	return nil
 }

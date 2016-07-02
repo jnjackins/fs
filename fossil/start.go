@@ -46,13 +46,10 @@ func start(argv []string) {
 		flags.Usage()
 	}
 
-	cliInit()
 	msgInit()
 	conInit()
 	cmdInit()
 	fsysInit()
-	exclInit()
-	fidInit()
 
 	srvInit()
 	lstnInit()
