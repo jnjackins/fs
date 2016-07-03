@@ -365,6 +365,8 @@ func (a *Arch) thread() {
 		time.Sleep(10 * time.Second) // window of opportunity to provoke races
 
 		// do work
+		start := time.Now()
+
 		p := Param{
 			blockSize: a.blockSize,
 			dsize:     3 * venti.EntrySize, // root has three Entries
@@ -424,6 +426,7 @@ func (a *Arch) thread() {
 		a.fs.elk.Unlock()
 
 		logf("archive vac:%v\n", &p.score)
+		logf("archive took %v\n", time.Since(start))
 	}
 
 	a.ref--

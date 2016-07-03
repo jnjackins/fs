@@ -334,7 +334,7 @@ func (fs *Fs) openFile(path string) (*File, error) {
 	return fs._openFile(path, false)
 }
 
-func (f *File) setTmp(istmp int) {
+func (f *File) setTmp(istmp bool) {
 	var r *Source
 
 	for i := 0; i < 2; i++ {
@@ -348,17 +348,17 @@ func (f *File) setTmp(istmp int) {
 		}
 		e, err := r.getEntry()
 		if err != nil {
-			logf("sourceGetEntry failed (cannot happen): %v\n", err)
+			logf("(*Source).getEntry failed (cannot happen): %v\n", err)
 			continue
 		}
 
-		if istmp != 0 {
+		if istmp {
 			e.flags |= venti.EntryNoArchive
 		} else {
 			e.flags &^= venti.EntryNoArchive
 		}
 		if err := r.setEntry(e); err != nil {
-			logf("sourceSetEntry failed (cannot happen): %v\n", err)
+			logf("(*Source).setEntry failed (cannot happen): %v\n", err)
 			continue
 		}
 	}
@@ -455,7 +455,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 		if err = r.lock2(mr, -1); err != nil {
 			goto Err1
 		}
-		ff.setTmp(1)
+		ff.setTmp(true)
 		r.unlock()
 		if mr != nil {
 			mr.unlock()
@@ -797,7 +797,7 @@ func (f *File) setDir(dir *DirEntry, uid string) error {
 	}
 	/* commited to changing it now */
 	if f.dir.mode&ModeTemporary != dir.mode&ModeTemporary {
-		f.setTmp(int(dir.mode & ModeTemporary))
+		f.setTmp(dir.mode&ModeTemporary != 0)
 	}
 	f.source.unlock()
 	if f.msource != nil {
