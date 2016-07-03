@@ -1,10 +1,70 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 )
+
+func TestFsys(t *testing.T) {
+	fsys, err := testAllocFsys()
+	if err != nil {
+		t.Fatalf("testAllocFsys: %v", err)
+	}
+
+	// create some dirty blocks
+	for _, c := range []struct{ cmd, match string }{
+		{cmd: "9p Tversion 8192 9P2000"},
+		{cmd: "9p Tattach 0 ~1 nobody testfs/active"},
+		{cmd: "9p Twalk 0 1"},
+		{cmd: "9p Tcreate 1 testdir 020000000555 0"}, // open with DMDIR bit
+		{cmd: "9p Twalk 1 2"},
+		{cmd: "9p Tcreate 2 test3 0400 2"},
+		{cmd: "9p Tclunk 2"},
+		{cmd: "9p Tclunk 1"},
+		{cmd: "9p Tclunk 0"},
+	} {
+		if err := cliExec(nil, c.cmd); err != nil {
+			t.Error(err)
+			return
+		}
+	}
+
+	t.Run("fsysDf", func(t *testing.T) { testFsysDf(t, fsys) })
+	t.Run("fsysCheck", func(t *testing.T) { testFsysCheck(t, fsys) })
+
+	if err := testCleanupFsys(fsys); err != nil {
+		t.Fatalf("testCleanupFsys: %v", err)
+	}
+}
+
+type nopCloser struct {
+	io.ReadWriter
+}
+
+func (nopCloser) Close() error { return nil }
+
+func testFsysDf(t *testing.T, fsys *Fsys) {
+	buf := new(bytes.Buffer)
+	cons := &Cons{conn: (nopCloser{buf})}
+
+	if err := fsysDf(cons, fsys, tokenize("df")); err != nil {
+		t.Fatal("df: %v", err)
+	}
+	t.Logf("%s", bytes.TrimSpace(buf.Bytes()))
+}
+
+func testFsysCheck(t *testing.T, fsys *Fsys) {
+	buf := new(bytes.Buffer)
+	cons := &Cons{conn: (nopCloser{buf})}
+
+	if err := fsysCheck(cons, fsys, tokenize("check")); err != nil {
+		t.Fatal("check: %v", err)
+	}
+	t.Logf("%s", bytes.TrimSpace(buf.Bytes()))
+}
 
 func TestFsysModeString(t *testing.T) {
 	tests := []struct {

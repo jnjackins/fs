@@ -47,8 +47,7 @@ func Test9p(t *testing.T) {
 	}
 
 	conn := new(test9pConn)
-	cons := openCons(conn)
-	defer cons.close()
+	cons := &Cons{conn: conn}
 
 	testdata := make([]byte, 8000)
 	for i := range testdata {

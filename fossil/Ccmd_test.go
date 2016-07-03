@@ -56,6 +56,7 @@ func testCmdWho(t *testing.T, cons *Cons) {
 		t.Fatalf("cmd9p: %v\n", err)
 	}
 
+	// TODO: check output
 	if err := cmdWho(cons, strings.Fields("who")); err != nil {
 		t.Fatalf("cmdWho: %v", err)
 	}
