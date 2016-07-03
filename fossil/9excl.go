@@ -14,22 +14,20 @@ var ebox struct {
 }
 
 type Excl struct {
-	fsys *Fsys
-	path uint64
-	time uint32
+	fsys    *Fsys
+	path    uint64
+	timeout time.Time
 
 	next *Excl
 	prev *Excl
 }
 
-const (
-	LifeTime = 5 * 60
-)
+const exclLifeTime = 5 * time.Minute
 
 func allocExcl(fid *Fid) error {
 	assert(fid.excl == nil)
 
-	t := uint32(time.Now().Unix())
+	t := time.Now()
 	ebox.lock.Lock()
 	for excl := ebox.head; excl != nil; excl = excl.next {
 		if excl.fsys != fid.fsys || excl.path != fid.qid.Path {
@@ -44,7 +42,7 @@ func allocExcl(fid *Fid) error {
 		 * one and continue on to allocate a
 		 * a new one.
 		 */
-		if excl.time >= t {
+		if t.Before(excl.timeout) {
 			ebox.lock.Unlock()
 			return fmt.Errorf("exclusive lock")
 		}
@@ -57,9 +55,9 @@ func allocExcl(fid *Fid) error {
 	 * Alloc a new one and initialise.
 	 */
 	excl := &Excl{
-		fsys: fid.fsys,
-		path: fid.qid.Path,
-		time: t + LifeTime,
+		fsys:    fid.fsys,
+		path:    fid.qid.Path,
+		timeout: t.Add(exclLifeTime),
 	}
 	if ebox.tail != nil {
 		excl.prev = ebox.tail
@@ -80,15 +78,14 @@ func allocExcl(fid *Fid) error {
 func updateExcl(fid *Fid) error {
 	excl := fid.excl
 
-	t := uint32(time.Now().Unix())
+	t := time.Now()
 	ebox.lock.Lock()
-	if excl.time < t || excl.fsys != fid.fsys {
+	if t.After(excl.timeout) || excl.fsys != fid.fsys {
 		ebox.lock.Unlock()
-		err := fmt.Errorf("exclusive lock broken")
-		return err
+		return fmt.Errorf("exclusive lock broken")
 	}
 
-	excl.time = t + LifeTime
+	excl.timeout = t.Add(exclLifeTime)
 	ebox.lock.Unlock()
 
 	return nil
