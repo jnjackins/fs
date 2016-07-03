@@ -3,6 +3,8 @@ package main
 import (
 	"testing"
 	"time"
+
+	"sigint.ca/fs/venti"
 )
 
 func TestFs(t *testing.T) {
@@ -87,9 +89,41 @@ func testFsSnapshot(t *testing.T, fs *Fs) {
 }
 
 func testFsVac(t *testing.T, fs *Fs) {
-	score, err := fs.vac("/active/test")
+	score, err := fs.vac(time.Now().Format("/archive/2006/0102/"))
 	if err != nil {
 		t.Fatalf("error creating vac archive: %v", err)
 	}
 	t.Logf("got score %v for test vac", score)
+
+	// fetch the root back from venti and parse it
+	buf := make([]byte, fs.blockSize)
+	n, err := fs.z.Read(score, venti.RootType, buf)
+	if err != nil {
+		t.Fatalf("failed to read root back from venti: %v", err)
+	}
+	if n != venti.RootSize {
+		t.Fatalf("bad read length from venti: got %d, want %d", n, venti.RootSize)
+	}
+	r, err := venti.UnpackRoot(buf[:n])
+	if err != nil {
+		t.Fatalf("failed to unpack root: %v", err)
+	}
+	t.Logf("fetched root: %v", r)
+
+	// fetch the dir pointed to by the root
+	n, err = fs.z.Read(&r.Score, venti.DirType, buf)
+	if err != nil {
+		t.Fatalf("failed to read root back from venti: %v", err)
+	}
+	if n%venti.EntrySize != 0 {
+		t.Fatalf("bad read length from venti: got %d, want multiple of %d", n, venti.EntrySize)
+	}
+	nEntry := n / venti.EntrySize
+	for i := 0; i < nEntry; i++ {
+		e, err := unpackEntry(buf, i)
+		if err != nil {
+			t.Fatalf("failed to unpack entry: %v", err)
+		}
+		t.Logf("fetched entry: %v", e)
+	}
 }

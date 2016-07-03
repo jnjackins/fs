@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"sigint.ca/fs/internal/pack"
 	"sigint.ca/fs/venti"
 )
@@ -22,6 +24,11 @@ type Entry struct {
 	tag     uint32 // tag for local blocks: zero if stored on Venti
 	snap    uint32 // non-zero -> entering snapshot of given epoch
 	archive bool   // archive this snapshot: only valid for snap != 0
+}
+
+func (e *Entry) String() string {
+	return fmt.Sprintf("Entry(gen=%d psize=%d dsize=%d depth=%d flags=%#x size=%d score=%v tag=%d snap=%d arch=%v)",
+		e.gen, e.psize, e.dsize, e.depth, e.flags, e.size, &e.score, e.tag, e.snap, e.archive)
 }
 
 func (e *Entry) pack(p []byte, index int) {

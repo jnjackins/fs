@@ -24,7 +24,7 @@ func testFormatFossil() (string, error) {
 	}
 
 	tmpfile.Close()
-	format([]string{"-b", "4K", "-y", path})
+	format([]string{"-b", "8K", "-y", path})
 
 	return path, nil
 }
