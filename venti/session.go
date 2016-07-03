@@ -93,5 +93,6 @@ func (z *Session) negotiateVersion() error {
 }
 
 func (z *Session) Close() {
+	z.goodbye()
 	z.c.Close()
 }
