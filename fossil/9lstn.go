@@ -19,7 +19,7 @@ type Lstn struct {
 }
 
 var lbox struct {
-	lock *sync.RWMutex
+	lock sync.RWMutex
 
 	head *Lstn
 	tail *Lstn
@@ -163,7 +163,5 @@ func cmdLstn(cons *Cons, argv []string) error {
 }
 
 func lstnInit() error {
-	lbox.lock = new(sync.RWMutex)
-
 	return cliAddCmd("listen", cmdLstn)
 }

@@ -66,7 +66,7 @@ type Con struct {
 
 	wchan chan *Msg // write queue
 
-	fidlock sync.Mutex /* */
+	fidlock sync.Mutex
 	fidhash [NFidHash]*Fid
 	fhead   *Fid
 	ftail   *Fid
@@ -676,9 +676,8 @@ func cmdWho(cons *Cons, argv []string) error {
 		return fmt.Errorf(usage)
 	}
 
+	var l1, l2 int
 	cbox.clock.RLock()
-	l1 := 0
-	l2 := 0
 	for con := cbox.chead; con != nil; con = con.cnext {
 		l := len(con.name)
 		if l > l1 {

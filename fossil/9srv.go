@@ -22,7 +22,7 @@ type Srv struct {
 }
 
 var srvbox struct {
-	lock *sync.RWMutex
+	lock sync.RWMutex
 
 	head *Srv
 	tail *Srv
@@ -213,7 +213,5 @@ func cmdSrv(cons *Cons, argv []string) error {
 }
 
 func srvInit() error {
-	srvbox.lock = new(sync.RWMutex)
-
 	return cliAddCmd("srv", cmdSrv)
 }

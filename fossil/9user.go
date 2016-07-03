@@ -19,8 +19,8 @@ type Ubox struct {
 	nuser  int
 	length int
 
-	ihash [NUserHash]*User // lookup by .uid
-	nhash [NUserHash]*User // lookup by .uname
+	ihash map[string]*User // lookup by .uid
+	nhash map[string]*User // lookup by .uname
 }
 
 type User struct {
@@ -29,13 +29,11 @@ type User struct {
 	leader string
 	group  []string
 
-	next  *User
-	ihash *User // lookup by .uid
-	nhash *User // lookup by .uname
+	next *User
 }
 
 var ubox struct {
-	lock *sync.RWMutex
+	lock sync.RWMutex
 	box  *Ubox
 }
 
@@ -59,20 +57,10 @@ var (
 	uidnoworld string = "noworld"
 )
 
-func userHash(s string) uint {
-	var hash uint
-	for i := 0; i < len(s); i++ {
-		hash = hash*7 + uint(s[i])
-	}
-	return hash % NUserHash
-}
-
 func _userByUid(box *Ubox, uid string) (*User, error) {
 	if box != nil {
-		for u := box.ihash[userHash(uid)]; u != nil; u = u.ihash {
-			if u.uid == uid {
-				return u, nil
-			}
+		if u, ok := box.ihash[uid]; ok {
+			return u, nil
 		}
 	}
 	return nil, fmt.Errorf("uname: uid %q not found", uid)
@@ -80,24 +68,18 @@ func _userByUid(box *Ubox, uid string) (*User, error) {
 
 func unameByUid(uid string) string {
 	ubox.lock.RLock()
-	u, err := _userByUid(ubox.box, uid)
-	if err != nil {
-		ubox.lock.RUnlock()
-		return ""
+	defer ubox.lock.RUnlock()
+
+	if u, err := _userByUid(ubox.box, uid); err == nil {
+		return u.uname
 	}
-
-	uname := u.uname
-	ubox.lock.RUnlock()
-
-	return uname
+	return ""
 }
 
 func _userByUname(box *Ubox, uname string) (*User, error) {
 	if box != nil {
-		for u := box.nhash[userHash(uname)]; u != nil; u = u.nhash {
-			if u.uname == uname {
-				return u, nil
-			}
+		if u, ok := box.nhash[uname]; ok {
+			return u, nil
 		}
 	}
 
@@ -106,33 +88,25 @@ func _userByUname(box *Ubox, uname string) (*User, error) {
 
 func uidByUname(uname string) string {
 	ubox.lock.RLock()
-	u, err := _userByUname(ubox.box, uname)
-	if err != nil {
-		ubox.lock.RUnlock()
-		return ""
+	defer ubox.lock.RUnlock()
+
+	if u, err := _userByUname(ubox.box, uname); err == nil {
+		return u.uid
 	}
-
-	uid := u.uid
-	ubox.lock.RUnlock()
-
-	return uid
+	return ""
 }
 
 func _groupMember(box *Ubox, group string, member string, whenNoGroup bool) bool {
-	var g *User
-	var err error
-
 	/*
 	 * Is 'member' a member of 'group'?
 	 * Note that 'group' is a 'uid' and not a 'uname'.
 	 * A 'member' is automatically in their own group.
 	 */
-	g, err = _userByUid(box, group)
+	g, err := _userByUid(box, group)
 	if err != nil {
 		return whenNoGroup
 	}
-	var m *User
-	m, err = _userByUname(box, member)
+	m, err := _userByUname(box, member)
 	if m == nil {
 		return false
 	}
@@ -213,10 +187,7 @@ func _groupRemMember(box *Ubox, g *User, member string) error {
 }
 
 func _groupAddMember(box *Ubox, g *User, member string) error {
-	var u *User
-	var err error
-
-	u, err = _userByUname(box, member)
+	u, err := _userByUname(box, member)
 	if err != nil {
 		return err
 	}
@@ -263,7 +234,6 @@ func groupLeader(group string, member string) bool {
 	ubox.lock.RLock()
 	defer ubox.lock.RUnlock()
 
-	var g *User
 	g, err := _userByUid(ubox.box, group)
 	if err != nil {
 		return false
@@ -279,12 +249,13 @@ func groupLeader(group string, member string) bool {
 	}
 }
 
-func userAlloc(uid string, uname string) *User {
-	u := new(User)
-	u.uid = uid
-	u.uname = uname
+func userAlloc(uid, uname string) *User {
+	u := User{
+		uid:   uid,
+		uname: uname,
+	}
 
-	return u
+	return &u
 }
 
 func validUserName(name string) bool {
@@ -327,8 +298,7 @@ func usersFileWrite(box *Ubox) error {
 	if err != nil {
 		return err
 	}
-	var file *File
-	file, err = dir.walk(uidadm)
+	file, err := dir.walk(uidadm)
 	if err != nil {
 		file, err = dir.create(uidadm, ModeDir|0775, uidadm)
 	}
@@ -365,25 +335,14 @@ tidy:
 }
 
 func uboxRemUser(box *Ubox, u *User) {
-	var up *User
-
-	h := &box.ihash[userHash(u.uid)]
-	for up = *h; up != nil && up != u; up = up.ihash {
-		h = &up.ihash
-	}
-	assert(up == u)
-	*h = up.ihash
+	delete(box.ihash, u.uid)
 	box.length -= len(u.uid)
 
-	h = &box.nhash[userHash(u.uname)]
-	for up = *h; up != nil && up != u; up = up.nhash {
-		h = &up.nhash
-	}
-	assert(up == u)
-	*h = up.nhash
+	delete(box.nhash, u.uname)
 	box.length -= len(u.uname)
 
-	h = &box.head
+	var up *User
+	h := &box.head
 	for up = *h; up != nil && up.uid != u.uid; up = up.next {
 		h = &up.next
 	}
@@ -396,17 +355,13 @@ func uboxRemUser(box *Ubox, u *User) {
 }
 
 func uboxAddUser(box *Ubox, u *User) {
-	h := &box.ihash[userHash(u.uid)]
-	u.ihash = *h
-	*h = u
+	box.ihash[u.uid] = u
 	box.length += len(u.uid)
 
-	h = &box.nhash[userHash(u.uname)]
-	u.nhash = *h
-	*h = u
+	box.nhash[u.uname] = u
 	box.length += len(u.uname)
 
-	h = &box.head
+	h := &box.head
 	for up := *h; up != nil && up.uid < u.uid; up = up.next {
 		h = &up.next
 	}
@@ -469,7 +424,10 @@ func uboxInit(users string) error {
 	/*
 	 * Everything is updated in a local Ubox until verified.
 	 */
-	box := new(Ubox)
+	box := &Ubox{
+		ihash: make(map[string]*User),
+		nhash: make(map[string]*User),
+	}
 
 	/*
 	 * First pass - check format, check for duplicates
@@ -545,13 +503,11 @@ func uboxInit(users string) error {
 	for _, name := range usersMandatory {
 		u, err := _userByUid(box, name)
 		if err != nil {
-			err = fmt.Errorf("user %q is mandatory", name)
-			return err
+			return fmt.Errorf("user %q is mandatory", name)
 		}
 
 		if u.uid != u.uname {
-			err = fmt.Errorf("uid/uname for user %q must match", name)
-			return err
+			return fmt.Errorf("uid/uname for user %q must match", name)
 		}
 	}
 
@@ -817,7 +773,6 @@ func cmdUsers(cons *Cons, argv []string) error {
 }
 
 func usersInit() error {
-	ubox.lock = new(sync.RWMutex)
 	uboxInit(usersDefault)
 
 	for _, err := range []error{
