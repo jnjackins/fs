@@ -71,7 +71,7 @@ func start(argv []string) {
 		}
 	}
 	if len(cmd) > 0 {
-		cons.printf(cons.getPrompt())
+		cons.prompt()
 	}
 
 	runtime.Goexit()

@@ -8,11 +8,13 @@ import (
 	"sync"
 )
 
+var ENoConsole = errors.New("no console")
+
 type Cons struct {
 	conn io.ReadWriteCloser
 
-	lk     sync.Mutex
-	prompt string
+	lk      sync.Mutex
+	curfsys string
 }
 
 func newTTY() (*Cons, error) {
@@ -28,8 +30,7 @@ func openCons(conn io.ReadWriteCloser) *Cons {
 	cons := &Cons{
 		conn: conn,
 	}
-	cons.setPrompt("")
-	cons.printf(cons.getPrompt())
+	cons.prompt()
 
 	go cons.proc()
 
@@ -46,7 +47,7 @@ func (cons *Cons) proc() {
 		if err := cliExec(cons, scanner.Text()); err != nil {
 			cons.printf("%v\n", err)
 		}
-		cons.printf(cons.getPrompt())
+		cons.prompt()
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -57,8 +58,6 @@ func (cons *Cons) proc() {
 	cons.close()
 }
 
-var ENoConsole = errors.New("no console")
-
 func (cons *Cons) printf(format string, args ...interface{}) (int, error) {
 	if cons == nil {
 		return 0, ENoConsole
@@ -66,18 +65,39 @@ func (cons *Cons) printf(format string, args ...interface{}) (int, error) {
 	return cons.conn.Write([]byte(fmt.Sprintf(format, args...)))
 }
 
-func (cons *Cons) setPrompt(prompt string) {
-	if prompt == "" {
-		prompt = "prompt"
+func (cons *Cons) setFsys(fsys string) error {
+	if cons == nil {
+		return ENoConsole
 	}
-	cons.lk.Lock()
-	cons.prompt = prompt + ": "
-	cons.lk.Unlock()
-}
 
-func (cons *Cons) getPrompt() string {
 	cons.lk.Lock()
 	defer cons.lk.Unlock()
 
-	return cons.prompt
+	cons.curfsys = fsys
+	return nil
+}
+
+func (cons *Cons) getFsys() string {
+	if cons == nil {
+		return ""
+	}
+
+	cons.lk.Lock()
+	defer cons.lk.Unlock()
+
+	return cons.curfsys
+}
+
+func (cons *Cons) prompt() (int, error) {
+	var prompt string
+
+	cons.lk.Lock()
+	if cons.curfsys != "" {
+		prompt = cons.curfsys + ": "
+	} else {
+		prompt = "prompt: "
+	}
+	cons.lk.Unlock()
+
+	return cons.printf(prompt)
 }
