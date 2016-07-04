@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -22,8 +23,9 @@ func TestFsys(t *testing.T) {
 		{cmd: "9p Tcreate 1 testdir 020000000555 0"}, // open with DMDIR bit
 		{cmd: "9p Twalk 1 2"},
 		{cmd: "9p Tcreate 2 test3 0400 2"},
-		{cmd: "9p Tclunk 2"},
-		{cmd: "9p Tclunk 1"},
+		{cmd: "9p Twrite 2 0 test"},
+		{cmd: "9p Tremove 2"},
+		{cmd: "9p Tremove 1"},
 		{cmd: "9p Tclunk 0"},
 	} {
 		if err := cliExec(nil, c.cmd); err != nil {
@@ -63,7 +65,11 @@ func testFsysCheck(t *testing.T, fsys *Fsys) {
 	if err := fsysCheck(cons, fsys, tokenize("check")); err != nil {
 		t.Fatal("check: %v", err)
 	}
-	t.Logf("%s", bytes.TrimSpace(buf.Bytes()))
+	out := strings.TrimSpace(buf.String())
+	t.Log(out)
+	if !strings.Contains(out, "fsck: 0 clri, 0 clre, 0 clrp, 0 bclose") {
+		t.Errorf("unexpected output from check")
+	}
 }
 
 func TestFsysModeString(t *testing.T) {
