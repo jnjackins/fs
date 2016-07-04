@@ -30,7 +30,8 @@ type Fs struct {
 
 	name string // immutable; copy here & Fsys to ease error reporting
 
-	metaFlushTicker *time.Ticker /* periodically flushes metadata cached in files */
+	metaFlushTicker *time.Ticker  // periodically flushes metadata cached in files
+	metaFlushStop   chan struct{} // signal metaFlushTicker goroutine to exit
 
 	/*
 	 * epoch lock.
@@ -50,8 +51,11 @@ type Fs struct {
 }
 
 type Snap struct {
-	fs          *Fs
-	tick        *time.Ticker
+	fs *Fs
+
+	eventTicker *time.Ticker
+	eventStop   chan struct{}
+
 	lk          sync.Mutex
 	archAfter   time.Duration
 	snapFreq    time.Duration
@@ -61,7 +65,7 @@ type Snap struct {
 	lastCleanup time.Time
 }
 
-func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
+func openFs(file string, z *venti.Session, ncache, mode int) (*Fs, error) {
 	var m int
 	switch mode {
 	default:
@@ -87,7 +91,7 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 		mode:      mode,
 		name:      file,
 		blockSize: disk.blockSize(),
-		cache:     allocCache(disk, z, uint(ncache), mode),
+		cache:     allocCache(disk, z, ncache, mode),
 		z:         z,
 	}
 
@@ -180,12 +184,16 @@ func openFs(file string, z *venti.Session, ncache int, mode int) (*Fs, error) {
 
 	if mode == OReadWrite {
 		fs.metaFlushTicker = time.NewTicker(1 * time.Second)
+		fs.metaFlushStop = make(chan struct{})
 
-		// TODO(jnj): leakes goroutine? loop does not terminate when ticker
-		// is stopped
 		go func() {
-			for range fs.metaFlushTicker.C {
-				fs.metaFlush()
+			for {
+				select {
+				case <-fs.metaFlushTicker.C:
+					fs.metaFlush()
+				case <-fs.metaFlushStop:
+					return
+				}
 			}
 		}()
 
@@ -200,6 +208,7 @@ func (fs *Fs) close() {
 
 	if fs.metaFlushTicker != nil {
 		fs.metaFlushTicker.Stop()
+		close(fs.metaFlushStop)
 	}
 	fs.snap.close()
 	if fs.file != nil {
@@ -1003,18 +1012,22 @@ func (fs *Fs) snapshotRemove() {
 
 func (fs *Fs) initSnap() {
 	s := &Snap{
-		fs:        fs,
-		tick:      time.NewTicker(10 * time.Second),
-		archAfter: -1,
-		snapFreq:  -1,
-		snapLife:  -1,
+		fs:          fs,
+		eventTicker: time.NewTicker(10 * time.Second),
+		eventStop:   make(chan struct{}),
+		archAfter:   -1,
+		snapFreq:    -1,
+		snapLife:    -1,
 	}
 
-	// TODO(jnj): leakes goroutine? loop does not terminate when ticker
-	// is stopped
 	go func() {
-		for range s.tick.C {
-			s.event()
+		for {
+			select {
+			case <-s.eventTicker.C:
+				s.event()
+			case <-s.eventStop:
+				return
+			}
 		}
 	}()
 
@@ -1113,5 +1126,6 @@ func (s *Snap) close() {
 	if s == nil {
 		return
 	}
-	s.tick.Stop()
+	s.eventTicker.Stop()
+	close(s.eventStop)
 }

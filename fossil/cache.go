@@ -58,6 +58,7 @@ type Cache struct {
 	nflush     int
 
 	syncTicker *time.Ticker
+	syncStop   chan struct{}
 
 	// unlink daemon
 	uhead  *BList
@@ -131,7 +132,7 @@ var vtType = [BtMax]venti.BlockType{
 /*
  * Allocate the memory cache.
  */
-func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
+func allocCache(disk *Disk, z *venti.Session, nblocks, mode int) *Cache {
 	c := &Cache{
 		ref:      1,
 		disk:     disk,
@@ -151,11 +152,11 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c.size = (c.size + 127) &^ 127
 	c.ndmap = (c.size/20 + 7) / 8
 
-	for i := uint32(0); i < uint32(nblocks); i++ {
+	for i := 0; i < nblocks; i++ {
 		b := &Block{
 			c:    c,
 			data: make([]byte, c.size),
-			heap: i,
+			heap: uint32(i),
 		}
 		b.ioready = sync.NewCond(&b.lk)
 		c.blocks[i] = b
@@ -163,16 +164,16 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	}
 
 	/* reasonable number of BList elements */
-	nbl := int(nblocks) * 4
+	nbl := nblocks * 4
 
-	c.nheap = int(nblocks)
+	c.nheap = nblocks
 	for i := 0; i < nbl; i++ {
 		bl := &BList{next: c.blfree}
 		c.blfree = bl
 	}
 
 	/* separate loop to keep blocks and blists reasonably aligned */
-	for i := uint(0); i < nblocks; i++ {
+	for i := 0; i < nblocks; i++ {
 		b := c.blocks[i]
 		b.dmap = make([]byte, c.ndmap)
 	}
@@ -189,12 +190,16 @@ func allocCache(disk *Disk, z *venti.Session, nblocks uint, mode int) *Cache {
 	c.heapwait = sync.NewCond(&c.lk)
 
 	// Kick the flushThread every 30 seconds.
-	// TODO(jnj): leaks goroutine? loop does not terminate when ticker
-	// is stopped
 	c.syncTicker = time.NewTicker(30 * time.Second)
+	c.syncStop = make(chan struct{})
 	go func() {
-		for range c.syncTicker.C {
-			c.flush(false)
+		for {
+			select {
+			case <-c.syncTicker.C:
+				c.flush(false)
+			case <-c.syncStop:
+				return
+			}
 		}
 	}()
 
@@ -223,6 +228,7 @@ func (c *Cache) free() {
 
 	c.die = sync.NewCond(&c.lk)
 	c.syncTicker.Stop()
+	close(c.syncStop)
 	c.flushcond.Signal()
 	c.unlink.Signal()
 	for c.ref > 1 {
@@ -266,14 +272,14 @@ func (c *Cache) dump() {
 func (c *Cache) check() {
 	now := c.now
 
-	for i := uint32(0); i < uint32(c.nheap); i++ {
-		if c.heap[i].heap != i {
+	for i := 0; i < c.nheap; i++ {
+		if c.heap[i].heap != uint32(i) {
 			fatalf("mis-heaped at %d: %d", i, c.heap[i].heap)
 		}
 		if i > 0 && c.heap[(i-1)>>1].used-now > c.heap[i].used-now {
 			fatalf("bad heap ordering")
 		}
-		k := int((i << 1) + 1)
+		k := (i << 1) + 1
 		if k < c.nheap && c.heap[i].used-now > c.heap[k].used-now {
 			fatalf("bad heap ordering")
 		}
@@ -284,9 +290,8 @@ func (c *Cache) check() {
 	}
 
 	refed := 0
-	var b *Block
 	for i := 0; i < c.nblocks; i++ {
-		b = c.blocks[i]
+		b := c.blocks[i]
 		if b.ref != 0 && b.heap == BadHeap {
 			refed++
 		}
@@ -300,7 +305,7 @@ func (c *Cache) check() {
 	assert(c.nheap+refed == c.nblocks)
 	refed = 0
 	for i := 0; i < c.nblocks; i++ {
-		b = c.blocks[i]
+		b := c.blocks[i]
 		if b.ref != 0 {
 			if true {
 				logf("p=%d a=%d %v ref=%d %v\n", b.part, b.addr, &b.score, b.ref, b.l)
