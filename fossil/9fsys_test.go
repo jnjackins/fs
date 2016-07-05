@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -42,15 +41,8 @@ func TestFsys(t *testing.T) {
 	}
 }
 
-type nopCloser struct {
-	io.ReadWriter
-}
-
-func (nopCloser) Close() error { return nil }
-
 func testFsysDf(t *testing.T, fsys *Fsys) {
-	buf := new(bytes.Buffer)
-	cons := &Cons{conn: (nopCloser{buf})}
+	cons, buf := testCons()
 
 	if err := fsysDf(cons, fsys, tokenize("df")); err != nil {
 		t.Fatal("df: %v", err)

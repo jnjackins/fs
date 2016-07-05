@@ -1,13 +1,28 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"testing"
 )
 
 var testFossilPath string
+
+type nopCloser struct {
+	io.ReadWriter
+}
+
+func testCons() (*Cons, *bytes.Buffer) {
+	buf := new(bytes.Buffer)
+	cons := &Cons{conn: (nopCloser{buf})}
+
+	return cons, buf
+}
+
+func (nopCloser) Close() error { return nil }
 
 func TestMain(m *testing.M) {
 	initFuncs := []func() error{

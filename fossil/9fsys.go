@@ -1662,7 +1662,7 @@ func fsysOpen(cons *Cons, name string, argv []string) error {
 	fsys.put()
 
 	if name == "main" {
-		usersFileRead("")
+		readUsersFile("")
 	}
 
 	return nil

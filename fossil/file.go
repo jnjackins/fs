@@ -562,75 +562,6 @@ func (f *File) read(cnt int, offset int64) ([]byte, error) {
 	return buf[:len(buf)-len(p)], nil
 }
 
-/*
- * Changes the file block bn to be the given block score.
- * Very sneaky.  Only used by flfmt.
- */
-func (f *File) mapBlock(bn uint32, score *venti.Score, tag uint32) error {
-	if err := f.lock(); err != nil {
-		return err
-	}
-	defer f.unlock()
-
-	if f.dir.mode&ModeDir != 0 {
-		return ENotFile
-	}
-
-	if f.source.mode != OReadWrite {
-		return EReadOnly
-	}
-
-	if err := f.source.lock(-1); err != nil {
-		return err
-	}
-	s := f.source
-	defer s.unlock()
-
-	b, err := s._block(bn, OReadWrite, 1, tag)
-	if err != nil {
-		return err
-	}
-	defer b.put()
-
-	e, err := s.getEntry()
-	if err != nil {
-		return err
-	}
-	if b.l.typ == BtDir {
-		e.score = *score
-		assert(e.tag == tag || e.tag == 0)
-		e.tag = tag
-		e.flags |= venti.EntryLocal
-		e.pack(b.data, int(f.source.offset%uint32(f.source.epb)))
-	} else {
-		copy(b.data[(bn%uint32(e.psize/venti.ScoreSize))*venti.ScoreSize:], score[:])
-	}
-	b.dirty()
-	return nil
-}
-
-func (f *File) setSize(size uint64) error {
-	if err := f.lock(); err != nil {
-		return err
-	}
-	defer f.unlock()
-
-	if f.dir.mode&ModeDir != 0 {
-		return ENotFile
-	}
-
-	if f.source.mode != OReadWrite {
-		return EReadOnly
-	}
-
-	if err := f.source.lock(-1); err != nil {
-		return err
-	}
-	defer f.source.unlock()
-
-	return f.source.setSize(size)
-}
-
 func (f *File) write(buf []byte, cnt int, offset int64, uid string) (int, error) {
 	dprintf("fileWrite: %s count=%d offset=%d\n", f.dir.elem, cnt, offset)
 
@@ -1035,7 +966,7 @@ func (f *File) metaFlush2(oelem string) int {
 	 */
 	boff := fp.metaAlloc(&f.dir, f.boff+1)
 	if boff == NilBlock {
-		/* mbResize might have modified block */
+		/* (*MetaBlock).resize might have modified block */
 		mb.pack()
 		b.dirty()
 		return -1
@@ -1291,29 +1222,28 @@ func openDee(f *File) (*DirEntryEnum, error) {
 }
 
 // TODO(jnj): return size
-func dirEntrySize(s *Source, elem uint32, gen uint32, size *uint64) error {
+func dirEntrySize(s *Source, elem, gen uint32) (uint64, error) {
 	epb := s.dsize / venti.EntrySize
 	bn := elem / uint32(epb)
 	elem -= bn * uint32(epb)
 
 	b, err := s.block(bn, OReadOnly)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer b.put()
 
 	e, err := unpackEntry(b.data, int(elem))
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	/* hanging entries are returned as zero size */
 	if e.flags&venti.EntryActive == 0 || e.gen != gen {
-		*size = 0
+		return 0, nil
 	} else {
-		*size = e.size
+		return e.size, nil
 	}
-	return nil
 }
 
 func (dee *DirEntryEnum) fill() error {
@@ -1354,7 +1284,8 @@ func (dee *DirEntryEnum) fill() error {
 		dee.buf[i] = *de
 		dee.n++
 		if de.mode&ModeDir == 0 {
-			if err := dirEntrySize(source, de.entry, de.gen, &de.size); err != nil {
+			de.size, err = dirEntrySize(source, de.entry, de.gen)
+			if err != nil {
 				return err
 			}
 		}
