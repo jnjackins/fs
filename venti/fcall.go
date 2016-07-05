@@ -2,9 +2,10 @@ package venti
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
+
+	"sigint.ca/fs/internal/pack"
 )
 
 const (
@@ -106,8 +107,8 @@ func marshalFcall(f *fcall) ([]byte, error) {
 	switch f.msgtype {
 	case tPing:
 	case tHello:
-		buf = append(buf, packString(f.version)...)
-		buf = append(buf, packString(f.uid)...)
+		buf = append(buf, pack.PackString(f.version)...)
+		buf = append(buf, pack.PackString(f.uid)...)
 		buf = append(buf, f.strength)
 		buf = append(buf, uint8(f.ncrypto))
 		buf = append(buf, f.crypto...)
@@ -136,15 +137,6 @@ func marshalFcall(f *fcall) ([]byte, error) {
 	return buf, nil
 }
 
-func packString(s string) []byte {
-	n := len(s)
-	buf := make([]byte, n+2)
-	buf[0] = uint8(n >> 8)
-	buf[1] = uint8(n)
-	copy(buf[2:], s)
-	return buf
-}
-
 func unmarshalFcall(f *fcall, buf []byte) error {
 	f.msgtype = buf[0]
 	f.tag = buf[1]
@@ -153,14 +145,14 @@ func unmarshalFcall(f *fcall, buf []byte) error {
 	switch f.msgtype {
 	case rError:
 		var err error
-		f.err, err = unpackString(&buf)
+		f.err, err = pack.UnpackString(&buf)
 		if err != nil {
 			return fmt.Errorf("unpack err: %v", err)
 		}
 	case rPing:
 	case rHello:
 		var err error
-		f.sid, err = unpackString(&buf)
+		f.sid, err = pack.UnpackString(&buf)
 		if err != nil {
 			return fmt.Errorf("unpack sid: %v", err)
 		}
@@ -189,23 +181,6 @@ func unmarshalFcall(f *fcall, buf []byte) error {
 	}
 
 	return nil
-}
-
-func unpackString(p *[]byte) (string, error) {
-	buf := *p
-	if len(buf) < 2 {
-		return "", errors.New("nothing to unpack")
-	}
-	n := (int(buf[0]) << 8) + int(buf[1])
-	buf = buf[2:]
-	if len(buf) < n {
-		return "", fmt.Errorf("refusing to unpack %d-byte string from %d-byte buffer", n, len(buf))
-	}
-	s := string(buf[:n])
-	buf = buf[n:]
-
-	*p = buf
-	return s, nil
 }
 
 func (z *Session) transmit(f *fcall) error {

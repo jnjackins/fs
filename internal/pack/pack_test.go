@@ -1,4 +1,4 @@
-package main
+package pack
 
 import (
 	"bytes"
@@ -7,12 +7,12 @@ import (
 
 func TestPackString(t *testing.T) {
 	buf := make([]byte, 10)
-	n := packString("foobar", buf)
+	n := PackString("foobar", buf)
 	if n != len("foobar")+2 {
 		t.Fatalf("packString(%q): bad length: got %d, wanted %d", "foobar", n, len("foobar")+2)
 	}
 
-	s, ok := unpackString(&buf)
+	s, ok := UnpackString(&buf)
 	if !ok {
 		t.Fatalf("failed to unpack string")
 	}

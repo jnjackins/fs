@@ -24,31 +24,31 @@ type Header struct {
 
 func (h *Header) pack(p []byte) {
 	memset(p[:HeaderSize], 0)
-	pack.U32PUT(p, HeaderMagic)
-	pack.U16PUT(p[4:], HeaderVersion)
-	pack.U16PUT(p[6:], h.blockSize)
-	pack.U32PUT(p[8:], h.super)
-	pack.U32PUT(p[12:], h.label)
-	pack.U32PUT(p[16:], h.data)
-	pack.U32PUT(p[20:], h.end)
+	pack.PutUint32(p, HeaderMagic)
+	pack.PutUint16(p[4:], HeaderVersion)
+	pack.PutUint16(p[6:], h.blockSize)
+	pack.PutUint32(p[8:], h.super)
+	pack.PutUint32(p[12:], h.label)
+	pack.PutUint32(p[16:], h.data)
+	pack.PutUint32(p[20:], h.end)
 }
 
 func unpackHeader(p []byte) (*Header, error) {
 	h := new(Header)
 
-	if pack.U32GET(p) != HeaderMagic {
+	if pack.GetUint32(p) != HeaderMagic {
 		return nil, fmt.Errorf("vac header bad magic")
 	}
 
-	h.version = pack.U16GET(p[4:])
+	h.version = pack.GetUint16(p[4:])
 	if h.version != HeaderVersion {
 		return nil, fmt.Errorf("vac header bad version")
 	}
-	h.blockSize = pack.U16GET(p[6:])
-	h.super = pack.U32GET(p[8:])
-	h.label = pack.U32GET(p[12:])
-	h.data = pack.U32GET(p[16:])
-	h.end = pack.U32GET(p[20:])
+	h.blockSize = pack.GetUint16(p[6:])
+	h.super = pack.GetUint32(p[8:])
+	h.label = pack.GetUint32(p[12:])
+	h.data = pack.GetUint32(p[16:])
+	h.end = pack.GetUint32(p[20:])
 
 	return h, nil
 }

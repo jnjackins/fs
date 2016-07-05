@@ -20,11 +20,11 @@ func (l *Label) String() string {
 
 func (l *Label) pack(p []byte, i int) {
 	p = p[i*LabelSize:]
-	pack.U8PUT(p, uint8(l.state))
-	pack.U8PUT(p[1:], uint8(l.typ))
-	pack.U32PUT(p[2:], l.epoch)
-	pack.U32PUT(p[6:], l.epochClose)
-	pack.U32PUT(p[10:], l.tag)
+	pack.PutUint8(p, uint8(l.state))
+	pack.PutUint8(p[1:], uint8(l.typ))
+	pack.PutUint32(p[2:], l.epoch)
+	pack.PutUint32(p[6:], l.epochClose)
+	pack.PutUint32(p[10:], l.tag)
 }
 
 func unpackLabel(p []byte, i int) (*Label, error) {
@@ -32,9 +32,9 @@ func unpackLabel(p []byte, i int) (*Label, error) {
 	l := Label{
 		state:      BlockState(p[0]),
 		typ:        BlockType(p[1]),
-		epoch:      pack.U32GET(p[2:]),
-		epochClose: pack.U32GET(p[6:]),
-		tag:        pack.U32GET(p[10:]),
+		epoch:      pack.GetUint32(p[2:]),
+		epochClose: pack.GetUint32(p[6:]),
+		tag:        pack.GetUint32(p[10:]),
 	}
 
 	if l.typ > BtMax {

@@ -30,7 +30,7 @@ func (r *Root) String() string {
 func UnpackRoot(buf []byte) (*Root, error) {
 	var r Root
 
-	r.Version = pack.U16GET(buf)
+	r.Version = pack.GetUint16(buf)
 	if r.Version != RootVersion {
 		return nil, fmt.Errorf("bad root version: %d", r.Version)
 	}
@@ -42,7 +42,7 @@ func UnpackRoot(buf []byte) (*Root, error) {
 	r.Type = r.Type[:strings.IndexByte(r.Type, 0)]
 	buf = buf[rootStringSize:]
 	buf = buf[copy(r.Score[:], buf):]
-	r.BlockSize = pack.U16GET(buf)
+	r.BlockSize = pack.GetUint16(buf)
 	if err := checkBlockSize(int(r.BlockSize)); err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func UnpackRoot(buf []byte) (*Root, error) {
 }
 
 func (r *Root) Pack(buf []byte) {
-	pack.U16PUT(buf, r.Version)
+	pack.PutUint16(buf, r.Version)
 	buf = buf[2:]
 	name := make([]byte, rootStringSize)
 	copy(name, r.Name)
@@ -62,7 +62,7 @@ func (r *Root) Pack(buf []byte) {
 	copy(typ, r.Type)
 	buf = buf[copy(buf, typ):]
 	buf = buf[copy(buf, r.Score[:]):]
-	pack.U16PUT(buf, r.BlockSize)
+	pack.PutUint16(buf, r.BlockSize)
 	buf = buf[2:]
 	buf = buf[copy(buf, r.Prev[:]):]
 }

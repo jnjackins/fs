@@ -37,18 +37,18 @@ func UnpackEntry(p []byte, index int) (*Entry, error) {
 	var e Entry
 
 	p = p[index*EntrySize:]
-	e.Gen = pack.U32GET(p)
+	e.Gen = pack.GetUint32(p)
 	p = p[4:]
-	e.Psize = pack.U16GET(p)
+	e.Psize = pack.GetUint16(p)
 	p = p[2:]
-	e.Dsize = pack.U16GET(p)
+	e.Dsize = pack.GetUint16(p)
 	p = p[2:]
-	e.Flags = pack.U8GET(p)
+	e.Flags = pack.GetUint8(p)
 	p = p[1:]
 	e.Depth = (e.Flags & EntryDepthMask) >> EntryDepthShift
 	e.Flags &^= EntryDepthMask
 	p = p[5:]
-	e.Size = pack.U48GET(p)
+	e.Size = pack.GetUint48(p)
 	p = p[6:]
 	p = p[copy(e.Score[:], p):]
 
@@ -69,18 +69,18 @@ func UnpackEntry(p []byte, index int) (*Entry, error) {
 func (e *Entry) Pack(p []byte, index int) {
 	p = p[index*EntrySize:]
 
-	pack.U32PUT(p, e.Gen)
+	pack.PutUint32(p, e.Gen)
 	p = p[4:]
-	pack.U16PUT(p, e.Psize)
+	pack.PutUint16(p, e.Psize)
 	p = p[2:]
-	pack.U16PUT(p, e.Dsize)
+	pack.PutUint16(p, e.Dsize)
 	p = p[2:]
 	flags := e.Flags | (e.Depth<<EntryDepthShift)&EntryDepthMask
-	pack.U8PUT(p, flags)
+	pack.PutUint8(p, flags)
 	p = p[1:]
 	memset(p[:5], 0)
 	p = p[5:]
-	pack.U48PUT(p, e.Size)
+	pack.PutUint48(p, e.Size)
 	p = p[6:]
 	p = p[copy(p, e.Score[:]):]
 }

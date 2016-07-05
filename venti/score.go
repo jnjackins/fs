@@ -75,11 +75,11 @@ func GlobalToLocal(score *Score) uint32 {
 			return NilBlock
 		}
 	}
-	return pack.U32GET(score[ScoreSize-4:])
+	return pack.GetUint32(score[ScoreSize-4:])
 }
 
 func LocalToGlobal(addr uint32) Score {
 	var sc Score
-	pack.U32PUT(sc[ScoreSize-4:], addr)
+	pack.PutUint32(sc[ScoreSize-4:], addr)
 	return sc
 }
