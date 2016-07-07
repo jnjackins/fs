@@ -1,9 +1,8 @@
 package venti
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
-	"io"
 
 	"sigint.ca/fs/internal/pack"
 )
@@ -33,7 +32,7 @@ type fcall struct {
 	msgtype uint8
 	tag     uint8
 
-	err      string    // Rerror
+	err      error     // Rerror
 	version  string    // Thello
 	uid      string    // Thello
 	strength uint8     // Thello
@@ -144,11 +143,11 @@ func unmarshalFcall(f *fcall, buf []byte) error {
 
 	switch f.msgtype {
 	case rError:
-		var err error
-		f.err, err = pack.UnpackString(&buf)
+		s, err := pack.UnpackString(&buf)
 		if err != nil {
 			return fmt.Errorf("unpack err: %v", err)
 		}
+		f.err = errors.New(s)
 	case rPing:
 	case rHello:
 		var err error
@@ -163,9 +162,8 @@ func unmarshalFcall(f *fcall, buf []byte) error {
 	case rAuth0:
 	case rAuth1:
 	case rRead:
-		n := copy(f.data, buf)
-		buf = buf[n:]
-		f.count = uint16(n)
+		f.data = make([]byte, len(buf))
+		buf = buf[copy(f.data, buf):]
 	case rWrite:
 		f.score = new(Score)
 		n := copy(f.score[:], buf)
@@ -178,51 +176,6 @@ func unmarshalFcall(f *fcall, buf []byte) error {
 	if len(buf) != 0 {
 		dprintf("OOPS: %d bytes left\n", len(buf))
 		return fmt.Errorf("%d bytes left after unmarshal", len(buf))
-	}
-
-	return nil
-}
-
-func (z *Session) transmit(f *fcall) error {
-	data, err := marshalFcall(f)
-	if err != nil {
-		return fmt.Errorf("marshal fcall: %v", err)
-	}
-
-	length := len(data)
-	buf := make([]byte, 2)
-	buf[0] = uint8(length >> 8)
-	buf[1] = uint8(length)
-	dprintf("transmit: writing length %d\n", length)
-	if _, err := z.c.Write(buf); err != nil {
-		return fmt.Errorf("write length: %v", err)
-	}
-
-	dprintf("transmit: writing message %#x\n", data)
-	if _, err := io.CopyN(z.c, bytes.NewBuffer(data), int64(length)); err != nil {
-		return fmt.Errorf("write message: %v", err)
-	}
-	return nil
-}
-
-func (z *Session) receive(rx *fcall) error {
-	var buf bytes.Buffer
-	if _, err := io.CopyN(&buf, z.c, 2); err != nil {
-		return fmt.Errorf("read length: %v", err)
-	}
-	data := buf.Bytes()
-	length := (uint(data[0]) << 8) | uint(data[1])
-	dprintf("receive: got length %d\n", length)
-
-	buf.Reset()
-	n, err := io.CopyN(&buf, z.c, int64(length))
-	if err != nil {
-		return fmt.Errorf("read message: %v", err)
-	}
-	dprintf("receive: got message %#x (len=%d)\n", buf.Bytes(), n)
-
-	if err := unmarshalFcall(rx, buf.Bytes()); err != nil {
-		return fmt.Errorf("unmarshal fcall: %v", err)
 	}
 
 	return nil
