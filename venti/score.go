@@ -33,7 +33,7 @@ func Sha1(data []byte) *Score {
 	return &sc
 }
 
-// CheckScore reports whether sc is the correct score for data
+// Check reports whether sc is the correct score for data
 func (sc *Score) Check(data []byte) bool {
 	digest := sha1.Sum(data)
 	if *sc != digest {

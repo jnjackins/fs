@@ -66,8 +66,10 @@ func (typ BlockType) String() string {
 	return "unknown"
 }
 
+var debug = false
+
 func dprintf(format string, args ...interface{}) {
-	if false {
+	if debug {
 		fmt.Fprintf(os.Stderr, "(DEBUG) venti: "+format, args...)
 	}
 }

@@ -24,14 +24,13 @@ type Session struct {
 	uid     string
 	sid     string
 
-	lk          sync.Mutex
-	tagBitmap   uint64
-	rtab        [64]*fcall // array of response messages, indexed by tag
-	closed      bool
-	outstanding int // number of ongoing rpc calls that need a response
+	outgoing    chan *fcall
+	outstanding chan struct{}
+	incoming    [64]chan *fcall
 
-	tcond *sync.Cond // transmitted a message
-	rcond *sync.Cond // received a message
+	mu        sync.Mutex
+	tagBitmap uint64
+	closed    bool
 }
 
 func Dial(addr string) (*Session, error) {
@@ -51,16 +50,17 @@ func Dial(addr string) (*Session, error) {
 	}
 
 	z := &Session{
-		c: c,
+		c:           c,
+		outgoing:    make(chan *fcall),
+		outstanding: make(chan struct{}, 64),
 	}
-	z.rcond = sync.NewCond(&z.lk)
-	z.tcond = sync.NewCond(&z.lk)
+	for i := range z.incoming {
+		z.incoming[i] = make(chan *fcall, 0)
+	}
 
 	if err := z.connect(); err != nil {
 		return nil, fmt.Errorf("connect: %v", err)
 	}
-
-	go z.receiveMux()
 
 	return z, nil
 }
@@ -69,6 +69,10 @@ func (z *Session) connect() error {
 	if err := z.negotiateVersion(); err != nil {
 		return fmt.Errorf("version: %v", err)
 	}
+
+	go z.transmitThread()
+	go z.receiveThread()
+
 	if err := z.hello(); err != nil {
 		return fmt.Errorf("hello: %v", err)
 	}
@@ -106,10 +110,11 @@ func (z *Session) negotiateVersion() error {
 }
 
 func (z *Session) Close() {
-	z.lk.Lock()
-	z.outstanding--
+	z.mu.Lock()
 	z.closed = true
-	z.lk.Unlock()
+	z.mu.Unlock()
+
+	close(z.outgoing)
 }
 
 func (z *Session) hello() error {
@@ -121,13 +126,9 @@ func (z *Session) hello() error {
 	if tx.uid == "" {
 		tx.uid = "anonymous"
 	}
-
-	if err := z.transmit(&tx); err != nil {
-		return fmt.Errorf("transmit: %v", err)
-	}
 	var rx fcall
-	if err := z._receive(&rx); err != nil {
-		return fmt.Errorf("receive: %v", err)
+	if err := z.rpc(&tx, &rx); err != nil {
+		return fmt.Errorf("rpc: %v", err)
 	}
 	z.sid = rx.sid
 
@@ -139,8 +140,5 @@ func (z *Session) goodbye() error {
 
 	// goodbye is transmit-only; the server immediately
 	// terminates the connection upon recieving rGoodbye.
-	if err := z.transmit(&tx); err != nil {
-		return fmt.Errorf("transmit: %v", err)
-	}
-	return nil
+	return z.transmitMessage(&tx)
 }

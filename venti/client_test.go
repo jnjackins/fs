@@ -12,7 +12,11 @@ func TestClient(t *testing.T) {
 	}
 	defer z.Close()
 
-	t.Run("group", func(t *testing.T) {
+	t.Run("ping", func(t *testing.T) { testPing(t, z) })
+	t.Run("write+read", func(t *testing.T) { testWriteRead(t, z) })
+	t.Run("sync", func(t *testing.T) { testSync(t, z) })
+
+	t.Run("parallel", func(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			t.Run("ping", func(t *testing.T) { t.Parallel(); testPing(t, z) })
 			t.Run("write+read", func(t *testing.T) { t.Parallel(); testWriteRead(t, z) })
@@ -56,23 +60,24 @@ func testWriteRead(t *testing.T, z *Session) {
 		}
 	}
 
+	buf := make([]byte, 8192)
 	for _, test := range tests {
 		parsed, err := ParseScore(test.score)
 		if err != nil {
 			t.Errorf("failed to parse score %s: %v", test.score, err)
 			continue
 		}
-		buf, err := z.Read(parsed, DataType, 8192)
+		n, err := z.Read(parsed, DataType, buf)
 		if err != nil {
 			t.Errorf("read: %v", err)
 			continue
 		}
-		if len(buf) != len(test.data) {
-			t.Errorf("read: bad length: %d", len(buf))
+		if n != len(test.data) {
+			t.Errorf("read: bad length: %d != %d", n, len(test.data))
 			continue
 		}
-		if !bytes.Equal(buf, test.data) {
-			t.Errorf("read %v: got %q, want %q", test.score, buf, test.data)
+		if !bytes.Equal(buf[:n], test.data) {
+			t.Errorf("read %v: got %q, want %q", test.score, buf[:n], test.data)
 		}
 	}
 }
@@ -90,21 +95,23 @@ func BenchmarkClientSequential(b *testing.B) {
 	}
 	defer z.Close()
 
-	buf := make([]byte, 8192)
-	for i := range buf {
-		buf[i] = byte(i % 256)
+	wbuf := make([]byte, 8192)
+	for i := range wbuf {
+		wbuf[i] = byte(i % 256)
 	}
 
+	rbuf := make([]byte, 8192)
+
 	for i := 0; i < b.N; i++ {
-		score, err := z.Write(DataType, buf)
+		score, err := z.Write(DataType, wbuf)
 		if err != nil {
 			b.Errorf("write: %v", err)
-			continue
+			return
 		}
-		_, err = z.Read(score, DataType, 8192)
+		_, err = z.Read(score, DataType, rbuf)
 		if err != nil {
 			b.Errorf("read: %v", err)
-			continue
+			return
 		}
 	}
 }
@@ -116,22 +123,24 @@ func BenchmarkClientParallel(b *testing.B) {
 	}
 	defer z.Close()
 
-	buf := make([]byte, 8192)
-	for i := range buf {
-		buf[i] = byte(i % 256)
+	wbuf := make([]byte, 8192)
+	for i := range wbuf {
+		wbuf[i] = byte(i % 256)
 	}
+
+	rbuf := make([]byte, 8192)
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			score, err := z.Write(DataType, buf)
+			score, err := z.Write(DataType, wbuf)
 			if err != nil {
 				b.Errorf("write: %v", err)
-				continue
+				return
 			}
-			_, err = z.Read(score, DataType, 8192)
+			_, err = z.Read(score, DataType, rbuf)
 			if err != nil {
 				b.Errorf("read: %v", err)
-				continue
+				return
 			}
 		}
 	})

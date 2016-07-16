@@ -5,153 +5,164 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"sigint.ca/fs/internal/pack"
 )
 
-func (z *Session) rpc(tx *fcall) (*fcall, error) {
+func (z *Session) rpc(tx, rx *fcall) error {
 	if z == nil {
 		panic("nil venti.Session")
 	}
-
-	z.lk.Lock()
-	if z.closed {
-		z.lk.Unlock()
-		return nil, errors.New("session is closed")
-	}
-	z.lk.Unlock()
-
-	tx.tag = z.getTag()
-
-	if err := z.transmit(tx); err != nil {
-		return nil, fmt.Errorf("transmit tag=%d: %v", tx.tag, err)
+	if z.isClosed() {
+		return errors.New("session is closed")
 	}
 
-	rx, err := z.receive(tx.tag)
-	if err != nil {
-		return nil, fmt.Errorf("receive tag=%d: %v", tx.tag, err)
+	tag := z.getTag()
+	defer z.putTag(tag)
+	tx.tag = tag
+	rx.tag = tag
+
+	z.transmit(tx)
+
+	if err := z.receive(rx); err != nil {
+		return fmt.Errorf("receive: %v", err)
 	}
 
-	if rx.msgtype != tx.msgtype+1 {
-		if rx.msgtype == rError {
-			return nil, fmt.Errorf("server error: %v", rx.err)
-		} else {
-			return nil, fmt.Errorf("receive: unexpected message type: %v != %v", rx.msgtype, tx.msgtype+1)
-		}
+	if rx.msgtype == rError {
+		return fmt.Errorf("server error: %v", rx.err)
+	} else if rx.msgtype != tx.msgtype+1 {
+		return fmt.Errorf("received unexpected type: %v != %v", rx.msgtype, tx.msgtype+1)
 	}
-
-	z.putTag(tx.tag)
-
-	return rx, nil
-}
-
-// send an fcall to venti
-func (z *Session) transmit(f *fcall) error {
-	dprintf("\t-> %v\n", f)
-
-	data, err := marshalFcall(f)
-	if err != nil {
-		return fmt.Errorf("marshal fcall: %v", err)
-	}
-
-	length := len(data)
-	buf := make([]byte, 2+length)
-	buf[0] = uint8(length >> 8)
-	buf[1] = uint8(length)
-	copy(buf[2:], data)
-	if _, err := io.CopyN(z.c, bytes.NewBuffer(buf), int64(len(buf))); err != nil {
-		return fmt.Errorf("write message: %v", err)
-	}
-
-	// kick receiveMux
-	z.lk.Lock()
-	z.outstanding++
-	z.tcond.Broadcast()
-	z.lk.Unlock()
 
 	return nil
 }
 
-// wait for receiveMux to get the fcall corresponding to tag,
-// and return it
-func (z *Session) receive(tag uint8) (*fcall, error) {
-	var rx *fcall
-	z.lk.Lock()
-	for rx == nil {
-		z.rcond.Wait()
-		if z.rtab[tag] != nil {
-			rx = z.rtab[tag]
-			z.rtab[tag] = nil
-			break
-		}
-	}
-	z.lk.Unlock()
-
-	// client-side error
-	if rx.err != nil && rx.typ != rError {
-		return nil, rx.err
-	}
-
-	return rx, nil
+func (z *Session) transmit(tx *fcall) {
+	dprintf("\t-> %v\n", tx)
+	z.outgoing <- tx
 }
 
-// get an fcall from venti
-func (z *Session) _receive(f *fcall) error {
-	var buf bytes.Buffer
-	if _, err := io.CopyN(&buf, z.c, 2); err != nil {
-		return fmt.Errorf("read message length: %v", err)
+func (z *Session) transmitThread() {
+	for tx := range z.outgoing {
+		if err := z.transmitMessage(tx); err != nil {
+			_ = <-z.incoming[tx.tag]
+			z.incoming[tx.tag] <- internalError(fmt.Errorf("transmit: %v", err))
+			continue
+		}
+		// wake up z.receiveThread
+		z.outstanding <- struct{}{}
 	}
-	data := buf.Bytes()
-	length := (uint(data[0]) << 8) | uint(data[1])
+	dprintf("transmitThread: exiting\n")
+	close(z.outstanding)
+}
 
-	buf.Reset()
-	_, err := io.CopyN(&buf, z.c, int64(length))
+func (z *Session) transmitMessage(tx *fcall) error {
+	packed, err := tx.pack()
 	if err != nil {
-		return fmt.Errorf("read message: %v", err)
+		return fmt.Errorf("pack: %v", err)
 	}
 
-	if err := unmarshalFcall(f, buf.Bytes()); err != nil {
-		return fmt.Errorf("unmarshal fcall: %v", err)
+	buf := make([]byte, 2)
+	pack.PutUint16(buf, uint16(len(packed)+len(tx.data)))
+	if _, err := z.c.Write(buf); err != nil {
+		return fmt.Errorf("write message header: %v", err)
+	}
+	if _, err := z.c.Write(packed); err != nil {
+		return fmt.Errorf("write message body: %v", err)
 	}
 
-	dprintf("\t<- %v\n", f)
+	if tx.msgtype == tWrite {
+		// write data directly to the network
+		_, err := z.c.Write(tx.data)
+		if err != nil {
+			return fmt.Errorf("write data: %v", err)
+		}
+	}
+	return nil
+}
+
+func (z *Session) receive(rx *fcall) error {
+	z.incoming[rx.tag] <- rx
+	rx = <-z.incoming[rx.tag]
+
+	if rx.msgtype == tError {
+		return rx.err
+	}
+
+	dprintf("\t<- %v\n", rx)
 
 	return nil
 }
 
-// get fcalls from venti and store them in rtab, indexed by tag
-func (z *Session) receiveMux() {
-	for {
-		z.lk.Lock()
-		for z.outstanding == 0 {
-			z.tcond.Wait()
+func (z *Session) receiveThread() {
+	for range z.outstanding {
+		length, msgtype, tag, err := z.receiveHeader()
+		if err != nil {
+			_ = <-z.incoming[tag]
+			z.incoming[tag] <- internalError(fmt.Errorf("receive header: %v", err))
+			continue
 		}
-		if z.outstanding < 0 {
-			break
+		rx := <-z.incoming[tag]
+		rx.msgtype = msgtype
+
+		if err := z.receiveMessage(rx, length); err != nil {
+			z.incoming[tag] <- internalError(fmt.Errorf("receive message: %v", err))
+			continue
 		}
 
-		for z.outstanding > 0 {
-			z.outstanding--
-			z.lk.Unlock()
+		z.incoming[tag] <- rx
+	}
+	dprintf("receiveThread: exiting\n")
+	for i := range z.incoming {
+		close(z.incoming[i])
+	}
+	if err := z.goodbye(); err != nil {
+		dprintf("goodbye: %v\n", err)
+	}
+}
 
-			var rx fcall
-			if err := z._receive(&rx); err != nil {
-				rx.typ = 0
-				rx.err = fmt.Errorf("_receive: %v", err)
+func (z *Session) receiveHeader() (length uint16, msgtype, tag uint8, err error) {
+	buf := make([]byte, 4)
+	var n int
+	n, err = z.c.Read(buf[:])
+	if n < len(buf) && err == nil {
+		err = errors.New("short read")
+	}
+	length = pack.GetUint16(buf)
+	msgtype = buf[2]
+	tag = buf[3]
+	length -= 2 // already got msgtype and tag
+	return
+}
+
+func (z *Session) receiveMessage(rx *fcall, length uint16) error {
+	if rx.msgtype == rRead {
+		// read data directly from the network
+		data := rx.data[:length]
+		for len(data) > 0 {
+			n, err := z.c.Read(data)
+			if err != nil {
+				return err
 			}
-
-			z.lk.Lock()
-			z.rtab[rx.tag] = &rx
-			z.rcond.Broadcast()
+			data = data[n:]
 		}
-		z.lk.Unlock()
+		rx.count = length
+		return nil
 	}
 
-	z.goodbye()
-	z.c.Close()
+	var buf bytes.Buffer
+	if _, err := io.CopyN(&buf, z.c, int64(length)); err != nil {
+		return err
+	}
+	if err := unpackFcall(buf.Bytes(), rx); err != nil {
+		return fmt.Errorf("unpack fcall: %v", err)
+	}
+	return nil
 }
 
 func (z *Session) getTag() uint8 {
-	z.lk.Lock()
-	defer z.lk.Unlock()
+	z.mu.Lock()
+	defer z.mu.Unlock()
 
 	for i := uint8(0); i < 64; i++ {
 		if z.tagBitmap&(1<<i) == 0 {
@@ -159,6 +170,7 @@ func (z *Session) getTag() uint8 {
 			return i
 		}
 	}
+
 	panic("out of tags")
 }
 
@@ -167,48 +179,60 @@ func (z *Session) putTag(tag uint8) {
 		panic("bad tag")
 	}
 
-	z.lk.Lock()
-	defer z.lk.Unlock()
+	z.mu.Lock()
+	defer z.mu.Unlock()
 
 	z.tagBitmap &^= 1 << tag
+}
+
+func (z *Session) isClosed() bool {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+
+	return z.closed
 }
 
 func (z *Session) Ping() error {
 	tx := fcall{
 		msgtype: tPing,
 	}
-	z.rpc(&tx)
+	var rx fcall
+	z.rpc(&tx, &rx)
 	return nil
 }
 
-func (z *Session) Read(score *Score, typ BlockType, size int) ([]byte, error) {
+func (z *Session) Read(score *Score, typ BlockType, p []byte) (int, error) {
 	// TODO(jnj): hack: fossil relies on this working even when z == nil
 	if score.IsZero() {
-		return []byte{}, nil
+		return 0, nil
 	}
 	tx := fcall{
 		msgtype: tRead,
 		score:   score,
 		typ:     typ,
-		count:   uint16(size),
+		count:   uint16(len(p)),
+	}
+	rx := fcall{
+		data: p,
+	}
+	if err := z.rpc(&tx, &rx); err != nil {
+		return 0, fmt.Errorf("rpc: %v", err)
 	}
 
-	rx, err := z.rpc(&tx)
-	if err != nil {
-		return nil, fmt.Errorf("rpc: %v", err)
-	}
-
-	return rx.data, nil
+	return int(rx.count), nil
 }
 
-func (z *Session) Write(typ BlockType, buf []byte) (*Score, error) {
+func (z *Session) Write(typ BlockType, p []byte) (*Score, error) {
+	if len(p) > MaxBlockSize {
+		return nil, fmt.Errorf("data exceeds maximum block size: %d > %d", len(p), MaxBlockSize)
+	}
 	tx := fcall{
 		msgtype: tWrite,
 		typ:     typ,
-		data:    buf,
+		data:    p,
 	}
-	rx, err := z.rpc(&tx)
-	if err != nil {
+	var rx fcall
+	if err := z.rpc(&tx, &rx); err != nil {
 		return nil, fmt.Errorf("rpc: %v", err)
 	}
 	return rx.score, nil
@@ -218,8 +242,8 @@ func (z *Session) Sync() error {
 	tx := fcall{
 		msgtype: tSync,
 	}
-	_, err := z.rpc(&tx)
-	if err != nil {
+	var rx fcall
+	if err := z.rpc(&tx, &rx); err != nil {
 		return fmt.Errorf("rpc: %v", err)
 	}
 	return nil

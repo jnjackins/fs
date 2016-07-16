@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	tError   = 0 // used internally only
 	rError   = 1
 	tPing    = 2
 	rPing    = 3
@@ -25,7 +26,6 @@ const (
 	rWrite   = 15
 	tSync    = 16
 	rSync    = 17
-	tMax     = 18
 )
 
 type fcall struct {
@@ -45,7 +45,7 @@ type fcall struct {
 	rcodec   uint8     // Rhello
 	auth     []byte    // TauthX, RauthX
 	nauth    uint      // TauthX, RauthX
-	score    *Score    // Tread, Twrite
+	score    *Score    // Tread, Rwrite
 	typ      BlockType // Tread, Twrite
 	count    uint16    // Tread
 	data     []byte    // Rread, Twrite
@@ -59,6 +59,8 @@ func (f *fcall) String() string {
 	switch f.msgtype {
 	default:
 		return fmt.Sprintf("%c%d tag=%d", "TR"[f.msgtype&1], f.msgtype>>1, f.tag)
+	case tError:
+		return fmt.Sprintf("Terror tag=%d error=%v", f.tag, f.err)
 	case rError:
 		return fmt.Sprintf("Rerror tag=%d error=%v", f.tag, f.err)
 	case tPing:
@@ -83,11 +85,11 @@ func (f *fcall) String() string {
 	case rAuth1:
 		return fmt.Sprintf("Rauth1 tag=%d auth=%d:%v", f.tag, f.nauth, f.auth)
 	case tRead:
-		return fmt.Sprintf("Tread tag=%d score=%v blocktype=%v count=%d", f.tag, f.score, f.typ, f.count)
+		return fmt.Sprintf("Tread tag=%d score=%v type=%v count=%d", f.tag, f.score, f.typ, f.count)
 	case rRead:
-		return fmt.Sprintf("Rread tag=%d count=%d", f.tag, len(f.data))
+		return fmt.Sprintf("Rread tag=%d", f.tag)
 	case tWrite:
-		return fmt.Sprintf("Twrite tag=%d blocktype=%v count=%d", f.tag, f.typ, len(f.data))
+		return fmt.Sprintf("Twrite tag=%d type=%v", f.tag, f.typ)
 	case rWrite:
 		return fmt.Sprintf("Rwrite tag=%d score=%v", f.tag, f.score)
 	case tSync:
@@ -97,11 +99,46 @@ func (f *fcall) String() string {
 	}
 }
 
-func marshalFcall(f *fcall) ([]byte, error) {
-	var buf []uint8
+func unpackFcall(buf []byte, f *fcall) error {
+	switch f.msgtype {
+	case rError:
+		s, err := pack.UnpackString(&buf)
+		if err != nil {
+			return fmt.Errorf("unpack err: %v", err)
+		}
+		f.err = errors.New(s)
+	case rPing:
+	case rHello:
+		var err error
+		f.sid, err = pack.UnpackString(&buf)
+		if err != nil {
+			return fmt.Errorf("unpack sid: %v", err)
+		}
+		f.rcrypto = buf[0]
+		f.rcodec = buf[1]
+		buf = buf[2:]
+	case rGoodbye:
+	case rAuth0:
+	case rAuth1:
+	case rRead:
+		// to be read directly from the network into user-provided buffer
+	case rWrite:
+		f.score = new(Score)
+		n := copy(f.score[:], buf)
+		buf = buf[n:]
+	case rSync:
+	default:
+		return fmt.Errorf("unrecognized message type: %d", f.msgtype)
+	}
 
-	buf = append(buf, f.msgtype)
-	buf = append(buf, f.tag)
+	return nil
+}
+
+func (f *fcall) pack() ([]byte, error) {
+	buf := []byte{
+		f.msgtype,
+		f.tag,
+	}
 
 	switch f.msgtype {
 	case tPing:
@@ -127,7 +164,7 @@ func marshalFcall(f *fcall) ([]byte, error) {
 		buf = append(buf, 0) // pad
 		buf = append(buf, 0) // pad
 		buf = append(buf, 0) // pad
-		buf = append(buf, f.data...)
+		// to be written directly to the network from user-provided buffer
 	case tSync:
 	default:
 		return nil, fmt.Errorf("unrecognized message type: %d", f.msgtype)
@@ -136,47 +173,9 @@ func marshalFcall(f *fcall) ([]byte, error) {
 	return buf, nil
 }
 
-func unmarshalFcall(f *fcall, buf []byte) error {
-	f.msgtype = buf[0]
-	f.tag = buf[1]
-	buf = buf[2:]
-
-	switch f.msgtype {
-	case rError:
-		s, err := pack.UnpackString(&buf)
-		if err != nil {
-			return fmt.Errorf("unpack err: %v", err)
-		}
-		f.err = errors.New(s)
-	case rPing:
-	case rHello:
-		var err error
-		f.sid, err = pack.UnpackString(&buf)
-		if err != nil {
-			return fmt.Errorf("unpack sid: %v", err)
-		}
-		f.rcrypto = buf[0]
-		f.rcodec = buf[1]
-		buf = buf[2:]
-	case rGoodbye:
-	case rAuth0:
-	case rAuth1:
-	case rRead:
-		f.data = make([]byte, len(buf))
-		buf = buf[copy(f.data, buf):]
-	case rWrite:
-		f.score = new(Score)
-		n := copy(f.score[:], buf)
-		buf = buf[n:]
-	case rSync:
-	default:
-		return fmt.Errorf("unrecognized message type: %d", f.msgtype)
+func internalError(err error) *fcall {
+	return &fcall{
+		msgtype: tError,
+		err:     err,
 	}
-
-	if len(buf) != 0 {
-		dprintf("OOPS: %d bytes left\n", len(buf))
-		return fmt.Errorf("%d bytes left after unmarshal", len(buf))
-	}
-
-	return nil
 }
