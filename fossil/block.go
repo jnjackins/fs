@@ -161,7 +161,7 @@ type Block struct {
 	// The thread that has locked a Block may refer to it by
 	// multiple names.  nlock counts the number of
 	// references the locking thread holds.  It will call
-	// blockPut once per reference.
+	// (*Block).put once per reference.
 	nlock int32
 
 	lk sync.Mutex
@@ -171,7 +171,7 @@ type Block struct {
 	score venti.Score
 	l     Label
 
-	dmap []byte
+	dmap []byte // dirty pointer map used in (*Block).write
 
 	data []byte
 

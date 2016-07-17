@@ -15,7 +15,7 @@ import (
 const BadHeap = ^uint32(0)
 
 /*
- * Store data to the memory cache in c->size blocks
+ * Store data to the memory cache in c.size blocks
  * with the block zero extended to fill it out.  When writing to
  * Venti, the block will be zero truncated.  The walker will also check
  * that the block fits within psize or dsize as the case may be.
@@ -26,16 +26,14 @@ type Cache struct {
 	ref  int
 	mode int
 
-	disk    *Disk
-	size    int /* block size */
-	ndmap   int /* size of per-block dirty pointer map used in (*Block).write */
-	z       *venti.Session
-	now     uint32   /* ticks for usage timestamps */
-	heads   []*Block /* hash table for finding address */
-	nheap   int      /* number of available victims */
-	heap    []*Block /* heap for locating victims */
-	nblocks int      /* number of blocks allocated */
-	blocks  []*Block /* array of block descriptors */
+	disk   *Disk
+	size   int /* block size */
+	z      *venti.Session
+	now    uint32   /* ticks for usage timestamps */
+	heads  []*Block /* hash table for finding address */
+	nheap  int      /* number of available victims */
+	heap   []*Block /* heap for locating victims */
+	blocks []*Block /* array of block descriptors */
 
 	blfree *BList
 	blrend *sync.Cond
@@ -138,7 +136,6 @@ func allocCache(disk *Disk, z *venti.Session, nblocks, mode int) *Cache {
 		disk:     disk,
 		z:        z,
 		size:     disk.blockSize(),
-		nblocks:  int(nblocks),
 		hashSize: int(nblocks),
 		heads:    make([]*Block, nblocks),
 		heap:     make([]*Block, nblocks),
@@ -150,7 +147,7 @@ func allocCache(disk *Disk, z *venti.Session, nblocks, mode int) *Cache {
 
 	/* round c.size up to be a nice multiple */
 	c.size = (c.size + 127) &^ 127
-	c.ndmap = (c.size/20 + 7) / 8
+	ndmap := (c.size/20 + 7) / 8
 
 	for i := 0; i < nblocks; i++ {
 		b := &Block{
@@ -175,7 +172,7 @@ func allocCache(disk *Disk, z *venti.Session, nblocks, mode int) *Cache {
 	/* separate loop to keep blocks and blists reasonably aligned */
 	for i := 0; i < nblocks; i++ {
 		b := c.blocks[i]
-		b.dmap = make([]byte, c.ndmap)
+		b.dmap = make([]byte, ndmap)
 	}
 
 	c.blrend = sync.NewCond(&c.lk)
@@ -252,8 +249,8 @@ func (c *Cache) free() {
 
 	c.check()
 
-	for i := 0; i < c.nblocks; i++ {
-		assert(c.blocks[i].ref == 0)
+	for _, b := range c.blocks {
+		assert(b.ref == 0)
 	}
 
 	c.disk.free()
@@ -262,8 +259,7 @@ func (c *Cache) free() {
 }
 
 func (c *Cache) dump() {
-	for i := 0; i < c.nblocks; i++ {
-		b := c.blocks[i]
+	for i, b := range c.blocks {
 		logf("%d. p=%d a=%d %v t=%d ref=%d state=%s io=%s\n",
 			i, b.part, b.addr, b.score, b.l.typ, b.ref, b.l.state, b.iostate)
 	}
@@ -290,22 +286,20 @@ func (c *Cache) check() {
 	}
 
 	refed := 0
-	for i := 0; i < c.nblocks; i++ {
-		b := c.blocks[i]
+	for _, b := range c.blocks {
 		if b.ref != 0 && b.heap == BadHeap {
 			refed++
 		}
 	}
 
-	if c.nheap+refed != c.nblocks {
-		logf("(*Cache).check: nheap %d refed %d nblocks %d\n", c.nheap, refed, c.nblocks)
+	if c.nheap+refed != len(c.blocks) {
+		logf("(*Cache).check: nheap %d refed %d nblocks %d\n", c.nheap, refed, len(c.blocks))
 		c.dump()
 	}
 
-	assert(c.nheap+refed == c.nblocks)
+	assert(c.nheap+refed == len(c.blocks))
 	refed = 0
-	for i := 0; i < c.nblocks; i++ {
-		b := c.blocks[i]
+	for _, b := range c.blocks {
 		if b.ref != 0 {
 			if true {
 				logf("p=%d a=%d %v ref=%d %v\n", b.part, b.addr, &b.score, b.ref, b.l)
@@ -1096,9 +1090,7 @@ func (b *Block) write(waitlock bool) bool {
 	}
 
 	dmap := b.dmap
-	for i := 0; i < c.ndmap; i++ {
-		dmap[i] = 0
-	}
+	memset(dmap, 0)
 	pp := &b.prior
 	var bb *Block
 	var err error
@@ -1731,7 +1723,7 @@ func (c *Cache) flushFill() {
 
 	ndirty := 0
 	var i int
-	for i = 0; i < c.nblocks; i++ {
+	for i = range c.blocks {
 		p := &c.baddr[i]
 		b := c.blocks[i]
 		if b.part == PartError {
