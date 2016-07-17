@@ -111,6 +111,9 @@ func (z *Session) negotiateVersion() error {
 
 func (z *Session) Close() {
 	z.mu.Lock()
+	if z.closed {
+		panic("close of closed Session")
+	}
 	z.closed = true
 	z.mu.Unlock()
 
