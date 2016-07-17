@@ -498,24 +498,24 @@ Err1:
 	return nil, err
 }
 
-func (f *File) read(cnt int, offset int64) ([]byte, error) {
+func (f *File) read(buf []byte, offset int64) (int, error) {
 	if false {
-		dprintf("fileRead: %s %d, %d\n", f.dir.elem, cnt, offset)
+		dprintf("(*File).read: %s %d, %d\n", f.dir.elem, len(buf), offset)
 	}
 
 	if err := f.rLock(); err != nil {
-		return nil, err
+		return 0, err
 	}
 	defer f.rUnlock()
 
 	if offset < 0 {
-		return nil, EBadOffset
+		return 0, EBadOffset
 	}
 
 	f.rAccess()
 
 	if err := f.source.lock(OReadOnly); err != nil {
-		return nil, err
+		return 0, err
 	}
 	s := f.source
 	dsize := s.dsize
@@ -526,19 +526,19 @@ func (f *File) read(cnt int, offset int64) ([]byte, error) {
 		offset = int64(size)
 	}
 
+	cnt := len(buf)
 	if uint64(cnt) > size-uint64(offset) {
 		cnt = int(size - uint64(offset))
 	}
 	bn := uint32(offset / int64(dsize))
 	off := int(offset % int64(dsize))
-	buf := make([]byte, cnt) // TODO(jnj): avoid allocation
 	p := buf
 
 	var n, nn int
 	for cnt > 0 {
 		b, err := s.block(bn, OReadOnly)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 		n = cnt
 		if n > dsize-off {
@@ -559,7 +559,7 @@ func (f *File) read(cnt int, offset int64) ([]byte, error) {
 		b.put()
 	}
 
-	return buf[:len(buf)-len(p)], nil
+	return len(buf) - len(p), nil
 }
 
 func (f *File) write(buf []byte, cnt int, offset int64, uid string) (int, error) {

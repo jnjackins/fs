@@ -532,9 +532,9 @@ func readUsersFile(path string) error {
 	if err == nil {
 		var size uint64
 		if err = file.getSize(&size); err == nil {
-			length := int(size)
-			buf, err := file.read(int(size), 0)
-			if len(buf) == length && err == nil {
+			buf := make([]byte, size)
+			n, err := file.read(buf, 0)
+			if n == int(size) && err == nil {
 				err = uboxInit(string(buf))
 			}
 		}

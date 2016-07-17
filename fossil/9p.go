@@ -477,7 +477,6 @@ func rTread(m *Msg) error {
 	}
 	defer fid.put()
 
-	var data []byte
 	if fid.open&FidORead == 0 {
 		return fmt.Errorf("fid not open for read")
 	}
@@ -497,12 +496,16 @@ func rTread(m *Msg) error {
 		}
 	}
 
+	var data []byte
 	if fid.qid.Type&plan9.QTDIR != 0 {
 		data, err = dirRead(fid, count, int64(m.t.Offset))
 	} else if fid.qid.Type&plan9.QTAUTH != 0 {
 		data, err = authRead(fid, count)
 	} else {
-		data, err = fid.file.read(count, int64(m.t.Offset))
+		data = make([]byte, count)
+		var n int
+		n, err = fid.file.read(data, int64(m.t.Offset))
+		data = data[:n]
 	}
 	if err != nil {
 		return err
