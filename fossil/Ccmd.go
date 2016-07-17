@@ -17,9 +17,9 @@ import (
 var cmdbox struct {
 	lock sync.Mutex
 
-	con   *Con
-	conns [2]net.Conn
-	tag   uint16
+	con  *Con
+	conn net.Conn
+	tag  uint16
 }
 
 var cmd9pTmsg = [...]Cmd9p{
@@ -245,13 +245,13 @@ func cmd9p(cons *Cons, argv []string) error {
 		return fmt.Errorf("%s: error marshalling fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
-	if _, err := cmdbox.conns[0].Write(buf); err != nil {
+	if _, err := cmdbox.conn.Write(buf); err != nil {
 		return fmt.Errorf("%s: write error: %v", cmd9pTmsg[i].name, err)
 	}
 
 	cons.printf("\t-> %v\n", &t)
 
-	f, err := plan9.ReadFcall(cmdbox.conns[0])
+	f, err := plan9.ReadFcall(cmdbox.conn)
 	if err != nil {
 		return fmt.Errorf("%s: error reading fcall: %v", cmd9pTmsg[i].name, err)
 	}
@@ -419,11 +419,12 @@ func cmdInit() error {
 		}
 	}
 
+	// This pipe is used by cmd9p to manually send 9p messages to fossil.
+	// c1 is connected to cmd9p, and c2 is connected to fossil.
 	c1, c2 := net.Pipe()
-	cmdbox.conns[0] = c1
-	cmdbox.conns[1] = c2
+	cmdbox.conn = c1
 
-	cmdbox.con = allocCon(cmdbox.conns[1], "console", 0)
+	cmdbox.con = allocCon(c2, "console", 0)
 	cmdbox.con.isconsole = true
 
 	return nil
