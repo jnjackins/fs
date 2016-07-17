@@ -227,10 +227,6 @@ func (fs *Fs) close() {
 	}
 
 	fs.elk.RUnlock() // TODO(jnj): can this be unlocked earlier?
-
-	if fs.z != nil {
-		fs.z.Close()
-	}
 }
 
 func (fs *Fs) redial(host string) error {
