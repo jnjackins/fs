@@ -180,6 +180,52 @@ func Test9p(t *testing.T) {
 	}
 }
 
+func Benchmark9pWrite(b *testing.B) {
+	fsys, err := testAllocFsys()
+	if err != nil {
+		b.Fatalf("testAllocFsys: %v", err)
+	}
+
+	testdata := make([]byte, 8000)
+	for i := range testdata {
+		testdata[i] = 'a'
+	}
+
+	// setup
+	for _, c := range []struct{ cmd, match string }{
+		{cmd: "9p Tversion 8192 9P2000"},
+		{cmd: "9p Tattach 0 ~1 nobody testfs/active"},
+		{cmd: "9p Twalk 0 1"},
+		{cmd: "9p Tcreate 1 test 0644 2"},
+	} {
+		if err := cliExec(nil, c.cmd); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	// benchmark
+	argv := strings.Fields("9p Twrite 1 0 " + string(testdata))
+	for i := 0; i < b.N; i++ {
+		if err := cmd9p(nil, argv); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	// teardown
+	for _, c := range []struct{ cmd, match string }{
+		{cmd: "9p Tremove 1"},
+		{cmd: "9p Tclunk 0"},
+	} {
+		if err := cliExec(nil, c.cmd); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	if err := testCleanupFsys(fsys); err != nil {
+		b.Fatalf("testCleanupFsys: %v", err)
+	}
+}
+
 func Benchmark9pRead(b *testing.B) {
 	fsys, err := testAllocFsys()
 	if err != nil {
@@ -206,52 +252,6 @@ func Benchmark9pRead(b *testing.B) {
 
 	// benchmark
 	argv := strings.Fields("9p Tread 1 0 8000")
-	for i := 0; i < b.N; i++ {
-		if err := cmd9p(nil, argv); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	// teardown
-	for _, c := range []struct{ cmd, match string }{
-		{cmd: "9p Tremove 1"},
-		{cmd: "9p Tclunk 0"},
-	} {
-		if err := cliExec(nil, c.cmd); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	if err := testCleanupFsys(fsys); err != nil {
-		b.Fatalf("testCleanupFsys: %v", err)
-	}
-}
-
-func Benchmark9pWrite(b *testing.B) {
-	fsys, err := testAllocFsys()
-	if err != nil {
-		b.Fatalf("testAllocFsys: %v", err)
-	}
-
-	testdata := make([]byte, 8000)
-	for i := range testdata {
-		testdata[i] = 'a'
-	}
-
-	// setup
-	for _, c := range []struct{ cmd, match string }{
-		{cmd: "9p Tversion 8192 9P2000"},
-		{cmd: "9p Tattach 0 ~1 nobody testfs/active"},
-		{cmd: "9p Twalk 0 1"},
-		{cmd: "9p Tcreate 1 test 0644 2"},
-	} {
-		if err := cliExec(nil, c.cmd); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	// benchmark
-	argv := strings.Fields("9p Twrite 1 0 " + string(testdata))
 	for i := 0; i < b.N; i++ {
 		if err := cmd9p(nil, argv); err != nil {
 			b.Fatal(err)

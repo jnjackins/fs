@@ -1,7 +1,6 @@
 package main
 
 import (
-	"runtime"
 	"testing"
 	"time"
 
@@ -126,34 +125,5 @@ func testFsVac(t *testing.T, fs *Fs) {
 			t.Fatalf("failed to unpack entry: %v", err)
 		}
 		t.Logf("fetched entry: %v", e)
-	}
-}
-
-func TestFsysOpenClose(t *testing.T) {
-	if err := fsysConfig(nil, "testfs", []string{"config", testFossilPath}); err != nil {
-		t.Fatalf("config: %v", err)
-	}
-
-	// check for leaked goroutines after closing an fsys
-	ngoroutine := runtime.NumGoroutine()
-	t.Logf("start: goroutines=%d", ngoroutine)
-	for i := 0; i < 5; i++ {
-		if err := cmdFsys(nil, tokenize("fsys testfs open -c 100")); err != nil {
-			t.Errorf("open: %v", err)
-			break
-		}
-		t.Logf("open: goroutines=%d", runtime.NumGoroutine())
-		if err := cmdFsys(nil, tokenize("fsys testfs close")); err != nil {
-			t.Errorf("close: %v", err)
-			break
-		}
-		t.Logf("close: goroutines=%d", runtime.NumGoroutine())
-
-		if runtime.NumGoroutine() > ngoroutine+3 {
-			t.Errorf("goroutine leak: started with %d, have %d", ngoroutine, runtime.NumGoroutine())
-		}
-	}
-	if err := fsysUnconfig(nil, "testfs", []string{"unconfig"}); err != nil {
-		t.Fatalf("unconfig: %v", err)
 	}
 }
