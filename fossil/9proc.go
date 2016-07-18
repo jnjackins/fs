@@ -438,9 +438,7 @@ func msgRead(con *Con) {
 
 func msgWrite(con *Con) {
 	var flush *Msg
-	for {
-		m := <-con.wchan
-
+	for m := range con.wchan {
 		eof := false
 
 		// Write each message (if it hasn't been flushed)
