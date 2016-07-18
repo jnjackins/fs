@@ -185,6 +185,7 @@ func Benchmark9pWrite(b *testing.B) {
 	if err != nil {
 		b.Fatalf("testAllocFsys: %v", err)
 	}
+	defer testCleanupFsys(fsys)
 
 	testdata := make([]byte, 8000)
 	for i := range testdata {
@@ -199,7 +200,8 @@ func Benchmark9pWrite(b *testing.B) {
 		{cmd: "9p Tcreate 1 test 0644 2"},
 	} {
 		if err := cliExec(nil, c.cmd); err != nil {
-			b.Fatal(err)
+			b.Error(err)
+			return
 		}
 	}
 
@@ -207,7 +209,8 @@ func Benchmark9pWrite(b *testing.B) {
 	argv := strings.Fields("9p Twrite 1 0 " + string(testdata))
 	for i := 0; i < b.N; i++ {
 		if err := cmd9p(nil, argv); err != nil {
-			b.Fatal(err)
+			b.Error(err)
+			return
 		}
 	}
 
@@ -217,12 +220,9 @@ func Benchmark9pWrite(b *testing.B) {
 		{cmd: "9p Tclunk 0"},
 	} {
 		if err := cliExec(nil, c.cmd); err != nil {
-			b.Fatal(err)
+			b.Error(err)
+			return
 		}
-	}
-
-	if err := testCleanupFsys(fsys); err != nil {
-		b.Fatalf("testCleanupFsys: %v", err)
 	}
 }
 
@@ -231,6 +231,7 @@ func Benchmark9pRead(b *testing.B) {
 	if err != nil {
 		b.Fatalf("testAllocFsys: %v", err)
 	}
+	defer testCleanupFsys(fsys)
 
 	testdata := make([]byte, 8000)
 	for i := range testdata {
@@ -246,7 +247,8 @@ func Benchmark9pRead(b *testing.B) {
 		{cmd: "9p Twrite 1 0 " + string(testdata)},
 	} {
 		if err := cliExec(nil, c.cmd); err != nil {
-			b.Fatal(err)
+			b.Error(err)
+			return
 		}
 	}
 
@@ -254,7 +256,8 @@ func Benchmark9pRead(b *testing.B) {
 	argv := strings.Fields("9p Tread 1 0 8000")
 	for i := 0; i < b.N; i++ {
 		if err := cmd9p(nil, argv); err != nil {
-			b.Fatal(err)
+			b.Error(err)
+			return
 		}
 	}
 
@@ -264,11 +267,9 @@ func Benchmark9pRead(b *testing.B) {
 		{cmd: "9p Tclunk 0"},
 	} {
 		if err := cliExec(nil, c.cmd); err != nil {
-			b.Fatal(err)
+			b.Error(err)
+			return
 		}
 	}
 
-	if err := testCleanupFsys(fsys); err != nil {
-		b.Fatalf("testCleanupFsys: %v", err)
-	}
 }

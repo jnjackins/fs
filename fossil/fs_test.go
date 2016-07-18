@@ -32,18 +32,14 @@ func TestFs(t *testing.T) {
 		}
 	}
 
-	time.Sleep(100 * time.Millisecond) // time to settle
-
 	// test again with a dirty fs
 	t.Run("fs.sync", func(t *testing.T) { testFsSync(t, fs) })
 	t.Run("fs.halt", func(t *testing.T) { testFsHalt(t, fs) })
 	t.Run("fs.snapshot", func(t *testing.T) { testFsSnapshot(t, fs) })
 
-	if !testing.Short() {
-		// wait for archival snapshot to complete (10s plus leeway)
-		time.Sleep(11 * time.Second)
-		t.Run("fs.vac", func(t *testing.T) { testFsVac(t, fs) })
-	}
+	// wait for archival snapshot to complete
+	time.Sleep(100 * time.Millisecond)
+	t.Run("fs.vac", func(t *testing.T) { testFsVac(t, fs) })
 }
 
 func testFsSync(t *testing.T, fs *Fs) {
@@ -80,10 +76,8 @@ func testFsSnapshot(t *testing.T, fs *Fs) {
 	if err := fs.snapshot("", "", false); err != nil {
 		t.Fatalf("snapshot(doarchive=false): %v", err)
 	}
-	if !testing.Short() {
-		if err := fs.snapshot("", "", true); err != nil {
-			t.Errorf("snapshot(doarchive=true): %v", err)
-		}
+	if err := fs.snapshot("", "", true); err != nil {
+		t.Errorf("snapshot(doarchive=true): %v", err)
 	}
 	fs.snapshotCleanup(0)
 }

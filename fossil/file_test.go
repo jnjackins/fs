@@ -7,6 +7,7 @@ func BenchmarkFileWrite(b *testing.B) {
 	if err != nil {
 		b.Fatalf("alloc fsys: %v", err)
 	}
+	defer testCleanupFsys(fsys)
 
 	fs := fsys.getFs()
 
@@ -20,7 +21,7 @@ func BenchmarkFileWrite(b *testing.B) {
 		b.Errorf("open dir: %v", err)
 		return
 	}
-	file, err := dir.create("test", 0644, "none")
+	file, err := dir.create("writetest", 0644, "none")
 	dir.decRef()
 	if err != nil {
 		b.Errorf("create: %v", err)
@@ -39,10 +40,6 @@ func BenchmarkFileWrite(b *testing.B) {
 		return
 	}
 	file.decRef()
-
-	if err := testCleanupFsys(fsys); err != nil {
-		b.Fatalf("cleanup fsys: %v", err)
-	}
 }
 
 func BenchmarkFileRead(b *testing.B) {
@@ -50,6 +47,7 @@ func BenchmarkFileRead(b *testing.B) {
 	if err != nil {
 		b.Fatalf("alloc fsys: %v", err)
 	}
+	defer testCleanupFsys(fsys)
 
 	fs := fsys.getFs()
 
@@ -63,7 +61,7 @@ func BenchmarkFileRead(b *testing.B) {
 		b.Errorf("open dir: %v", err)
 		return
 	}
-	file, err := dir.create("test", 0644, "none")
+	file, err := dir.create("readtest", 0644, "none")
 	dir.decRef()
 	if err != nil {
 		b.Errorf("create: %v", err)
@@ -93,16 +91,13 @@ func BenchmarkFileRead(b *testing.B) {
 		return
 	}
 	file.decRef()
-
-	if err := testCleanupFsys(fsys); err != nil {
-		b.Fatalf("cleanup fsys: %v", err)
-	}
 }
 func BenchmarkFileCreateDelete(b *testing.B) {
 	fsys, err := testAllocFsys()
 	if err != nil {
 		b.Fatalf("alloc fsys: %v", err)
 	}
+	defer testCleanupFsys(fsys)
 
 	fs := fsys.getFs()
 
@@ -113,7 +108,7 @@ func BenchmarkFileCreateDelete(b *testing.B) {
 	}
 
 	for i := 0; i < b.N; i++ {
-		file, err := dir.create("test", 0644, "none")
+		file, err := dir.create("createtest", 0644, "none")
 		if err != nil {
 			b.Errorf("create: %v", err)
 			return
@@ -125,8 +120,4 @@ func BenchmarkFileCreateDelete(b *testing.B) {
 		file.decRef()
 	}
 	dir.decRef()
-
-	if err := testCleanupFsys(fsys); err != nil {
-		b.Fatalf("cleanup fsys: %v", err)
-	}
 }

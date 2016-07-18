@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFsys(t *testing.T) {
@@ -133,23 +134,25 @@ func TestFsysOpenClose(t *testing.T) {
 		t.Fatalf("config: %v", err)
 	}
 
-	// check for leaked goroutines after closing an fsys
-	ngoroutine := runtime.NumGoroutine()
-	t.Logf("start: goroutines=%d", ngoroutine)
-	for i := 0; i < 5; i++ {
+	// check for goroutine leaks
+	for i := 0; i < 10; i++ {
+		before := runtime.NumGoroutine()
+		t.Logf("open: goroutines=%d", before)
 		if err := cmdFsys(nil, tokenize("fsys testfs open -c 100")); err != nil {
 			t.Errorf("open: %v", err)
 			break
 		}
-		t.Logf("open: goroutines=%d", runtime.NumGoroutine())
 		if err := cmdFsys(nil, tokenize("fsys testfs close")); err != nil {
 			t.Errorf("close: %v", err)
 			break
 		}
-		t.Logf("close: goroutines=%d", runtime.NumGoroutine())
+		time.Sleep(100 * time.Millisecond)
 
-		if runtime.NumGoroutine() > ngoroutine+3 {
-			t.Errorf("goroutine leak: started with %d, have %d", ngoroutine, runtime.NumGoroutine())
+		after := runtime.NumGoroutine()
+		t.Logf("close: goroutines=%d", after)
+
+		if after > before {
+			t.Errorf("goroutine leak: started with %d, have %d", before, after)
 		}
 	}
 	if err := fsysUnconfig(nil, "testfs", []string{"unconfig"}); err != nil {

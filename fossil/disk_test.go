@@ -2,29 +2,39 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"syscall"
 	"testing"
 )
 
-func testAllocDisk() (*Disk, error) {
-	fd, err := syscall.Open(testFossilPath, syscall.O_RDWR, 0)
+func testAllocDisk() (*Disk, string, error) {
+	path, err := testFormatFossil()
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+
+	fd, err := syscall.Open(path, syscall.O_RDWR, 0)
+	if err != nil {
+		return nil, path, err
 	}
 
 	disk, err := allocDisk(fd)
 	if err != nil {
-		return nil, err
+		return nil, path, err
 	}
 
-	return disk, nil
+	return disk, path, nil
 }
 
 func TestDisk(t *testing.T) {
-	disk, err := testAllocDisk()
+	disk, path, err := testAllocDisk()
 	if err != nil {
+		if path != "" {
+			os.Remove(path)
+		}
 		t.Fatalf("error allocating disk: %v", err)
 	}
+	defer os.Remove(path)
 	defer disk.free()
 
 	t.Run("disk.readWriteRaw", func(t *testing.T) { testDiskReadWriteRaw(t, disk) })
@@ -53,10 +63,14 @@ func testDiskReadWriteRaw(t *testing.T, disk *Disk) {
 }
 
 func BenchmarkDisk(b *testing.B) {
-	disk, err := testAllocDisk()
+	disk, path, err := testAllocDisk()
 	if err != nil {
+		if path != "" {
+			os.Remove(path)
+		}
 		b.Fatalf("error allocating disk: %v", err)
 	}
+	defer os.Remove(path)
 	defer disk.free()
 
 	b.Run("disk.writeRaw", func(b *testing.B) { benchDiskWriteRaw(b, disk) })

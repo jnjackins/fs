@@ -1,20 +1,21 @@
 package main
 
-import "testing"
-
-func testAllocCache() (*Cache, error) {
-	disk, err := testAllocDisk()
-	if err != nil {
-		return nil, err
-	}
-	return allocCache(disk, nil, 100, OReadWrite), nil
-}
+import (
+	"os"
+	"testing"
+)
 
 func TestCache(t *testing.T) {
-	cache, err := testAllocCache()
+	disk, path, err := testAllocDisk()
 	if err != nil {
-		t.Fatalf("error allocating cache: %v", err)
+		if path != "" {
+			os.Remove(path)
+		}
+		t.Fatalf("error allocating disk: %v", err)
 	}
+	defer os.Remove(path)
+
+	cache := allocCache(disk, nil, 100, OReadWrite)
 	defer cache.free()
 
 	t.Run("cache.local", func(t *testing.T) { testCacheLocal(t, cache) })
