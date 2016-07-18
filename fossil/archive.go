@@ -7,53 +7,42 @@ package main
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"sigint.ca/fs/venti"
 )
 
 type Arch struct {
-	ref       int
 	blockSize uint
-	diskSize  uint
 	c         *Cache
 	fs        *Fs
 	z         *venti.Session
 
-	lk     sync.Mutex
-	starve *sync.Cond
-	die    *sync.Cond
+	work chan struct{}
+	die  chan struct{}
 }
 
 func initArch(c *Cache, disk *Disk, fs *Fs, z *venti.Session) *Arch {
 	a := &Arch{
-		c:         c,
-		z:         z,
-		fs:        fs,
 		blockSize: uint(disk.blockSize()),
-		ref:       2,
+		c:         c,
+		fs:        fs,
+		z:         z,
+		work:      make(chan struct{}),
 	}
-	a.starve = sync.NewCond(&a.lk)
 
 	go a.thread()
+
+	a.kick() // check if there's any work available yet
 
 	return a
 }
 
-func (a *Arch) free() {
-	/* kill slave */
-	a.lk.Lock()
-
-	a.die = sync.NewCond(&a.lk)
-	a.starve.Signal()
-	for a.ref > 1 {
-		// TODO(jnj): DEADLOCK here if arch.thread is trying to acquire a.fs.elk
-		// to record a successful archive to the super block.
-		// the elk
-		a.die.Wait()
-	}
-	a.lk.Unlock()
+func (a *Arch) close() {
+	a.die = make(chan struct{})
+	close(a.work)
+	// wait for any ongoing archive to finish
+	<-a.die
 }
 
 func ventiSend(a *Arch, b *Block, data []byte) error {
@@ -327,7 +316,7 @@ func archWalk(p *Param, addr uint32, typ BlockType, tag uint32) (int, error) {
 // 6. log the vac score
 func (a *Arch) thread() {
 	rbuf := make([]byte, venti.RootSize)
-	for {
+	for range a.work {
 		// look for work
 		a.fs.elk.Lock()
 		b, super, err := getSuper(a.c)
@@ -350,19 +339,9 @@ func (a *Arch) thread() {
 		a.fs.elk.Unlock()
 
 		if addr == NilBlock {
-			// wait for work
-			a.lk.Lock()
-			a.starve.Wait()
-			if a.die != nil {
-				// exit
-				break
-			}
-			a.lk.Unlock()
+			// no work available, wait for next kick
 			continue
 		}
-
-		// TODO(jnj): we can do better.
-		time.Sleep(10 * time.Second) // window of opportunity to provoke races
 
 		// do work
 		start := time.Now()
@@ -428,19 +407,9 @@ func (a *Arch) thread() {
 		logf("archive vac:%v\n", &p.score)
 		logf("archive took %v\n", time.Since(start))
 	}
-
-	a.ref--
-	a.die.Signal()
-	a.lk.Unlock()
+	a.die <- struct{}{}
 }
 
 func (a *Arch) kick() {
-	if a == nil {
-		logf("warning: (*Arch).kick: nil arch\n")
-		return
-	}
-
-	a.lk.Lock()
-	a.starve.Signal()
-	a.lk.Unlock()
+	a.work <- struct{}{}
 }

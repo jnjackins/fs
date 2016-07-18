@@ -204,7 +204,14 @@ func openFs(file string, z *venti.Session, ncache, mode int) (*Fs, error) {
 }
 
 func (fs *Fs) close() {
+	// first finish up any ongoing archival snapshots
+	if fs.arch != nil {
+		fs.arch.close()
+		fs.arch = nil
+	}
+
 	fs.elk.RLock()
+	defer fs.elk.RUnlock()
 
 	if fs.metaFlushTicker != nil {
 		fs.metaFlushTicker.Stop()
@@ -221,12 +228,6 @@ func (fs *Fs) close() {
 	fs.file = nil
 	fs.source.close()
 	fs.cache.free()
-
-	if fs.arch != nil {
-		fs.arch.free()
-	}
-
-	fs.elk.RUnlock() // TODO(jnj): can this be unlocked earlier?
 }
 
 func (fs *Fs) redial(host string) error {
@@ -659,7 +660,9 @@ func (fs *Fs) snapshot(srcpath, dstpath string, doarchive bool) error {
 
 	/* BUG? can fs.arch fall out from under us here? */
 	if doarchive && fs.arch != nil {
-		fs.arch.kick()
+		// spawn a new goroutine so that we can still return
+		// if kick is stuck waiting on a channel send
+		go fs.arch.kick()
 	}
 
 	return nil
