@@ -59,7 +59,7 @@ func (f *File) free() {
  * the file is locked already
  * f.msource is unlocked
  */
-func dirLookup(f *File, elem string) (*File, error) {
+func (f *File) lookupDir(elem string) (*File, error) {
 	meta := f.msource
 	if err := meta.lock(-1); err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func dirLookup(f *File, elem string) (*File, error) {
 		mb, err := unpackMetaBlock(b.data, meta.dsize)
 		if err != nil {
 			b.put()
-			return nil, err
+			return nil, fmt.Errorf("unpack metablock: %v", err)
 		}
 		var i int
 		var me MetaEntry
@@ -86,7 +86,7 @@ func dirLookup(f *File, elem string) (*File, error) {
 			if err != nil {
 				ff.free()
 				b.put()
-				return nil, err
+				return nil, fmt.Errorf("unpack direntry: %v", err)
 			}
 			ff.dir = *de
 
@@ -250,9 +250,9 @@ func (f *File) _walk(elem string, partial bool) (*File, error) {
 		}
 	}
 
-	ff, err := dirLookup(f, elem)
+	ff, err := f.lookupDir(elem)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dir lookup: %v", err)
 	}
 
 	if ff.dir.mode&ModeSnapshot != 0 {
@@ -273,16 +273,16 @@ func (f *File) _walk(elem string, partial bool) (*File, error) {
 	} else if ff.dir.mode&ModeDir != 0 {
 		if ff.source, err = f.openSource(ff.dir.entry, ff.dir.gen, true, uint(ff.mode), ff.issnapshot); err != nil {
 			ff.decRef()
-			return nil, err
+			return nil, fmt.Errorf("open entry source: %v", err)
 		}
 		if ff.msource, err = f.openSource(ff.dir.mentry, ff.dir.mgen, false, uint(ff.mode), ff.issnapshot); err != nil {
 			ff.decRef()
-			return nil, err
+			return nil, fmt.Errorf("open mentry source: %v", err)
 		}
 	} else {
 		if ff.source, err = f.openSource(ff.dir.entry, ff.dir.gen, false, uint(ff.mode), ff.issnapshot); err != nil {
 			ff.decRef()
-			return nil, err
+			return nil, fmt.Errorf("open entry source: %v", err)
 		}
 	}
 
@@ -321,7 +321,7 @@ func (fs *Fs) _openFile(path string, partial bool) (*File, error) {
 		if err != nil {
 			f.decRef()
 			errpath := strings.Join(elems[:i+1], "/")
-			return nil, fmt.Errorf("%s: %v", errpath, err)
+			return nil, fmt.Errorf("walk %s: %v", errpath, err)
 		}
 		f.decRef()
 		f = ff
@@ -384,7 +384,7 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 		}
 	}
 
-	ff, err = dirLookup(f, elem)
+	ff, err = f.lookupDir(elem)
 	if err == nil {
 		err = EExists
 		goto Err1
@@ -703,7 +703,7 @@ func (f *File) setDir(dir *DirEntry, uid string) error {
 			}
 		}
 
-		ff, err := dirLookup(f.up, dir.elem)
+		ff, err := f.up.lookupDir(dir.elem)
 		if err == nil {
 			ff.decRef()
 			return EExists
