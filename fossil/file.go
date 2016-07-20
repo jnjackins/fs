@@ -439,8 +439,9 @@ func (f *File) create(elem string, mode uint32, uid string) (*File, error) {
 	dir.atime = dir.mtime
 	dir.mode = mode
 
-	if ff.boff = f.metaAlloc(dir, 0); ff.boff == NilBlock {
-		err = errors.New("failed to alloc meta")
+	ff.boff, err = f.metaAlloc(dir, 0)
+	if err != nil {
+		err = fmt.Errorf("failed to alloc meta: %v", err)
 		goto Err
 	}
 
@@ -964,9 +965,9 @@ func (f *File) metaFlush2(oelem string) int {
 	 * will fit within the block.  i.e. this code should almost
 	 * never be executed.
 	 */
-	boff := fp.metaAlloc(&f.dir, f.boff+1)
-	if boff == NilBlock {
-		/* (*MetaBlock).resize might have modified block */
+	boff, err := fp.metaAlloc(&f.dir, f.boff+1)
+	if err != nil {
+		// (*MetaBlock).resize might have modified block
 		mb.pack()
 		b.dirty()
 		return -1
@@ -1356,11 +1357,7 @@ func (dee *DirEntryEnum) close() {
  * caller must NOT lock the source and msource
  * referenced by dir.
  */
-func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
-	var bo uint32
-	var b, bb *Block
-	var i, nn, o int
-
+func (f *File) metaAlloc(dir *DirEntry, start uint32) (uint32, error) {
 	s := f.source
 	ms := f.msource
 
@@ -1369,20 +1366,22 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 	if start > nb {
 		start = nb
 	}
-	var epb int
-	var err error
 	var mb *MetaBlock
-	var me MetaEntry
+	var bo uint32
+	var b *Block
 	for bo = start; bo < nb; bo++ {
+		var err error
 		b, err = ms.block(bo, OReadWrite)
 		if err != nil {
-			goto Err
+			b.put()
+			return NilBlock, err
 		}
 		mb, err = unpackMetaBlock(b.data, ms.dsize)
 		if err != nil {
-			goto Err
+			b.put()
+			return NilBlock, err
 		}
-		nn = (mb.maxsize * FullPercentage / 100) - mb.size + mb.free
+		nn := (mb.maxsize * FullPercentage / 100) - mb.size + mb.free
 		if n <= nn && mb.nindex < mb.maxindex {
 			break
 		}
@@ -1395,22 +1394,25 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 		var err error
 		b, err = ms.block(bo, OReadWrite)
 		if err != nil {
-			goto Err
+			b.put()
+			return NilBlock, err
 		}
 		ms.setSize((uint64(nb) + 1) * uint64(ms.dsize))
 		mb = initMetaBlock(b.data, ms.dsize, ms.dsize/BytesPerEntry)
 	}
 
-	o, err = mb.alloc(n)
+	o, err := mb.alloc(n)
 	if err != nil {
 		/* mb.alloc might have changed block */
 		mb.pack()
 
 		b.dirty()
-		err = EBadMeta
-		goto Err
+		b.put()
+		return NilBlock, EBadMeta
 	}
 
+	var i int
+	var me MetaEntry
 	mb.search(dir.elem, &i, &me)
 	assert(me.offset == 0)
 	me.offset = o
@@ -1420,13 +1422,17 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 	mb.pack()
 
 	/* meta block depends on super block for qid ... */
-	bb, err = b.c.local(PartSuper, 0, OReadOnly)
+	bb, err := b.c.local(PartSuper, 0, OReadOnly)
+	if err != nil {
+		b.put()
+		return NilBlock, EBadMeta
+	}
 
 	b.dependency(bb, -1, nil, nil)
 	bb.put()
 
 	/* ... and one or two dir entries */
-	epb = s.dsize / venti.EntrySize
+	epb := s.dsize / venti.EntrySize
 
 	bb, err = s.block(dir.entry/uint32(epb), OReadOnly)
 	b.dependency(bb, -1, nil, nil)
@@ -1439,11 +1445,7 @@ func (f *File) metaAlloc(dir *DirEntry, start uint32) uint32 {
 
 	b.dirty()
 	b.put()
-	return bo
-
-Err:
-	b.put()
-	return NilBlock
+	return bo, nil
 }
 
 func chkSource(f *File) error {
@@ -1487,8 +1489,8 @@ func (f *File) unlock() {
 }
 
 /*
- * f->source and f->msource must NOT be locked.
- * fileMetaFlush locks the fileMeta and then the source (in fileMetaFlush2).
+ * f.source and f.msource must NOT be locked.
+ * (*File).metaFlush locks the fileMeta and then the source (in (*File).metaFlush2).
  * We have to respect that ordering.
  */
 func (f *File) metaLock() {
@@ -1504,8 +1506,8 @@ func (f *File) metaUnlock() {
 }
 
 /*
- * f->source and f->msource must NOT be locked.
- * see fileMetaLock.
+ * f.source and f.msource must NOT be locked.
+ * see (*File).metaLock.
  */
 func (f *File) rAccess() {
 	if f.mode == OReadOnly || f.fs.noatimeupd {
@@ -1519,8 +1521,8 @@ func (f *File) rAccess() {
 }
 
 /*
- * f->source and f->msource must NOT be locked.
- * see fileMetaLock.
+ * f.source and f.msource must NOT be locked.
+ * see (*File).metaLock.
  */
 func (f *File) wAccess(mid string) {
 	if f.mode == OReadOnly {
