@@ -20,15 +20,14 @@ const (
 
 // An Fs is a fossil internal filesystem representation.
 type Fs struct {
-	arch       *Arch          /* immutable */
-	cache      *Cache         /* immutable */
-	mode       int            /* immutable */
-	noatimeupd bool           /* immutable */
-	blockSize  int            /* immutable */
-	z          *venti.Session /* immutable */
-	snap       *Snap          /* immutable */
-
-	name string // immutable; copy here & Fsys to ease error reporting
+	arch       *Arch          // (immutable)
+	cache      *Cache         // (immutable)
+	mode       int            // do not update file access times (immutable)
+	noatimeupd bool           // (immutable)
+	blockSize  int            // (immutable)
+	z          *venti.Session // (immutable)
+	snap       *Snap          // (immutable)
+	name       string         // copy here & Fsys to ease error reporting (immutable)
 
 	metaFlushTicker *time.Ticker  // periodically flushes metadata cached in files
 	metaFlushStop   chan struct{} // signal metaFlushTicker goroutine to exit
@@ -65,7 +64,7 @@ type Snap struct {
 	lastCleanup time.Time
 }
 
-func openFs(file string, z *venti.Session, ncache, mode int) (*Fs, error) {
+func openFs(file, name string, z *venti.Session, noatimeupd bool, ncache, mode int) (*Fs, error) {
 	var m int
 	switch mode {
 	default:
@@ -87,12 +86,16 @@ func openFs(file string, z *venti.Session, ncache, mode int) (*Fs, error) {
 		return nil, fmt.Errorf("allocDisk: %v", err)
 	}
 
+	if name == "" {
+		name = file
+	}
 	fs := &Fs{
-		mode:      mode,
-		name:      file,
-		blockSize: disk.blockSize(),
-		cache:     allocCache(disk, z, ncache, mode),
-		z:         z,
+		mode:       mode,
+		name:       name,
+		blockSize:  disk.blockSize(),
+		cache:      allocCache(disk, z, ncache, mode),
+		z:          z,
+		noatimeupd: noatimeupd,
 	}
 
 	if mode == OReadWrite && z != nil {

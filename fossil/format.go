@@ -337,7 +337,7 @@ func addFile(root *File, name string, mode uint) {
 
 func topLevel(name string, z *venti.Session) {
 	/* ok, now we can open as a fs */
-	fs, err := openFs(name, z, 100, OReadWrite)
+	fs, err := openFs(name, "", z, false, 100, OReadWrite)
 	if err != nil {
 		fatalf("format: open fs: %v", err)
 	}

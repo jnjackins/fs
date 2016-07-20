@@ -1646,18 +1646,16 @@ func fsysOpen(cons *Cons, name string, argv []string) error {
 		}
 	}
 
-	fsys.fs, err = openFs(fsys.dev, fsys.session, ncache, mode)
+	fsys.fs, err = openFs(fsys.dev, fsys.name, fsys.session, *aflag, ncache, mode)
 	if err != nil {
 		fsys.lock.Unlock()
 		fsys.put()
 		return fmt.Errorf("open fs %q: %v", fsys.name, err)
 	}
 
-	fsys.fs.name = fsys.name /* for better error messages */
 	fsys.noauth = *Aflag
 	fsys.noperm = *Pflag
 	fsys.wstatallow = *Wflag
-	fsys.fs.noatimeupd = *aflag
 	fsys.lock.Unlock()
 	fsys.put()
 
