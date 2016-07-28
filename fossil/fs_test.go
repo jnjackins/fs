@@ -8,13 +8,18 @@ import (
 )
 
 func TestFs(t *testing.T) {
-	fsys, err := testAllocFsys()
-	if err != nil {
+	if err := testAllocFsys(); err != nil {
 		t.Fatalf("testAllocFsys: %v", err)
 	}
-	defer testCleanupFsys(fsys)
+	defer testCleanupFsys()
 
-	fs := fsys.fs
+	fsys, err := getFsys("testfs")
+	if err != nil {
+		t.Errorf("get fsys: %v", err)
+		return
+	}
+	fs := fsys.getFs()
+	fsys.put()
 
 	// create some dirty blocks
 	for _, c := range []struct{ cmd, match string }{

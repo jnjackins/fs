@@ -6,8 +6,7 @@ import (
 )
 
 func TestCmd(t *testing.T) {
-	fsys, err := testAllocFsys()
-	if err != nil {
+	if err := testAllocFsys(); err != nil {
 		t.Fatalf("testAllocFsys: %v", err)
 	}
 
@@ -16,7 +15,7 @@ func TestCmd(t *testing.T) {
 	t.Run("cmdWho", func(t *testing.T) { testCmdWho(t, nil) })
 	t.Run("cmdCon", func(t *testing.T) { testCmdCon(t, nil) })
 
-	if err := testCleanupFsys(fsys); err != nil {
+	if err := testCleanupFsys(); err != nil {
 		t.Fatalf("testCleanupFsys: %v", err)
 	}
 }

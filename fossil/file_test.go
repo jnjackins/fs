@@ -3,13 +3,18 @@ package main
 import "testing"
 
 func BenchmarkFileWrite(b *testing.B) {
-	fsys, err := testAllocFsys()
-	if err != nil {
-		b.Fatalf("alloc fsys: %v", err)
+	if err := testAllocFsys(); err != nil {
+		b.Fatalf("testAllocFsys: %v", err)
 	}
-	defer testCleanupFsys(fsys)
+	defer testCleanupFsys()
 
+	fsys, err := getFsys("testfs")
+	if err != nil {
+		b.Errorf("get fsys: %v", err)
+		return
+	}
 	fs := fsys.getFs()
+	fsys.put()
 
 	buf := make([]byte, 10*8192)
 	for i := 0; i < len(buf); i++ {
@@ -43,13 +48,18 @@ func BenchmarkFileWrite(b *testing.B) {
 }
 
 func BenchmarkFileRead(b *testing.B) {
-	fsys, err := testAllocFsys()
-	if err != nil {
-		b.Fatalf("alloc fsys: %v", err)
+	if err := testAllocFsys(); err != nil {
+		b.Fatalf("testAllocFsys: %v", err)
 	}
-	defer testCleanupFsys(fsys)
+	defer testCleanupFsys()
 
+	fsys, err := getFsys("testfs")
+	if err != nil {
+		b.Errorf("get fsys: %v", err)
+		return
+	}
 	fs := fsys.getFs()
+	fsys.put()
 
 	buf := make([]byte, 10*8192)
 	for i := 0; i < len(buf); i++ {
@@ -93,13 +103,18 @@ func BenchmarkFileRead(b *testing.B) {
 	file.decRef()
 }
 func BenchmarkFileCreateDelete(b *testing.B) {
-	fsys, err := testAllocFsys()
-	if err != nil {
-		b.Fatalf("alloc fsys: %v", err)
+	if err := testAllocFsys(); err != nil {
+		b.Fatalf("testAllocFsys: %v", err)
 	}
-	defer testCleanupFsys(fsys)
+	defer testCleanupFsys()
 
+	fsys, err := getFsys("testfs")
+	if err != nil {
+		b.Errorf("get fsys: %v", err)
+		return
+	}
 	fs := fsys.getFs()
+	fsys.put()
 
 	dir, err := fs.openFile("/active")
 	if err != nil {

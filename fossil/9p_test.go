@@ -41,8 +41,7 @@ func (c *test9pConn) Write(p []byte) (int, error) {
 }
 
 func Test9p(t *testing.T) {
-	fsys, err := testAllocFsys()
-	if err != nil {
+	if err := testAllocFsys(); err != nil {
 		t.Fatalf("testAllocFsys: %v", err)
 	}
 
@@ -175,17 +174,16 @@ func Test9p(t *testing.T) {
 		}
 	}
 
-	if err := testCleanupFsys(fsys); err != nil {
+	if err := testCleanupFsys(); err != nil {
 		t.Fatalf("testCleanupFsys: %v", err)
 	}
 }
 
 func Benchmark9pWrite(b *testing.B) {
-	fsys, err := testAllocFsys()
-	if err != nil {
+	if err := testAllocFsys(); err != nil {
 		b.Fatalf("testAllocFsys: %v", err)
 	}
-	defer testCleanupFsys(fsys)
+	defer testCleanupFsys()
 
 	testdata := make([]byte, 8000)
 	for i := range testdata {
@@ -227,11 +225,10 @@ func Benchmark9pWrite(b *testing.B) {
 }
 
 func Benchmark9pRead(b *testing.B) {
-	fsys, err := testAllocFsys()
-	if err != nil {
+	if err := testAllocFsys(); err != nil {
 		b.Fatalf("testAllocFsys: %v", err)
 	}
-	defer testCleanupFsys(fsys)
+	defer testCleanupFsys()
 
 	testdata := make([]byte, 8000)
 	for i := range testdata {

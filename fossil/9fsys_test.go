@@ -11,8 +11,7 @@ import (
 )
 
 func TestFsys(t *testing.T) {
-	fsys, err := testAllocFsys()
-	if err != nil {
+	if err := testAllocFsys(); err != nil {
 		t.Fatalf("testAllocFsys: %v", err)
 	}
 
@@ -35,29 +34,31 @@ func TestFsys(t *testing.T) {
 		}
 	}
 
-	t.Run("fsysDf", func(t *testing.T) { testFsysDf(t, fsys) })
-	t.Run("fsysCheck", func(t *testing.T) { testFsysCheck(t, fsys) })
+	t.Run("fsysDf", testFsysDf)
+	t.Run("fsysCheck", testFsysCheck)
 
-	if err := testCleanupFsys(fsys); err != nil {
+	if err := testCleanupFsys(); err != nil {
 		t.Fatalf("testCleanupFsys: %v", err)
 	}
 }
 
-func testFsysDf(t *testing.T, fsys *Fsys) {
+func testFsysDf(t *testing.T) {
 	cons, buf := testCons()
 
-	if err := fsysDf(cons, fsys, tokenize("df")); err != nil {
-		t.Fatal("df: %v", err)
+	if err := cliExec(cons, "fsys testfs df"); err != nil {
+		t.Errorf("df: %v", err)
+		return
 	}
 	t.Logf("%s", bytes.TrimSpace(buf.Bytes()))
 }
 
-func testFsysCheck(t *testing.T, fsys *Fsys) {
+func testFsysCheck(t *testing.T) {
 	buf := new(bytes.Buffer)
 	cons := &Cons{conn: (nopCloser{buf})}
 
-	if err := fsysCheck(cons, fsys, tokenize("check")); err != nil {
-		t.Fatal("check: %v", err)
+	if err := cliExec(cons, "fsys testfs check"); err != nil {
+		t.Errorf("check: %v", err)
+		return
 	}
 	out := strings.TrimSpace(buf.String())
 	t.Log(out)
@@ -99,32 +100,26 @@ func TestFsysParseMode(t *testing.T) {
 	}
 }
 
-func testAllocFsys() (*Fsys, error) {
-	if err := fsysConfig(nil, "testfs", []string{"config", testFossilPath}); err != nil {
-		return nil, fmt.Errorf("fsysConfig: %v", err)
+func testAllocFsys() error {
+	if err := cliExec(nil, "fsys testfs config "+testFossilPath); err != nil {
+		return fmt.Errorf("config fsys: %v", err)
 	}
 
 	os.Setenv("venti", "localhost")
-	if err := fsysOpen(nil, "testfs", []string{"open", "-AWP"}); err != nil {
-		return nil, fmt.Errorf("fsysOpen: %v", err)
+	if err := cliExec(nil, "fsys testfs open -AWP"); err != nil {
+		return fmt.Errorf("open fsys: %v", err)
 	}
 
-	fsys, err := getFsys("testfs")
-	if err != nil {
-		return nil, fmt.Errorf("getFsys: %v", err)
-	}
-
-	return fsys, nil
+	return nil
 }
 
-func testCleanupFsys(fsys *Fsys) error {
-	if err := fsysClose(nil, fsys, []string{"close"}); err != nil {
-		return fmt.Errorf("fsysClose: %v", err)
+func testCleanupFsys() error {
+	if err := cliExec(nil, "fsys testfs close"); err != nil {
+		return fmt.Errorf("close fsys: %v", err)
 	}
-	fsys.put()
 
-	if err := fsysUnconfig(nil, "testfs", []string{"unconfig"}); err != nil {
-		return fmt.Errorf("fsysUnconfig: %v", err)
+	if err := cliExec(nil, "fsys testfs unconfig"); err != nil {
+		return fmt.Errorf("unconfig fsys: %v", err)
 	}
 	return nil
 }
@@ -138,15 +133,15 @@ func TestFsysOpenClose(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		before := runtime.NumGoroutine()
 		t.Logf("open: goroutines=%d", before)
-		if err := cmdFsys(nil, tokenize("fsys testfs open -c 100")); err != nil {
+		if err := cliExec(nil, "fsys testfs open -c 100"); err != nil {
 			t.Errorf("open: %v", err)
 			break
 		}
-		if err := cmdFsys(nil, tokenize("fsys testfs close")); err != nil {
+		if err := cliExec(nil, "fsys testfs close"); err != nil {
 			t.Errorf("close: %v", err)
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 
 		after := runtime.NumGoroutine()
 		t.Logf("close: goroutines=%d", after)
@@ -155,7 +150,7 @@ func TestFsysOpenClose(t *testing.T) {
 			t.Errorf("goroutine leak: started with %d, have %d", before, after)
 		}
 	}
-	if err := fsysUnconfig(nil, "testfs", []string{"unconfig"}); err != nil {
+	if err := cliExec(nil, "fsys testfs unconfig"); err != nil {
 		t.Fatalf("unconfig: %v", err)
 	}
 }
