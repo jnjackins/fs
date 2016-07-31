@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -27,9 +28,10 @@ func TestOSFileOps(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpdir)
 
+	// srv directory
 	os.Setenv("NAMESPACE", tmpdir)
 
-	// mount 4 srvs at 4 differnt mountpoints
+	// mount 4 srvs at 4 different mountpoints
 	var mntpts []string
 	for i := 1; i <= 4; i++ {
 		srvname := fmt.Sprintf("fossil.srv.%d", i)
@@ -37,9 +39,9 @@ func TestOSFileOps(t *testing.T) {
 			t.Errorf("srv %s: %v", srvname, err)
 			return
 		}
-		mntpt := fmt.Sprintf("%s/fossil.mnt.%d", tmpdir, i)
+		mntpt := filepath.Join(tmpdir, fmt.Sprintf("fossil.mnt.%d", i))
 		if err := os.Mkdir(mntpt, 0755); err != nil {
-			t.Errorf("mkdir %s: %v", mntpt, err)
+			t.Error(err)
 			return
 		}
 		srvpath := filepath.Join(tmpdir, srvname)
@@ -50,7 +52,7 @@ func TestOSFileOps(t *testing.T) {
 		mntpts = append(mntpts, mntpt)
 	}
 
-	// test sequential ops on a single mount
+	// test sequential ops on one mount
 	t.Run("sequential-small", func(t *testing.T) {
 		path := mntpts[0]
 		testOSFileOpsSmall(t, path, "seq")
@@ -181,34 +183,28 @@ func testOSFileOpsSmall(t *testing.T, mntpt, dir string) {
 }
 
 func testOSFileOpsLarge(t *testing.T, mntpt, dir string) {
-	f, err := os.Open("/dev/urandom")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	var data bytes.Buffer
-	io.CopyN(&data, f, 500*1024)
+	data := randomTestData(500 * 1024)
 
 	n := 20
 	if testing.Short() {
 		n = 2
 	}
-	testOSFileOps(t, data.Bytes(), n, mntpt, dir)
+	testOSFileOps(t, data, n, mntpt, dir)
 }
 
 func testOSFileOps(t *testing.T, data []byte, n int, mntpt, dir string) {
 	dpath := mntpt + "/" + dir
 	if err := os.Mkdir(dpath, 755); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer os.RemoveAll(dpath)
-	short := fmt.Sprintf("%s/%s", filepath.Base(mntpt), dir)
+	short := filepath.Join(filepath.Base(mntpt), dir)
 
 	var fail bool
 	var i int
 	for i = 0; i < n && !fail; i++ {
-		path := fmt.Sprintf("%s/test%d", dpath, i)
-		base := filepath.Base(path)
+		name := fmt.Sprintf("test%d", i)
+		path := filepath.Join(dpath, name)
 		f, err := os.Create(path)
 		if err != nil {
 			t.Error(err)
@@ -224,36 +220,144 @@ func testOSFileOps(t *testing.T, data []byte, n int, mntpt, dir string) {
 		}
 		info, err := os.Stat(path)
 		if err != nil {
-			t.Errorf("stat 1: %v", err)
+			t.Error(err)
 			continue
 		} else {
-			if info.Name() != base {
-				t.Errorf("stat 1: wanted name=%q, got %q", info.Name(), base)
+			if info.Name() != name {
+				t.Errorf("stat: wanted name=%q, got %q", info.Name(), name)
 				continue
 			}
 		}
-
 		buf, err := ioutil.ReadFile(path)
 		if err != nil {
 			t.Error(err)
 			continue
 		}
-
-		if _, err := os.Stat(path); err != nil {
-			t.Errorf("stat 2: %v", err)
-			continue
-		}
-
 		if !bytes.Equal(buf, data) {
-			t.Errorf("read from %s/%s did not match write", short, base)
+			t.Errorf("read from %s/%s did not match write", short, name)
 			continue
 		}
-
 		if err := os.Remove(path); err != nil {
 			t.Error(err)
 			continue
 		}
 	}
+}
+
+func BenchmarkOSFileOps(b *testing.B) {
+	if err := testAllocFsys(); err != nil {
+		b.Fatalf("testAllocFsys: %v", err)
+	}
+	defer testCleanupFsys()
+
+	tmpdir, err := ioutil.TempDir("", "fossil")
+	if err != nil {
+		b.Errorf("error creating temp dir: %v", err)
+		return
+	}
+	defer os.RemoveAll(tmpdir)
+
+	// srv directory
+	os.Setenv("NAMESPACE", tmpdir)
+
+	if err := cliExec(nil, "srv fossil.srv"); err != nil {
+		b.Errorf("srv: %v", err)
+		return
+	}
+	mntpt := filepath.Join(tmpdir, "fossil.mnt")
+	if err := os.Mkdir(mntpt, 0755); err != nil {
+		b.Error(err)
+		return
+	}
+	srvpath := filepath.Join(tmpdir, "fossil.srv")
+	if err := testMount(srvpath, mntpt); err != nil {
+		b.Error(err)
+		return
+	}
+
+	dataSmall := randomTestData(10)
+	bufSmall := make([]byte, len(dataSmall))
+	dataLarge := randomTestData(5 * 1024 * 1024)
+	bufLarge := make([]byte, len(dataLarge))
+
+	intc := make(chan int)
+	go func() {
+		var i int
+		for {
+			intc <- i
+			i++
+		}
+	}()
+
+	b.Run("sequential-small", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			name := fmt.Sprintf("test%d", <-intc)
+			path := filepath.Join(mntpt, name)
+			doBenchOSFileOps(b, path, dataSmall, bufSmall)
+		}
+	})
+	b.Run("sequential-large", func(b *testing.B) {
+		if runtime.GOOS == "darwin" {
+			b.Skip("writes >8k broken on darwin")
+		}
+		for i := 0; i < b.N; i++ {
+			name := fmt.Sprintf("test%d", <-intc)
+			path := filepath.Join(mntpt, name)
+			doBenchOSFileOps(b, path, dataLarge, bufLarge)
+		}
+	})
+	b.Run("parallel-small", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				name := fmt.Sprintf("test%d", <-intc)
+				path := filepath.Join(mntpt, name)
+				doBenchOSFileOps(b, path, dataSmall, bufSmall)
+			}
+		})
+	})
+	b.Run("parallel-large", func(b *testing.B) {
+		if runtime.GOOS == "darwin" {
+			b.Skip("writes >8k broken on darwin")
+		}
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				name := fmt.Sprintf("test%d", <-intc)
+				path := filepath.Join(mntpt, name)
+				doBenchOSFileOps(b, path, dataLarge, bufLarge)
+			}
+		})
+	})
+
+	if err := testUmount(mntpt); err != nil {
+		b.Error(err)
+		return
+	}
+}
+
+var benchDiscard []byte
+
+func doBenchOSFileOps(b *testing.B, path string, data, buf []byte) {
+	if err := ioutil.WriteFile(path, data, 0644); err != nil {
+		b.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if n, err := f.Read(buf); n != len(buf) || err != nil {
+		if err == nil {
+			err = errors.New("short read")
+		}
+		b.Fatal(err)
+	}
+	benchDiscard = buf
+	if err := f.Close(); err != nil {
+		b.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		b.Fatal(err)
+	}
+
 }
 
 func testMount(srv, mntpt string) error {
@@ -286,4 +390,15 @@ func testUmount(path string) error {
 	}
 
 	return nil
+}
+
+func randomTestData(n int) []byte {
+	f, err := os.Open("/dev/urandom")
+	if err != nil {
+		panic(err)
+	}
+	var data bytes.Buffer
+	io.CopyN(&data, f, int64(n))
+
+	return data.Bytes()
 }
