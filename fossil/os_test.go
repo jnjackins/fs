@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -41,18 +42,13 @@ func TestOSFileOps(t *testing.T) {
 			t.Errorf("mkdir %s: %v", mntpt, err)
 			return
 		}
-
 		srvpath := filepath.Join(tmpdir, srvname)
-		err := exec.Command("9pfuse", "-a", "testfs/active", srvpath, mntpt).Start()
-		if err != nil {
-			t.Errorf("start 9pfuse: %v", err)
+		if err := testMount(srvpath, mntpt); err != nil {
+			t.Error(err)
 			return
 		}
 		mntpts = append(mntpts, mntpt)
 	}
-
-	// wait for 9pfuse to start and fork to background
-	time.Sleep(500 * time.Millisecond)
 
 	// test sequential ops on a single mount
 	t.Run("sequential-small", func(t *testing.T) {
@@ -60,6 +56,9 @@ func TestOSFileOps(t *testing.T) {
 		testOSFileOpsSmall(t, path, "seq")
 	})
 	t.Run("sequential-large", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
+			t.Skip("writes >8k broken on darwin")
+		}
 		path := mntpts[0]
 		testOSFileOpsLarge(t, path, "seq")
 	})
@@ -77,6 +76,9 @@ func TestOSFileOps(t *testing.T) {
 		}
 	})
 	t.Run("parallel-1mount-large", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
+			t.Skip("writes >8k broken on darwin")
+		}
 		path := mntpts[0]
 		for i := 0; i < 4; i++ {
 			func(dir string) {
@@ -101,6 +103,9 @@ func TestOSFileOps(t *testing.T) {
 		}
 	})
 	t.Run("parallel-nmounts-large", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
+			t.Skip("writes >8k broken on darwin")
+		}
 		for i, path := range mntpts {
 			func(mntpt, dir string) {
 				base := filepath.Base(mntpt)
@@ -114,9 +119,8 @@ func TestOSFileOps(t *testing.T) {
 
 	// unmount everything
 	for _, path := range mntpts {
-		out, err := exec.Command("umount", path).CombinedOutput()
-		if err != nil {
-			t.Errorf("umount %s: %v: %s", filepath.Base(path), err, out)
+		if err := testUmount(path); err != nil {
+			t.Error(err)
 			return
 		}
 	}
@@ -124,15 +128,11 @@ func TestOSFileOps(t *testing.T) {
 	// mount 1 srv at 4 different mountpoints
 	srvpath := filepath.Join(tmpdir, "fossil.srv.1")
 	for _, mntpt := range mntpts {
-		err := exec.Command("9pfuse", "-a", "testfs/active", srvpath, mntpt).Start()
-		if err != nil {
-			t.Errorf("start 9pfuse: %v", err)
+		if err := testMount(srvpath, mntpt); err != nil {
+			t.Error(err)
 			return
 		}
 	}
-
-	// wait for 9pfuse to start and fork to background
-	time.Sleep(500 * time.Millisecond)
 
 	// test parallel ops on different mounts of the same srv
 	t.Run("parallel-nmounts-1srv-small", func(t *testing.T) {
@@ -147,6 +147,9 @@ func TestOSFileOps(t *testing.T) {
 		}
 	})
 	t.Run("parallel-nmounts-1srv-large", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
+			t.Skip("writes >8k broken on darwin")
+		}
 		for i, path := range mntpts {
 			func(mntpt, dir string) {
 				base := filepath.Base(mntpt)
@@ -160,9 +163,8 @@ func TestOSFileOps(t *testing.T) {
 
 	// unmount everything
 	for _, path := range mntpts {
-		out, err := exec.Command("umount", path).CombinedOutput()
-		if err != nil {
-			t.Errorf("umount %s: %v: %s", filepath.Base(path), err, out)
+		if err := testUmount(path); err != nil {
+			t.Error(err)
 			return
 		}
 	}
@@ -185,9 +187,9 @@ func testOSFileOpsLarge(t *testing.T, mntpt, dir string) {
 		return
 	}
 	var data bytes.Buffer
-	io.CopyN(&data, f, 2000) // TODO(jnj): increase to >8K
+	io.CopyN(&data, f, 500*1024)
 
-	n := 50
+	n := 20
 	if testing.Short() {
 		n = 2
 	}
@@ -252,4 +254,36 @@ func testOSFileOps(t *testing.T, data []byte, n int, mntpt, dir string) {
 			continue
 		}
 	}
+}
+
+func testMount(srv, mntpt string) error {
+	err := exec.Command("9pfuse", "-a", "testfs/active", srv, mntpt).Start()
+	if err != nil {
+		return fmt.Errorf("start 9pfuse: %v", err)
+	}
+
+	// we can't wait for 9pfuse, because it forks to the background.
+	// give it some time to start up.
+	time.Sleep(100 * time.Millisecond)
+
+	return nil
+}
+
+func testUmount(path string) error {
+	var cmd string
+	var args []string
+	if cmdPath, err := exec.LookPath("fusermount"); err == nil {
+		cmd = cmdPath
+		args = []string{"-u", path}
+	} else {
+		cmd = "umount"
+		args = []string{path}
+	}
+
+	out, err := exec.Command(cmd, args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", out)
+	}
+
+	return nil
 }
