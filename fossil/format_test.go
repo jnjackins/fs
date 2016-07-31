@@ -7,6 +7,14 @@ import (
 )
 
 func testFormatFossil() (string, error) {
+	device := os.Getenv("FOSSIL_TEST_DEVICE")
+	if device != "" {
+		format([]string{"-b", "8K", "-y", device})
+		return device, nil
+	}
+
+	// no test device, use a temporary file as a fake device
+
 	tmpfile, err := ioutil.TempFile("", "fossil.part")
 	if err != nil {
 		log.Fatal(err)
@@ -24,6 +32,7 @@ func testFormatFossil() (string, error) {
 	}
 
 	tmpfile.Close()
+
 	format([]string{"-b", "8K", "-y", path})
 
 	return path, nil
