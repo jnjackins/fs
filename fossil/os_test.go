@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -344,11 +343,14 @@ func doBenchOSFileOps(b *testing.B, path string, data, buf []byte) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	if n, err := f.Read(buf); n != len(buf) || err != nil {
-		if err == nil {
-			err = errors.New("short read")
+	p := buf
+	for len(p) > 0 {
+		n, err := f.Read(p)
+		if err != nil {
+			b.Error(err)
+			break
 		}
-		b.Fatal(err)
+		p = p[n:]
 	}
 	benchDiscard = buf
 	if err := f.Close(); err != nil {
