@@ -16,7 +16,7 @@ var foptname string = "/none/such"
 func start(argv []string) {
 	flags := flag.NewFlagSet("start", flag.ExitOnError)
 	flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-t] [-c cmd] [-f partition] [-m %%]\n", argv0)
+		fmt.Fprintf(os.Stderr, "Usage: %s [-t] [-c cmd] [-f partition]\n", argv0)
 		flags.PrintDefaults()
 		os.Exit(1)
 	}

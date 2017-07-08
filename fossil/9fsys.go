@@ -1514,7 +1514,7 @@ func fsysVenti(cons *console.Cons, name string, argv []string) error {
 func fsysOpen(cons *console.Cons, name string, argv []string) error {
 	argv = fixFlags(argv)
 
-	usage := "Usage: fsys main open [-APVWr] [-c ncache]"
+	usage := fmt.Sprintf("Usage: fsys %s open [-APVWr] [-c ncache]", name)
 
 	flags := flag.NewFlagSet("open", flag.ContinueOnError)
 	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
