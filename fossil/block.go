@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sync"
 
+	"sigint.ca/fs/fossil/console"
 	"sigint.ca/fs/venti"
 )
 
@@ -227,11 +228,11 @@ func (b *Block) unlock() {
 	}
 }
 
-func printLocks(cons *Cons, c *Cache) {
+func printLocks(cons *console.Cons, c *Cache) {
 	c.llk.Lock()
 	defer c.llk.Unlock()
 
 	for block, caller := range c.lockinfo {
-		cons.printf("block %v locked by: %s\n", block, caller)
+		cons.Printf("block %v locked by: %s\n", block, caller)
 	}
 }

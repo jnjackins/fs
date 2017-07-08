@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 func TestUserFile(t *testing.T) {
@@ -31,12 +33,15 @@ func TestUserFile(t *testing.T) {
 		"users -d",
 		"users -r /active/adm/users",
 	} {
-		if err := cliExec(nil, cmd); err != nil {
+		if err := console.Exec(nil, cmd); err != nil {
 			t.Errorf("%s: create new user: %v", cmd, err)
 		}
 	}
+
 	cons, buf := testCons()
-	if err := cliExec(cons, "uname -d"); err != nil {
+	defer cons.Close()
+
+	if err := console.Exec(cons, "uname -d"); err != nil {
 		t.Errorf("dump user table: %v", err)
 	}
 	out := strings.TrimSpace(buf.String())
@@ -52,7 +57,7 @@ test1:test2::
 test4:test3:glenda:`
 
 	if out != want {
-		t.Errorf("bad user table: got %+s, want %+s", out, want)
+		t.Errorf("bad user table:\ngot:\n%+s\n\nwant:\n%+s", out, want)
 	}
 
 	fsys, err := getFsys("main")

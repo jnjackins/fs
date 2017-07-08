@@ -1,4 +1,4 @@
-package main
+package console
 
 import (
 	"fmt"
@@ -15,11 +15,7 @@ var clibox struct {
 	cmd  []Cmd
 }
 
-const (
-	NCmdIncr = 20
-)
-
-func cliExec(cons *Cons, buf string) error {
+func Exec(cons *Cons, buf string) error {
 	argv := tokenize(buf)
 
 	if len(argv) == 0 || argv[0][0] == '#' {
@@ -30,7 +26,7 @@ func cliExec(cons *Cons, buf string) error {
 	for _, c := range clibox.cmd {
 		if c.argv0 == argv[0] {
 			clibox.lock.Unlock()
-			if err := c.cmd(cons, argv); err != nil && err != EUsage {
+			if err := c.cmd(cons, argv); err != nil /* && err != EUsage */ {
 				return err
 			}
 			return nil
@@ -41,7 +37,7 @@ func cliExec(cons *Cons, buf string) error {
 	return fmt.Errorf("%s: - eh?", argv[0])
 }
 
-func cliAddCmd(argv0 string, cmd func(*Cons, []string) error) error {
+func AddCmd(argv0 string, cmd func(*Cons, []string) error) error {
 	clibox.lock.Lock()
 	defer clibox.lock.Unlock()
 

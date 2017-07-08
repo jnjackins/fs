@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 func TestCmd(t *testing.T) {
@@ -20,13 +22,13 @@ func TestCmd(t *testing.T) {
 	}
 }
 
-func testCmdPrintConfig(t *testing.T, cons *Cons) {
+func testCmdPrintConfig(t *testing.T, cons *console.Cons) {
 	if err := cmdPrintConfig(cons, strings.Fields("printconfig")); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func testCmdMsg(t *testing.T, cons *Cons) {
+func testCmdMsg(t *testing.T, cons *console.Cons) {
 	if err := cmdMsg(cons, strings.Fields("msg")); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +40,7 @@ func testCmdMsg(t *testing.T, cons *Cons) {
 	}
 }
 
-func testCmdWho(t *testing.T, cons *Cons) {
+func testCmdWho(t *testing.T, cons *console.Cons) {
 	// first run with no open fids
 	if err := cmdWho(cons, strings.Fields("who")); err != nil {
 		t.Fatalf("cmdWho: %v", err)
@@ -69,7 +71,7 @@ func testCmdWho(t *testing.T, cons *Cons) {
 	}
 }
 
-func testCmdCon(t *testing.T, cons *Cons) {
+func testCmdCon(t *testing.T, cons *console.Cons) {
 	if err := cmdCon(cons, strings.Fields("con")); err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"unicode"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 var (
@@ -15,7 +17,7 @@ var (
 )
 
 func start(argv []string) {
-	flags := flag.NewFlagSet("serve", flag.ExitOnError)
+	flags := flag.NewFlagSet("start", flag.ExitOnError)
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [-t] [-c cmd] [-f partition] [-m %%]\n", argv0)
 		flags.PrintDefaults()
@@ -55,9 +57,9 @@ func start(argv []string) {
 	lstnInit()
 	usersInit()
 
-	var cons *Cons
+	var cons *console.Cons
 	if *tflag {
-		tty, err := newTTY()
+		tty, err := console.NewTTYCons()
 		if err != nil {
 			fatalf("error opening tty: %v", err)
 		}
@@ -65,13 +67,13 @@ func start(argv []string) {
 	}
 
 	for i := 0; i < len(cmd); i++ {
-		cons.printf("%s\n", cmd[i])
-		if err := cliExec(cons, cmd[i]); err != nil {
-			cons.printf("%v\n", err)
+		cons.Printf("%s\n", cmd[i])
+		if err := console.Exec(cons, cmd[i]); err != nil {
+			cons.Printf("%v\n", err)
 		}
 	}
 	if len(cmd) > 0 {
-		cons.prompt()
+		cons.Prompt()
 	}
 
 	runtime.Goexit()

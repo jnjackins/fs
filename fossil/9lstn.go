@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"sync"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 type Lstn struct {
@@ -92,7 +94,7 @@ func allocLstn(address string, flags int) (*Lstn, error) {
 	return lstn, nil
 }
 
-func cmdLstn(cons *Cons, argv []string) error {
+func cmdLstn(cons *console.Cons, argv []string) error {
 	argv = fixFlags(argv)
 
 	var usage = errors.New("Usage: listen [-dIN] [address]")
@@ -125,7 +127,7 @@ func cmdLstn(cons *Cons, argv []string) error {
 	case 0:
 		lbox.lock.RLock()
 		for lstn := lbox.head; lstn != nil; lstn = lstn.next {
-			cons.printf("\t%s\n", lstn.address)
+			cons.Printf("\t%s\n", lstn.address)
 		}
 		lbox.lock.RUnlock()
 
@@ -163,5 +165,5 @@ func cmdLstn(cons *Cons, argv []string) error {
 }
 
 func lstnInit() error {
-	return cliAddCmd("listen", cmdLstn)
+	return console.AddCmd("listen", cmdLstn)
 }

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"sigint.ca/fs/fossil/console"
 	"sigint.ca/fs/venti"
 )
 
@@ -48,12 +49,12 @@ var (
 )
 
 // TODO(jnj): it would be nice if these just took an io.Writer
-// instead of a *Cons, however both fsysClose and cmdFsys call
-// cons.setFsys.
+// instead of a *console.Cons, however both fsysClose and cmdFsys call
+// cons.SetFsys.
 var fsyscmd = []struct {
 	cmd string
-	f   func(*Cons, *Fsys, []string) error
-	f1  func(*Cons, string, []string) error
+	f   func(*console.Cons, *Fsys, []string) error
+	f1  func(*console.Cons, string, []string) error
 }{
 	{"close", fsysClose, nil},
 	{"config", nil, fsysConfig},
@@ -84,7 +85,7 @@ var fsyscmd = []struct {
 	{"", nil, nil},
 }
 
-func cmdPrintConfig(cons *Cons, argv []string) error {
+func cmdPrintConfig(cons *console.Cons, argv []string) error {
 	var usage string = "Usage: printconfig"
 
 	flags := flag.NewFlagSet("printconfig", flag.ContinueOnError)
@@ -101,9 +102,9 @@ func cmdPrintConfig(cons *Cons, argv []string) error {
 	defer fsysbox.lock.RUnlock()
 
 	for fsys := fsysbox.head; fsys != nil; fsys = fsys.next {
-		cons.printf("\tfsys %s config %s\n", fsys.name, fsys.dev)
+		cons.Printf("\tfsys %s config %s\n", fsys.name, fsys.dev)
 		if fsys.venti != "" {
-			cons.printf("\tfsys %s venti %q\n", fsys.name, fsys.venti)
+			cons.Printf("\tfsys %s venti %q\n", fsys.name, fsys.venti)
 		}
 	}
 
@@ -294,7 +295,7 @@ func allocFsys(name string, dev string) (*Fsys, error) {
 	return fsys, nil
 }
 
-func fsysClose(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysClose(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] close"
 
 	flags := flag.NewFlagSet("close", flag.ContinueOnError)
@@ -322,14 +323,14 @@ func fsysClose(cons *Cons, fsys *Fsys, argv []string) error {
 		fsys.session = nil
 	}
 
-	if fsys.name == cons.getFsys() {
-		cons.setFsys("")
+	if fsys.name == cons.GetFsys() {
+		cons.SetFsys("")
 	}
 
 	return nil
 }
 
-func fsysVac(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysVac(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] vac path"
 
 	flags := flag.NewFlagSet("vac", flag.ContinueOnError)
@@ -349,11 +350,11 @@ func fsysVac(cons *Cons, fsys *Fsys, argv []string) error {
 		return err
 	}
 
-	cons.printf("vac:%v\n", score)
+	cons.Printf("vac:%v\n", score)
 	return nil
 }
 
-func fsysSnap(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysSnap(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] snap [-a] [-s /active] [-d /archive/yyyy/mmmm]"
 
 	flags := flag.NewFlagSet("snap", flag.ContinueOnError)
@@ -372,7 +373,7 @@ func fsysSnap(cons *Cons, fsys *Fsys, argv []string) error {
 	return fsys.fs.snapshot(*sflag, *dflag, *aflag)
 }
 
-func fsysSnapClean(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysSnapClean(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] snapclean [maxminutes]"
 
 	flags := flag.NewFlagSet("snapclean", flag.ContinueOnError)
@@ -401,7 +402,7 @@ func fsysSnapClean(cons *Cons, fsys *Fsys, argv []string) error {
 	return nil
 }
 
-func fsysSnapTime(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysSnapTime(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] snaptime [-a hhmm] [-s snapfreq] [-t snaplife]"
 
 	flags := flag.NewFlagSet("snaptime", flag.ContinueOnError)
@@ -486,11 +487,11 @@ func fsysSnapTime(cons *Cons, fsys *Fsys, argv []string) error {
 	} else {
 		buf += fmt.Sprintf(" -t none")
 	}
-	cons.printf("\tsnaptime %s\n", buf)
+	cons.Printf("\tsnaptime %s\n", buf)
 	return nil
 }
 
-func fsysSync(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysSync(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] sync"
 
 	flags := flag.NewFlagSet("sync", flag.ContinueOnError)
@@ -505,11 +506,11 @@ func fsysSync(cons *Cons, fsys *Fsys, argv []string) error {
 
 	n := fsys.fs.cache.dirty()
 	fsys.fs.sync()
-	cons.printf("\t%s sync: wrote %d blocks\n", fsys.name, n)
+	cons.Printf("\t%s sync: wrote %d blocks\n", fsys.name, n)
 	return nil
 }
 
-func fsysPrintLocks(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysPrintLocks(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] printlocks"
 
 	flags := flag.NewFlagSet("printlocks", flag.ContinueOnError)
@@ -531,7 +532,7 @@ func fsysPrintLocks(cons *Cons, fsys *Fsys, argv []string) error {
 	return nil
 }
 
-func fsysHalt(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysHalt(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] halt"
 
 	flags := flag.NewFlagSet("halt", flag.ContinueOnError)
@@ -547,7 +548,7 @@ func fsysHalt(cons *Cons, fsys *Fsys, argv []string) error {
 	return fsys.fs.halt()
 }
 
-func fsysUnhalt(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysUnhalt(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] unhalt"
 
 	flags := flag.NewFlagSet("unhalt", flag.ContinueOnError)
@@ -567,7 +568,7 @@ func fsysUnhalt(cons *Cons, fsys *Fsys, argv []string) error {
 	return fsys.fs.unhalt()
 }
 
-func fsysRemove(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysRemove(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] remove path ..."
 
 	flags := flag.NewFlagSet("remove", flag.ContinueOnError)
@@ -586,10 +587,10 @@ func fsysRemove(cons *Cons, fsys *Fsys, argv []string) error {
 	for argc > 0 {
 		file, err := fsys.fs.openFile(argv[0])
 		if err != nil {
-			cons.printf("%s: %v\n", argv[0], err)
+			cons.Printf("%s: %v\n", argv[0], err)
 		} else {
 			if err := file.remove(uidadm); err != nil {
-				cons.printf("%s: %v\n", argv[0], err)
+				cons.Printf("%s: %v\n", argv[0], err)
 			}
 			file.decRef()
 		}
@@ -602,7 +603,7 @@ func fsysRemove(cons *Cons, fsys *Fsys, argv []string) error {
 	return nil
 }
 
-func fsysClri(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysClri(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] clri path ..."
 
 	flags := flag.NewFlagSet("clri", flag.ContinueOnError)
@@ -620,7 +621,7 @@ func fsysClri(cons *Cons, fsys *Fsys, argv []string) error {
 	fsys.fs.elk.RLock()
 	for argc > 0 {
 		if err := fsys.fs.fileClriPath(argv[0], uidadm); err != nil {
-			cons.printf("clri %s: %v\n", argv[0], err)
+			cons.Printf("clri %s: %v\n", argv[0], err)
 		}
 		argc--
 		argv = argv[1:]
@@ -634,7 +635,7 @@ func fsysClri(cons *Cons, fsys *Fsys, argv []string) error {
 /*
  * Inspect and edit the labels for blocks on disk.
  */
-func fsysLabel(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysLabel(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] label addr [type state epoch epochClose tag]"
 
 	flags := flag.NewFlagSet("label", flag.ContinueOnError)
@@ -665,7 +666,7 @@ func fsysLabel(cons *Cons, fsys *Fsys, argv []string) error {
 	if argc == 6 {
 		showOld = "old: "
 	}
-	cons.printf("%slabel %x %d %d %d %d %x\n", showOld, addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
+	cons.Printf("%slabel %x %d %d %d %d %x\n", showOld, addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
 
 	if argc == 6 {
 		if argv[1] != "-" {
@@ -684,7 +685,7 @@ func fsysLabel(cons *Cons, fsys *Fsys, argv []string) error {
 			l.tag = strtoul(argv[5], 0)
 		}
 
-		cons.printf("new: label %x %d %d %d %d %x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
+		cons.Printf("new: label %x %d %d %d %d %x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
 		bb, err := b._setLabel(&l)
 		if err != nil {
 			return err
@@ -699,10 +700,10 @@ func fsysLabel(cons *Cons, fsys *Fsys, argv []string) error {
 				break
 			}
 			// TODO(jnj): better error
-			cons.printf("blockWrite failed\n")
+			cons.Printf("blockWrite failed\n")
 			n++
 			if n >= 6 {
-				cons.printf("giving up\n")
+				cons.Printf("giving up\n")
 				break
 			}
 			time.Sleep(5 * time.Second)
@@ -716,7 +717,7 @@ func fsysLabel(cons *Cons, fsys *Fsys, argv []string) error {
 /*
  * Inspect and edit the blocks on disk.
  */
-func fsysBlock(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysBlock(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] block addr offset [count [data]]"
 
 	flags := flag.NewFlagSet("block", flag.ContinueOnError)
@@ -765,7 +766,7 @@ func fsysBlock(cons *Cons, fsys *Fsys, argv []string) error {
 	if argc == 4 {
 		prefix = "old: "
 	}
-	cons.printf("\t%sblock %x %d %d %.*X\n", prefix, addr, offset, count, count, b.data[offset:])
+	cons.Printf("\t%sblock %x %d %d %.*X\n", prefix, addr, offset, count, count, b.data[offset:])
 
 	if argc == 4 {
 		s := argv[3]
@@ -792,7 +793,7 @@ func fsysBlock(cons *Cons, fsys *Fsys, argv []string) error {
 		}
 
 		copy(b.data[offset:], buf)
-		cons.printf("\tnew: block %x %d %d %.*X\n", addr, offset, count, count, b.data[offset:])
+		cons.Printf("\tnew: block %x %d %d %.*X\n", addr, offset, count, count, b.data[offset:])
 		b.dirty()
 	}
 
@@ -802,7 +803,7 @@ func fsysBlock(cons *Cons, fsys *Fsys, argv []string) error {
 /*
  * Free a disk block.
  */
-func fsysBfree(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysBfree(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] bfree addr ..."
 
 	flags := flag.NewFlagSet("bfree", flag.ContinueOnError)
@@ -828,21 +829,21 @@ func fsysBfree(cons *Cons, fsys *Fsys, argv []string) error {
 		}
 		b, err := fs.cache.local(PartData, uint32(addr), OReadOnly)
 		if err != nil {
-			cons.printf("loading %x: %v\n", addr, err)
+			cons.Printf("loading %x: %v\n", addr, err)
 			continue
 		}
 		l = b.l
 		if l.state == BsFree {
-			cons.printf("%x is already free\n", addr)
+			cons.Printf("%x is already free\n", addr)
 		} else {
-			cons.printf("label %x %d %d %d %d %x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
+			cons.Printf("label %x %d %d %d %d %x\n", addr, l.typ, l.state, l.epoch, l.epochClose, l.tag)
 			l.state = BsFree
 			l.typ = BtMax
 			l.tag = 0
 			l.epoch = 0
 			l.epochClose = 0
 			if err := b.setLabel(&l, false); err != nil {
-				cons.printf("freeing %x: %v\n", addr, err)
+				cons.Printf("freeing %x: %v\n", addr, err)
 			}
 		}
 		b.put()
@@ -855,7 +856,7 @@ func fsysBfree(cons *Cons, fsys *Fsys, argv []string) error {
 	return nil
 }
 
-func fsysDf(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysDf(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] df"
 	var used, tot, bsize uint32
 
@@ -875,7 +876,7 @@ func fsysDf(cons *Cons, fsys *Fsys, argv []string) error {
 	fs.elk.RUnlock()
 
 	fs.cache.countUsed(elo, &used, &tot, &bsize)
-	cons.printf("\t%s: %s used + %s free = %s (%.1f%% used)\n",
+	cons.Printf("\t%s: %s used + %s free = %s (%.1f%% used)\n",
 		fsys.name,
 		fmtComma(int64(used)*int64(bsize)),
 		fmtComma(int64(tot-used)*int64(bsize)),
@@ -906,7 +907,7 @@ func fmtComma(n int64) string {
 /*
  * Zero an entry or a pointer.
  */
-func fsysClrep(cons *Cons, fsys *Fsys, argv []string, ch rune) error {
+func fsysClrep(cons *console.Cons, fsys *Fsys, argv []string, ch rune) error {
 	var usage = fmt.Sprintf("Usage: [fsys name] clr%c addr offset ...", ch)
 
 	flags := flag.NewFlagSet("clrep", flag.ContinueOnError)
@@ -957,10 +958,10 @@ func fsysClrep(cons *Cons, fsys *Fsys, argv []string, ch rune) error {
 	for i := 1; i < argc; i++ {
 		offset := atoi(argv[i])
 		if offset >= max {
-			cons.printf("\toffset %d too large (>= %d)\n", i, max)
+			cons.Printf("\toffset %d too large (>= %d)\n", i, max)
 			continue
 		}
-		cons.printf("\tblock %x %d %d %.*X\n", addr, offset*sz, sz, sz, b.data[offset*sz:])
+		cons.Printf("\tblock %x %d %d %.*X\n", addr, offset*sz, sz, sz, b.data[offset*sz:])
 		copy(b.data[offset*sz:], zero[:sz])
 	}
 
@@ -970,16 +971,16 @@ func fsysClrep(cons *Cons, fsys *Fsys, argv []string, ch rune) error {
 	return nil
 }
 
-func fsysClre(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysClre(cons *console.Cons, fsys *Fsys, argv []string) error {
 	return fsysClrep(cons, fsys, argv, 'e')
 }
 
-func fsysClrp(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysClrp(cons *console.Cons, fsys *Fsys, argv []string) error {
 	return fsysClrep(cons, fsys, argv, 'p')
 }
 
 // TODO(jnj): errors?
-func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
+func fsysEsearch1(cons *console.Cons, f *File, s string, elo uint32) int {
 	dee, err := openDee(f)
 	if err != nil {
 		return 0
@@ -990,7 +991,7 @@ func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
 	for {
 		r, err := dee.read(&de)
 		if r < 0 {
-			cons.printf("\tdeeRead %s/%s: %v\n", s, de.elem, err)
+			cons.Printf("\tdeeRead %s/%s: %v\n", s, de.elem, err)
 			break
 		}
 		if r == 0 {
@@ -999,13 +1000,13 @@ func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
 		if de.mode&ModeSnapshot != 0 {
 			ff, err := f.walk(de.elem)
 			if err != nil {
-				cons.printf("\tcannot walk %s/%s: %v\n", s, de.elem, err)
+				cons.Printf("\tcannot walk %s/%s: %v\n", s, de.elem, err)
 			} else {
 				e, _, err := ff.getSources()
 				if err != nil {
-					cons.printf("\tcannot get sources for %s/%s: %v\n", s, de.elem, err)
+					cons.Printf("\tcannot get sources for %s/%s: %v\n", s, de.elem, err)
 				} else if e.snap != 0 && e.snap < elo {
-					cons.printf("\t%d\tclri %s/%s\n", e.snap, s, de.elem)
+					cons.Printf("\t%d\tclri %s/%s\n", e.snap, s, de.elem)
 					n++
 				}
 
@@ -1014,7 +1015,7 @@ func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
 		} else if de.mode&ModeDir != 0 {
 			ff, err := f.walk(de.elem)
 			if err != nil {
-				cons.printf("\tcannot walk %s/%s: %v\n", s, de.elem, err)
+				cons.Printf("\tcannot walk %s/%s: %v\n", s, de.elem, err)
 			} else {
 				t := fmt.Sprintf("%s/%s", s, de.elem)
 				n += fsysEsearch1(cons, ff, t, elo)
@@ -1032,7 +1033,7 @@ func fsysEsearch1(cons *Cons, f *File, s string, elo uint32) int {
 }
 
 // TODO(jnj): errors?
-func fsysEsearch(cons *Cons, fs *Fs, path string, elo uint32) int {
+func fsysEsearch(cons *console.Cons, fs *Fs, path string, elo uint32) int {
 	f, err := fs.openFile(path)
 	if err != nil {
 		return 0
@@ -1040,7 +1041,7 @@ func fsysEsearch(cons *Cons, fs *Fs, path string, elo uint32) int {
 	defer f.decRef()
 	de, err := f.getDir()
 	if err != nil {
-		cons.printf("\tfileGetDir %s failed: %v\n", path, err)
+		cons.Printf("\tfileGetDir %s failed: %v\n", path, err)
 		return 0
 	}
 	if de.mode&ModeDir == 0 {
@@ -1049,7 +1050,7 @@ func fsysEsearch(cons *Cons, fs *Fs, path string, elo uint32) int {
 	return fsysEsearch1(cons, f, path, elo)
 }
 
-func fsysEpoch(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysEpoch(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var low, old uint32
 	var usage string = "Usage: [fsys name] epoch [[-ry] low]"
 
@@ -1079,7 +1080,7 @@ func fsysEpoch(cons *Cons, fsys *Fsys, argv []string) error {
 	fs := fsys.fs
 
 	fs.elk.RLock()
-	cons.printf("\tlow %d hi %d\n", fs.elo, fs.ehi)
+	cons.Printf("\tlow %d hi %d\n", fs.elo, fs.ehi)
 	if low == ^uint32(0) {
 		fs.elk.RUnlock()
 		return nil
@@ -1091,7 +1092,7 @@ func fsysEpoch(cons *Cons, fsys *Fsys, argv []string) error {
 	if n > 1 {
 		suff = "s"
 	}
-	cons.printf("\t%d snapshot%s found with epoch < %d\n", n, suff, low)
+	cons.Printf("\t%d snapshot%s found with epoch < %d\n", n, suff, low)
 	fs.elk.RUnlock()
 
 	/*
@@ -1102,22 +1103,22 @@ func fsysEpoch(cons *Cons, fsys *Fsys, argv []string) error {
 	 * run right now.  This is a small enough window that I don't care.
 	 */
 	if n != 0 && force == 0 {
-		cons.printf("\tnot setting low epoch\n")
+		cons.Printf("\tnot setting low epoch\n")
 		return nil
 	}
 
 	old = fs.elo
 	if err := fs.epochLow(low); err != nil {
-		cons.printf("\tfsEpochLow: %v\n", err)
+		cons.Printf("\tfsEpochLow: %v\n", err)
 	} else {
 		showForce := ""
 		if force != 0 {
 			showForce = " -y"
 		}
-		cons.printf("\told: epoch%s %d\n", showForce, old)
-		cons.printf("\tnew: epoch%s %d\n", showForce, fs.elo)
+		cons.Printf("\told: epoch%s %d\n", showForce, old)
+		cons.Printf("\tnew: epoch%s %d\n", showForce, fs.elo)
 		if fs.elo < low {
-			cons.printf("\twarning: new low epoch < old low epoch\n")
+			cons.Printf("\twarning: new low epoch < old low epoch\n")
 		}
 		if force != 0 && remove != 0 {
 			fs.snapshotRemove()
@@ -1127,7 +1128,7 @@ func fsysEpoch(cons *Cons, fsys *Fsys, argv []string) error {
 	return nil
 }
 
-func fsysCreate(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysCreate(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] create path uid gid perm"
 
 	flags := flag.NewFlagSet("create", flag.ContinueOnError)
@@ -1198,12 +1199,12 @@ func fsysCreate(cons *Cons, fsys *Fsys, argv []string) error {
 	return nil
 }
 
-func fsysPrintStat(cons *Cons, prefix string, file string, de *DirEntry) {
-	cons.printf("%sstat %q %q %q %q %s %d\n",
+func fsysPrintStat(cons *console.Cons, prefix string, file string, de *DirEntry) {
+	cons.Printf("%sstat %q %q %q %q %s %d\n",
 		prefix, file, de.elem, de.uid, de.gid, fsysModeString(de.mode), de.size)
 }
 
-func fsysStat(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysStat(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] stat files..."
 
 	flags := flag.NewFlagSet("stat", flag.ContinueOnError)
@@ -1222,13 +1223,13 @@ func fsysStat(cons *Cons, fsys *Fsys, argv []string) error {
 	for i := 0; i < argc; i++ {
 		f, err := fsys.fs.openFile(argv[i])
 		if err != nil {
-			cons.printf("%s: %v\n", argv[i], err)
+			cons.Printf("%s: %v\n", argv[i], err)
 			continue
 		}
 
 		de, err := f.getDir()
 		if err != nil {
-			cons.printf("%s: %v\n", argv[i], err)
+			cons.Printf("%s: %v\n", argv[i], err)
 			f.decRef()
 			continue
 		}
@@ -1239,9 +1240,9 @@ func fsysStat(cons *Cons, fsys *Fsys, argv []string) error {
 	return nil
 }
 
-func fsysWstat(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysWstat(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = `Usage: [fsys name] wstat file elem uid gid mode length
-  -	Replace any field with - to mean "don't change".`
+ -	Replace any field with - to mean "don't change".`
 
 	flags := flag.NewFlagSet("wstat", flag.ContinueOnError)
 	flags.Usage = func() { fmt.Fprintln(os.Stderr, usage); flags.PrintDefaults() }
@@ -1395,7 +1396,7 @@ func fsckClrp(fsck *Fsck, b *Block, offset int) error {
 	return nil
 }
 
-func fsysCheck(cons *Cons, fsys *Fsys, argv []string) error {
+func fsysCheck(cons *console.Cons, fsys *Fsys, argv []string) error {
 	var usage string = "Usage: [fsys name] check [options]"
 
 	fsck := &Fsck{
@@ -1403,7 +1404,7 @@ func fsysCheck(cons *Cons, fsys *Fsys, argv []string) error {
 		clre:   fsckClre,
 		clrp:   fsckClrp,
 		close:  fsckClose,
-		printf: cons.printf,
+		printf: cons.Printf,
 	}
 
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
@@ -1434,7 +1435,7 @@ func fsysCheck(cons *Cons, fsys *Fsys, argv []string) error {
 		case "snapshot":
 			fsck.walksnapshots = true
 		default:
-			cons.printf("unknown option %q\n", arg)
+			cons.Printf("unknown option %q\n", arg)
 			flags.Usage()
 			return EUsage
 		}
@@ -1447,19 +1448,19 @@ func fsysCheck(cons *Cons, fsys *Fsys, argv []string) error {
 	if fsys.fs.arch != nil {
 		b, super, err := getSuper(fsys.fs.cache)
 		if err != nil {
-			cons.printf("could not load super block: %v\n", err)
+			cons.Printf("could not load super block: %v\n", err)
 			goto Out
 		}
 
 		b.put()
 		if super.current != NilBlock {
-			cons.printf("cannot check fs while archiver is running; wait for it to finish\n")
+			cons.Printf("cannot check fs while archiver is running; wait for it to finish\n")
 			goto Out
 		}
 	}
 
 	fsck.check(fsys.fs)
-	cons.printf("fsck: %d clri, %d clre, %d clrp, %d bclose\n",
+	cons.Printf("fsck: %d clri, %d clre, %d clrp, %d bclose\n",
 		fsck.nclri, fsck.nclre, fsck.nclrp, fsck.nclose)
 
 Out:
@@ -1469,7 +1470,7 @@ Out:
 	return nil
 }
 
-func fsysVenti(cons *Cons, name string, argv []string) error {
+func fsysVenti(cons *console.Cons, name string, argv []string) error {
 	var usage string = "Usage: [fsys name] venti [address]"
 
 	flags := flag.NewFlagSet("venti", flag.ContinueOnError)
@@ -1509,7 +1510,7 @@ func fsysVenti(cons *Cons, name string, argv []string) error {
 		}
 	}
 
-	cons.printf("dialing venti at %v\n", host)
+	cons.Printf("dialing venti at %v\n", host)
 
 	/* already open; redial */
 	if fsys.fs != nil {
@@ -1574,7 +1575,7 @@ func freemem() uint32 {
 	return uint32(size)
 }
 
-func fsysOpen(cons *Cons, name string, argv []string) error {
+func fsysOpen(cons *console.Cons, name string, argv []string) error {
 	argv = fixFlags(argv)
 
 	var usage string = "Usage: fsys main open [-APVWr] [-c ncache]"
@@ -1639,10 +1640,10 @@ func fsysOpen(cons *Cons, name string, argv []string) error {
 		} else {
 			host = ""
 		}
-		cons.printf("dialing venti at %v\n", host)
+		cons.Printf("dialing venti at %v\n", host)
 		fsys.session, err = venti.Dial(host)
 		if err != nil {
-			cons.printf("error connecting to venti: %v\n", err)
+			cons.Printf("error connecting to venti: %v\n", err)
 		}
 	}
 
@@ -1666,7 +1667,7 @@ func fsysOpen(cons *Cons, name string, argv []string) error {
 	return nil
 }
 
-func fsysUnconfig(cons *Cons, name string, argv []string) error {
+func fsysUnconfig(cons *console.Cons, name string, argv []string) error {
 	var usage string = "Usage: fsys name unconfig"
 
 	flags := flag.NewFlagSet("unconfig", flag.ContinueOnError)
@@ -1712,7 +1713,7 @@ func fsysUnconfig(cons *Cons, name string, argv []string) error {
 	return nil
 }
 
-func fsysConfig(cons *Cons, name string, argv []string) error {
+func fsysConfig(cons *console.Cons, name string, argv []string) error {
 	var usage string = "Usage: fsys name config [dev]"
 
 	flags := flag.NewFlagSet("config", flag.ContinueOnError)
@@ -1755,7 +1756,7 @@ func fsysConfig(cons *Cons, name string, argv []string) error {
 	return nil
 }
 
-func fsysXXX1(cons *Cons, fsys *Fsys, i int, argv []string) error {
+func fsysXXX1(cons *console.Cons, fsys *Fsys, i int, argv []string) error {
 	fsys.lock.Lock()
 	defer fsys.lock.Unlock()
 
@@ -1770,7 +1771,7 @@ func fsysXXX1(cons *Cons, fsys *Fsys, i int, argv []string) error {
 	return fsyscmd[i].f(cons, fsys, argv)
 }
 
-func fsysXXX(cons *Cons, name string, argv []string) error {
+func fsysXXX(cons *console.Cons, name string, argv []string) error {
 	var i int
 	for i = 0; fsyscmd[i].cmd != ""; i++ {
 		if fsyscmd[i].cmd == argv[0] {
@@ -1817,8 +1818,8 @@ func fsysXXX(cons *Cons, name string, argv []string) error {
 	}
 }
 
-func cmdFsysXXX(cons *Cons, argv []string) error {
-	name := cons.getFsys()
+func cmdFsysXXX(cons *console.Cons, argv []string) error {
+	name := cons.GetFsys()
 	if name == "" {
 		return errors.New(EFsysNoCurrent)
 	}
@@ -1826,7 +1827,7 @@ func cmdFsysXXX(cons *Cons, argv []string) error {
 	return fsysXXX(cons, name, argv)
 }
 
-func cmdFsys(cons *Cons, argv []string) error {
+func cmdFsys(cons *console.Cons, argv []string) error {
 	var usage string = "Usage: fsys [name ...]"
 
 	flags := flag.NewFlagSet("fsys", flag.ContinueOnError)
@@ -1844,7 +1845,7 @@ func cmdFsys(cons *Cons, argv []string) error {
 			return errors.New("no current fsys")
 		}
 		for fsys := fsysbox.head; fsys != nil; fsys = fsys.next {
-			cons.printf("\t%s\n", fsys.name)
+			cons.Printf("\t%s\n", fsys.name)
 		}
 		return nil
 	}
@@ -1858,7 +1859,7 @@ func cmdFsys(cons *Cons, argv []string) error {
 				return err
 			}
 		}
-		if err := cons.setFsys(argv[0]); err != nil {
+		if err := cons.SetFsys(argv[0]); err != nil {
 			return fmt.Errorf("set current fsys: %v", err)
 		}
 		fsys.put()
@@ -1871,9 +1872,9 @@ func cmdFsys(cons *Cons, argv []string) error {
 func fsysInit() error {
 	/* the venti cmd is special: the fs can be either open or closed */
 	for _, err := range []error{
-		cliAddCmd("venti", cmdFsysXXX),
-		cliAddCmd("printconfig", cmdPrintConfig),
-		cliAddCmd("fsys", cmdFsys),
+		console.AddCmd("venti", cmdFsysXXX),
+		console.AddCmd("printconfig", cmdPrintConfig),
+		console.AddCmd("fsys", cmdFsys),
 	} {
 		if err != nil {
 			return err
@@ -1882,7 +1883,7 @@ func fsysInit() error {
 
 	for _, cmd := range fsyscmd {
 		if cmd.f != nil {
-			if err := cliAddCmd(cmd.cmd, cmdFsysXXX); err != nil {
+			if err := console.AddCmd(cmd.cmd, cmdFsysXXX); err != nil {
 				return err
 			}
 		}

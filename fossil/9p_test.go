@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 func TestParseAname(t *testing.T) {
@@ -46,7 +48,8 @@ func Test9p(t *testing.T) {
 	}
 
 	conn := new(test9pConn)
-	cons := &Cons{conn: conn}
+	cons := console.NewCons(conn, false)
+	defer cons.Close()
 
 	testdata := make([]byte, 8000)
 	for i := range testdata {
@@ -157,7 +160,7 @@ func Test9p(t *testing.T) {
 
 		conn.tout.Reset()
 		conn.rout.Reset()
-		if err := cliExec(cons, c.cmd); err != nil {
+		if err := console.Exec(cons, c.cmd); err != nil {
 			t.Error(err)
 			continue
 		}
@@ -197,7 +200,7 @@ func Benchmark9pWrite(b *testing.B) {
 		{cmd: "9p Twalk 0 1"},
 		{cmd: "9p Tcreate 1 test 0644 2"},
 	} {
-		if err := cliExec(nil, c.cmd); err != nil {
+		if err := console.Exec(nil, c.cmd); err != nil {
 			b.Error(err)
 			return
 		}
@@ -217,7 +220,7 @@ func Benchmark9pWrite(b *testing.B) {
 		{cmd: "9p Tremove 1"},
 		{cmd: "9p Tclunk 0"},
 	} {
-		if err := cliExec(nil, c.cmd); err != nil {
+		if err := console.Exec(nil, c.cmd); err != nil {
 			b.Error(err)
 			return
 		}
@@ -243,7 +246,7 @@ func Benchmark9pRead(b *testing.B) {
 		{cmd: "9p Tcreate 1 test 0644 2"},
 		{cmd: "9p Twrite 1 0 " + string(testdata)},
 	} {
-		if err := cliExec(nil, c.cmd); err != nil {
+		if err := console.Exec(nil, c.cmd); err != nil {
 			b.Error(err)
 			return
 		}
@@ -263,7 +266,7 @@ func Benchmark9pRead(b *testing.B) {
 		{cmd: "9p Tremove 1"},
 		{cmd: "9p Tclunk 0"},
 	} {
-		if err := cliExec(nil, c.cmd); err != nil {
+		if err := console.Exec(nil, c.cmd); err != nil {
 			b.Error(err)
 			return
 		}

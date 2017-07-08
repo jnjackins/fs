@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"sigint.ca/fs/fossil/console"
 	"sigint.ca/fs/internal/plan9"
 )
 
@@ -198,7 +199,7 @@ type Cmd9p struct {
 	f     func(*plan9.Fcall, []string) error
 }
 
-func cmd9p(cons *Cons, argv []string) error {
+func cmd9p(cons *console.Cons, argv []string) error {
 	usage := errors.New("Usage: 9p T-message ...")
 
 	flags := flag.NewFlagSet("9p", flag.ContinueOnError)
@@ -249,19 +250,19 @@ func cmd9p(cons *Cons, argv []string) error {
 		return fmt.Errorf("%s: write error: %v", cmd9pTmsg[i].name, err)
 	}
 
-	cons.printf("\t-> %v\n", &t)
+	cons.Printf("\t-> %v\n", &t)
 
 	f, err := plan9.ReadFcall(cmdbox.conn)
 	if err != nil {
 		return fmt.Errorf("%s: error reading fcall: %v", cmd9pTmsg[i].name, err)
 	}
 
-	cons.printf("\t<- %v\n", f)
+	cons.Printf("\t<- %v\n", f)
 
 	return nil
 }
 
-func cmdDot(cons *Cons, argv []string) error {
+func cmdDot(cons *console.Cons, argv []string) error {
 	usage := "Usage: . file"
 
 	flags := flag.NewFlagSet(".", flag.ContinueOnError)
@@ -296,11 +297,11 @@ func cmdDot(cons *Cons, argv []string) error {
 		}
 		f.Close()
 
-		// Call cliExec() for each line.
+		// Call console.Exec() for each line.
 		for _, line := range strings.Split(string(buf), "\n") {
-			if err := cliExec(cons, line); err != nil {
+			if err := console.Exec(cons, line); err != nil {
 				r = 0
-				cons.printf("%s: %v\n", line, err)
+				cons.Printf("%s: %v\n", line, err)
 			}
 		}
 	}
@@ -311,7 +312,7 @@ func cmdDot(cons *Cons, argv []string) error {
 	return nil
 }
 
-func cmdDflag(cons *Cons, argv []string) error {
+func cmdDflag(cons *console.Cons, argv []string) error {
 	usage := "Usage: dflag"
 
 	flags := flag.NewFlagSet("dflag", flag.ContinueOnError)
@@ -325,12 +326,12 @@ func cmdDflag(cons *Cons, argv []string) error {
 	}
 
 	*Dflag = !*Dflag
-	cons.printf("dflag %v\n", *Dflag)
+	cons.Printf("dflag %v\n", *Dflag)
 
 	return nil
 }
 
-func cmdEcho(cons *Cons, argv []string) error {
+func cmdEcho(cons *console.Cons, argv []string) error {
 	usage := "Usage: echo [-n] ..."
 
 	flags := flag.NewFlagSet("echo", flag.ContinueOnError)
@@ -340,9 +341,9 @@ func cmdEcho(cons *Cons, argv []string) error {
 		return EUsage
 	}
 
-	cons.printf(strings.Join(flags.Args(), " "))
+	cons.Printf(strings.Join(flags.Args(), " "))
 	if !*nflag {
-		cons.printf("\n")
+		cons.Printf("\n")
 	}
 
 	return nil
@@ -356,7 +357,7 @@ const (
 	MCREATE = 0x0004 // permit creation in mounted directory
 )
 
-func cmdBind(cons *Cons, argv []string) error {
+func cmdBind(cons *console.Cons, argv []string) error {
 	usage := "Usage: bind [-b|-a|-c|-bc|-ac] new old"
 
 	flags := flag.NewFlagSet("echo", flag.ContinueOnError)
@@ -408,11 +409,11 @@ func bind(name, old string, flags int) error {
 
 func cmdInit() error {
 	for _, err := range []error{
-		cliAddCmd(".", cmdDot),
-		cliAddCmd("9p", cmd9p),
-		cliAddCmd("dflag", cmdDflag),
-		cliAddCmd("echo", cmdEcho),
-		cliAddCmd("bind", cmdBind),
+		console.AddCmd(".", cmdDot),
+		console.AddCmd("9p", cmd9p),
+		console.AddCmd("dflag", cmdDflag),
+		console.AddCmd("echo", cmdEcho),
+		console.AddCmd("bind", cmdBind),
 	} {
 		if err != nil {
 			return err

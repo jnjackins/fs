@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 func TestOSFileOps(t *testing.T) {
@@ -34,7 +36,7 @@ func TestOSFileOps(t *testing.T) {
 	var mntpts []string
 	for i := 1; i <= 4; i++ {
 		srvname := fmt.Sprintf("fossil.srv.%d", i)
-		if err := cliExec(nil, "srv "+srvname); err != nil {
+		if err := console.Exec(nil, "srv "+srvname); err != nil {
 			t.Errorf("srv %s: %v", srvname, err)
 			return
 		}
@@ -259,7 +261,7 @@ func BenchmarkOSFileOps(b *testing.B) {
 	// srv directory
 	os.Setenv("NAMESPACE", tmpdir)
 
-	if err := cliExec(nil, "srv fossil.srv"); err != nil {
+	if err := console.Exec(nil, "srv fossil.srv"); err != nil {
 		b.Errorf("srv: %v", err)
 		return
 	}

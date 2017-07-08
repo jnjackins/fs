@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 const (
@@ -371,11 +373,11 @@ func uboxAddUser(box *Ubox, u *User) {
 	box.nuser++
 }
 
-func uboxDump(cons *Cons, box *Ubox) {
-	cons.printf("nuser %d len = %d\n", box.nuser, box.length)
+func uboxDump(cons *console.Cons, box *Ubox) {
+	cons.Printf("nuser %d len = %d\n", box.nuser, box.length)
 
 	for u := box.head; u != nil; u = u.next {
-		cons.printf("%v\n", u)
+		cons.Printf("%v\n", u)
 	}
 }
 
@@ -547,7 +549,7 @@ func readUsersFile(path string) error {
 	return err
 }
 
-func cmdUname(cons *Cons, argv []string) error {
+func cmdUname(cons *console.Cons, argv []string) error {
 	var usage string = "Usage: uname [-d] uname [uid|:uid|%%newname|=leader|+member|-member]"
 
 	flags := flag.NewFlagSet("wstat", flag.ContinueOnError)
@@ -579,7 +581,7 @@ func cmdUname(cons *Cons, argv []string) error {
 			ubox.lock.RUnlock()
 			return err
 		}
-		cons.printf("\t%v\n", u)
+		cons.Printf("\t%v\n", u)
 		ubox.lock.RUnlock()
 		return nil
 	}
@@ -681,7 +683,7 @@ func cmdUname(cons *Cons, argv []string) error {
 			if arg[0] != ':' {
 				// should have an option for the mode and gid
 				s := fmt.Sprintf("fsys main create /active/usr/%s %s %s d775", uname, uname, uname)
-				if err := cliExec(cons, s); err != nil {
+				if err := console.Exec(cons, s); err != nil {
 					return fmt.Errorf("create home dir: %v", err)
 				}
 			}
@@ -697,7 +699,7 @@ func cmdUname(cons *Cons, argv []string) error {
 	return nil
 }
 
-func cmdUsers(cons *Cons, argv []string) error {
+func cmdUsers(cons *console.Cons, argv []string) error {
 	var usage string = "Usage: users [-d | -r file] [-w]"
 
 	flags := flag.NewFlagSet("wstat", flag.ContinueOnError)
@@ -731,7 +733,7 @@ func cmdUsers(cons *Cons, argv []string) error {
 
 	ubox.lock.RLock()
 	box := ubox.box
-	cons.printf("\tnuser %d len %d\n", box.nuser, box.length)
+	cons.Printf("\tnuser %d len %d\n", box.nuser, box.length)
 
 	var err error
 	if *wflag {
@@ -745,8 +747,8 @@ func usersInit() error {
 	uboxInit(usersDefault)
 
 	for _, err := range []error{
-		cliAddCmd("users", cmdUsers),
-		cliAddCmd("uname", cmdUname),
+		console.AddCmd("users", cmdUsers),
+		console.AddCmd("uname", cmdUname),
 	} {
 		if err != nil {
 			return err

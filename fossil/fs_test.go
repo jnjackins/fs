@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"sigint.ca/fs/fossil/console"
 	"sigint.ca/fs/venti"
 )
 
@@ -31,7 +32,7 @@ func TestFs(t *testing.T) {
 		{cmd: "9p Tclunk 1"},
 		{cmd: "9p Tclunk 0"},
 	} {
-		if err := cliExec(nil, c.cmd); err != nil {
+		if err := console.Exec(nil, c.cmd); err != nil {
 			t.Error(err)
 			return
 		}

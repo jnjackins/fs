@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 var testFossilPath string
@@ -17,9 +19,9 @@ type nopCloser struct {
 	io.ReadWriter
 }
 
-func testCons() (*Cons, *bytes.Buffer) {
+func testCons() (*console.Cons, *bytes.Buffer) {
 	buf := new(bytes.Buffer)
-	cons := &Cons{conn: (nopCloser{buf})}
+	cons := console.NewCons(nopCloser{buf}, false)
 
 	return cons, buf
 }

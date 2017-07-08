@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"sigint.ca/fs/fossil/console"
 	"sigint.ca/fs/internal/plan9"
 )
 
@@ -562,7 +563,7 @@ func allocCon(conn net.Conn, name string, flags int) *Con {
 	return con
 }
 
-func cmdMsg(cons *Cons, argv []string) error {
+func cmdMsg(cons *console.Cons, argv []string) error {
 	var usage = errors.New("Usage: msg [-m nmsg] [-p nproc]")
 
 	flags := flag.NewFlagSet("msg", flag.ContinueOnError)
@@ -594,8 +595,8 @@ func cmdMsg(cons *Cons, argv []string) error {
 	nprocstarve := mbox.nprocstarve
 	mbox.rlock.Unlock()
 
-	cons.printf("\tmsg -m %d -p %d\n", *maxmsg, *maxproc)
-	cons.printf("\tnmsg %d nmsgstarve %d nproc %d nprocstarve %d\n", nmsg, nmsgstarve, nproc, nprocstarve)
+	cons.Printf("\tmsg -m %d -p %d\n", *maxmsg, *maxproc)
+	cons.Printf("\tnmsg %d nmsgstarve %d nproc %d nprocstarve %d\n", nmsg, nmsgstarve, nproc, nprocstarve)
 
 	return nil
 }
@@ -662,7 +663,7 @@ func fidMergeSort(f *Fid) *Fid {
 	return fidMerge(a, b)
 }
 
-func cmdWho(cons *Cons, argv []string) error {
+func cmdWho(cons *console.Cons, argv []string) error {
 	var usage string = "Usage: who"
 
 	flags := flag.NewFlagSet("who", flag.ContinueOnError)
@@ -688,7 +689,7 @@ func cmdWho(cons *Cons, argv []string) error {
 	}
 
 	for con := cbox.chead; con != nil; con = con.cnext {
-		cons.printf("\t%-*s %-*s", l1, con.name, l2, con.remote)
+		cons.Printf("\t%-*s %-*s", l1, con.name, l2, con.remote)
 		con.fidlock.Lock()
 		var last *Fid = nil
 		for i := 0; i < NFidHash; i++ {
@@ -704,11 +705,11 @@ func cmdWho(cons *Cons, argv []string) error {
 		last = nil
 		for ; fid != nil; (func() { last = fid; fid = fid.sort })() {
 			if last == nil || fid.uname != last.uname {
-				cons.printf(" %q", fid.uname)
+				cons.Printf(" %q", fid.uname)
 			}
 		}
 		con.fidlock.Unlock()
-		cons.printf("\n")
+		cons.Printf("\n")
 	}
 
 	cbox.clock.RUnlock()
@@ -724,10 +725,10 @@ func msgInit() error {
 
 	mbox.rchan = make(chan *Msg, mbox.maxmsg) // TODO(jnj): channel size?
 
-	return cliAddCmd("msg", cmdMsg)
+	return console.AddCmd("msg", cmdMsg)
 }
 
-func cmdCon(cons *Cons, argv []string) error {
+func cmdCon(cons *console.Cons, argv []string) error {
 	var usage string = "Usage: con [-m ncon]"
 
 	flags := flag.NewFlagSet("con", flag.ContinueOnError)
@@ -749,12 +750,12 @@ func cmdCon(cons *Cons, argv []string) error {
 	nconstarve := cbox.nconstarve
 	cbox.clock.Unlock()
 
-	cons.printf("\tcon -m %d\n", *maxcon)
-	cons.printf("\tncon %d nconstarve %d\n", ncon, nconstarve)
+	cons.Printf("\tcon -m %d\n", *maxcon)
+	cons.Printf("\tncon %d nconstarve %d\n", ncon, nconstarve)
 
 	cbox.clock.RLock()
 	for con := cbox.chead; con != nil; con = con.cnext {
-		cons.printf("\t%s\n", con.name)
+		cons.Printf("\t%s\n", con.name)
 	}
 	cbox.clock.RUnlock()
 
@@ -768,8 +769,8 @@ func conInit() error {
 	cbox.msize = NMsizeInit
 
 	for _, err := range []error{
-		cliAddCmd("con", cmdCon),
-		cliAddCmd("who", cmdWho),
+		console.AddCmd("con", cmdCon),
+		console.AddCmd("who", cmdWho),
 	} {
 		if err != nil {
 			return err

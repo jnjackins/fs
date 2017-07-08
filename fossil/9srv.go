@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 
+	"sigint.ca/fs/fossil/console"
 	"sigint.ca/fs/internal/p9p"
 )
 
@@ -118,7 +119,7 @@ func srvAlloc(service string, mode int, conn net.Conn) (*Srv, error) {
 	return srv, nil
 }
 
-func cmdSrv(cons *Cons, argv []string) error {
+func cmdSrv(cons *console.Cons, argv []string) error {
 	argv = fixFlags(argv)
 
 	var usage = "Usage: srv [-AINPWdp] [service]"
@@ -168,7 +169,7 @@ func cmdSrv(cons *Cons, argv []string) error {
 	case 0:
 		srvbox.lock.RLock()
 		for srv := srvbox.head; srv != nil; srv = srv.next {
-			cons.printf("\t%s\t%d\n", srv.service, srv.srvfd)
+			cons.Printf("\t%s\t%d\n", srv.service, srv.srvfd)
 		}
 		srvbox.lock.RUnlock()
 		return nil
@@ -205,7 +206,7 @@ func cmdSrv(cons *Cons, argv []string) error {
 
 	*pflag = false // TODO(jnj)
 	if *pflag {
-		openCons(c2)
+		console.NewCons(c2, true)
 	} else {
 		allocCon(c2, srv.mntpnt, conflags)
 	}
@@ -213,5 +214,5 @@ func cmdSrv(cons *Cons, argv []string) error {
 }
 
 func srvInit() error {
-	return cliAddCmd("srv", cmdSrv)
+	return console.AddCmd("srv", cmdSrv)
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"sigint.ca/fs/fossil/console"
 )
 
 func TestFsys(t *testing.T) {
@@ -28,7 +30,7 @@ func TestFsys(t *testing.T) {
 		{cmd: "9p Tremove 1"},
 		{cmd: "9p Tclunk 0"},
 	} {
-		if err := cliExec(nil, c.cmd); err != nil {
+		if err := console.Exec(nil, c.cmd); err != nil {
 			t.Error(err)
 			return
 		}
@@ -44,8 +46,9 @@ func TestFsys(t *testing.T) {
 
 func testFsysDf(t *testing.T) {
 	cons, buf := testCons()
+	defer cons.Close()
 
-	if err := cliExec(cons, "fsys testfs df"); err != nil {
+	if err := console.Exec(cons, "fsys testfs df"); err != nil {
 		t.Errorf("df: %v", err)
 		return
 	}
@@ -54,9 +57,10 @@ func testFsysDf(t *testing.T) {
 
 func testFsysCheck(t *testing.T) {
 	buf := new(bytes.Buffer)
-	cons := &Cons{conn: (nopCloser{buf})}
+	cons := console.NewCons(nopCloser{buf}, false)
+	defer cons.Close()
 
-	if err := cliExec(cons, "fsys testfs check"); err != nil {
+	if err := console.Exec(cons, "fsys testfs check"); err != nil {
 		t.Errorf("check: %v", err)
 		return
 	}
@@ -101,12 +105,12 @@ func TestFsysParseMode(t *testing.T) {
 }
 
 func testAllocFsys() error {
-	if err := cliExec(nil, "fsys testfs config "+testFossilPath); err != nil {
+	if err := console.Exec(nil, "fsys testfs config "+testFossilPath); err != nil {
 		return fmt.Errorf("config fsys: %v", err)
 	}
 
 	os.Setenv("venti", "localhost")
-	if err := cliExec(nil, "fsys testfs open -AWP"); err != nil {
+	if err := console.Exec(nil, "fsys testfs open -AWP"); err != nil {
 		return fmt.Errorf("open fsys: %v", err)
 	}
 
@@ -114,11 +118,11 @@ func testAllocFsys() error {
 }
 
 func testCleanupFsys() error {
-	if err := cliExec(nil, "fsys testfs close"); err != nil {
+	if err := console.Exec(nil, "fsys testfs close"); err != nil {
 		return fmt.Errorf("close fsys: %v", err)
 	}
 
-	if err := cliExec(nil, "fsys testfs unconfig"); err != nil {
+	if err := console.Exec(nil, "fsys testfs unconfig"); err != nil {
 		return fmt.Errorf("unconfig fsys: %v", err)
 	}
 	return nil
@@ -133,11 +137,11 @@ func TestFsysOpenClose(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		before := runtime.NumGoroutine()
 		t.Logf("open: goroutines=%d", before)
-		if err := cliExec(nil, "fsys testfs open -c 100"); err != nil {
+		if err := console.Exec(nil, "fsys testfs open -c 100"); err != nil {
 			t.Errorf("open: %v", err)
 			break
 		}
-		if err := cliExec(nil, "fsys testfs close"); err != nil {
+		if err := console.Exec(nil, "fsys testfs close"); err != nil {
 			t.Errorf("close: %v", err)
 			break
 		}
@@ -150,7 +154,7 @@ func TestFsysOpenClose(t *testing.T) {
 			t.Errorf("goroutine leak: started with %d, have %d", before, after)
 		}
 	}
-	if err := cliExec(nil, "fsys testfs unconfig"); err != nil {
+	if err := console.Exec(nil, "fsys testfs unconfig"); err != nil {
 		t.Fatalf("unconfig: %v", err)
 	}
 }
