@@ -1511,51 +1511,6 @@ func fsysVenti(cons *console.Cons, name string, argv []string) error {
 	return err
 }
 
-func freemem() uint32 {
-	var pgsize int = 0
-	var userpgs uint64 = 0
-	var userused uint64 = 0
-
-	size := uint64(64 * 1024 * 1024)
-	f, err := os.Open("#c/swap")
-	if err == nil {
-		bp := bufio.NewReader(f)
-		for {
-			ln, err := bp.ReadString('\n')
-			if err != nil {
-				break
-			}
-			ln = ln[:len(ln)-1]
-
-			fields := strings.Fields(ln)
-			if len(fields) != 2 {
-				continue
-			}
-			if fields[1] == "pagesize" {
-				pgsize = atoi(fields[0])
-			} else if fields[1] == "user" {
-				i := strings.IndexByte(fields[0], '/')
-				if i < 0 {
-					continue
-				}
-				userpgs = uint64(atoll(fields[0][i+1:]))
-				userused = uint64(atoll(fields[0]))
-			}
-		}
-		f.Close()
-
-		if pgsize > 0 && userpgs > 0 {
-			size = (userpgs - userused) * uint64(pgsize)
-		}
-	}
-
-	/* cap it to keep the size within 32 bits */
-	if size >= 3840*1024*1024 {
-		size = 3840 * 1024 * 1024
-	}
-	return uint32(size)
-}
-
 func fsysOpen(cons *console.Cons, name string, argv []string) error {
 	argv = fixFlags(argv)
 
@@ -1570,7 +1525,7 @@ func fsysOpen(cons *console.Cons, name string, argv []string) error {
 		Wflag = flags.Bool("W", false, "allow wstat to make arbitrary changes to the user and group fields")
 		aflag = flags.Bool("a", false, "do not update file access times; primarily to avoid wear on flash memories")
 		rflag = flags.Bool("r", false, "open the file system read-only")
-		cflag = flags.Uint("c", 1000, "allocate an in-memory cache of `ncache` blocks")
+		cflag = flags.Uint("c", 10000, "allocate an in-memory cache of `ncache` blocks")
 	)
 	if err := flags.Parse(argv[1:]); err != nil {
 		return EUsage
@@ -1590,16 +1545,6 @@ func fsysOpen(cons *console.Cons, name string, argv []string) error {
 	fsys, err := _getFsys(name)
 	if err != nil {
 		return err
-	}
-
-	/* automatic memory sizing? */
-	if mempcnt > 0 {
-		/* TODO: 8K is a hack; use the actual block size */
-		ncache = int(((int64(freemem()) * int64(mempcnt)) / 100) / int64(8*1024))
-
-		if ncache < 100 {
-			ncache = 100
-		}
 	}
 
 	fsys.lock.Lock()

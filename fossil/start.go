@@ -11,10 +11,7 @@ import (
 	"sigint.ca/fs/fossil/console"
 )
 
-var (
-	mempcnt  int    /* for 9fsys.c */
-	foptname string = "/none/such"
-)
+var foptname string = "/none/such"
 
 func start(argv []string) {
 	flags := flag.NewFlagSet("start", flag.ExitOnError)
@@ -26,7 +23,6 @@ func start(argv []string) {
 	var (
 		cflag = flags.String("c", "", "Execute the console command `cmd`.")
 		fflag = flags.String("f", "", "Read and execute console commands stored in the Fossil disk `file`.")
-		mflag = flags.Int("m", 30, "Allocate `%` percent of the available free RAM for buffers.")
 		tflag = flags.Bool("t", true, "Connect to the console on startup.")
 	)
 	flags.Parse(argv)
@@ -38,10 +34,6 @@ func start(argv []string) {
 	if *fflag != "" {
 		foptname = *fflag
 		cmd = readCmdPart(*fflag, cmd)
-	}
-	mempcnt = *mflag
-	if mempcnt <= 0 || mempcnt >= 100 {
-		flags.Usage()
 	}
 
 	if flags.NArg() != 0 {
